@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>묶음 카드 UI 예상 이미지</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 28px;
+        color: #1b2028;
+        background: #f7f6f1;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 28px;
+      }
+
+      p {
+        margin: 0 0 24px;
+        color: #69717b;
+        line-height: 1.5;
+      }
+
+      .grid {
+        display: grid;
+        gap: 22px;
+      }
+
+      figure {
+        margin: 0;
+        padding: 18px;
+        border: 1px solid #d8d3c6;
+        border-radius: 8px;
+        background: #fffefa;
+      }
+
+      figcaption {
+        margin-bottom: 12px;
+        font-size: 20px;
+        font-weight: 900;
+      }
+
+      img {
+        width: 100%;
+        height: auto;
+        display: block;
+        border: 1px solid #ece7dc;
+        border-radius: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>묶음 카드 UI 예상 이미지</h1>
+    <p>후보 C 입력을 카드 하나로 보여주는 경우의 편집, 암기, 경고 화면입니다.</p>
+    <main class="grid">
+      <figure>
+        <figcaption>1. 편집/미리보기 화면</figcaption>
+        <img src="./group-edit-preview.png" alt="편집 미리보기 화면" />
+      </figure>
+      <figure>
+        <figcaption>2. 암기모드: 가림 상태</figcaption>
+        <img src="./group-study-hidden.png" alt="암기모드 가림 상태" />
+      </figure>
+      <figure>
+        <figcaption>3. 암기모드: 답 공개 상태</figcaption>
+        <img src="./group-study-revealed.png" alt="암기모드 답 공개 상태" />
+      </figure>
+      <figure>
+        <figcaption>4. 입력 오류/경고 상태</figcaption>
+        <img src="./group-warning.png" alt="입력 오류 경고 상태" />
+      </figure>
+    </main>
+  </body>
+</html>

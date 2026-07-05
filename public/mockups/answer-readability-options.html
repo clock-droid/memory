@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>답 공개 가독성 개선 시안</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 28px;
+        color: #171f2a;
+        background: #f7f6f1;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      h1 { margin: 0 0 8px; font-size: 30px; }
+      .lead { margin: 0 0 26px; color: #69717b; line-height: 1.55; }
+      .option {
+        margin-bottom: 28px;
+        padding: 22px;
+        border: 1px solid #d8d3c6;
+        border-radius: 8px;
+        background: #fffefa;
+      }
+      .option h2 { margin: 0 0 6px; font-size: 23px; }
+      .option > p { margin: 0 0 18px; color: #69717b; }
+      .compare {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+      }
+      .panel {
+        padding: 16px;
+        border: 1px solid #d8d3c6;
+        border-radius: 8px;
+        background: #fbfaf6;
+      }
+      .panel h3 {
+        margin: 0 0 12px;
+        color: #69717b;
+        font-size: 15px;
+      }
+      .card {
+        display: grid;
+        grid-template-columns: 42px minmax(0, 1fr) auto;
+        gap: 14px;
+        align-items: start;
+        padding: 16px;
+        border: 1px solid #d8d3c6;
+        border-radius: 8px;
+        background: #fffefa;
+      }
+      .num {
+        width: 34px;
+        height: 34px;
+        display: grid;
+        place-items: center;
+        border-radius: 999px;
+        color: #314b58;
+        background: #e7eef0;
+        font-weight: 950;
+      }
+      .actions { display: flex; gap: 8px; }
+      .icon {
+        width: 38px;
+        height: 38px;
+        display: grid;
+        place-items: center;
+        border: 1px solid #d8d3c6;
+        border-radius: 8px;
+        font-size: 22px;
+      }
+      .body { min-width: 0; }
+      .pair {
+        display: grid;
+        grid-template-columns: fit-content(30ch) minmax(8ch, max-content);
+        column-gap: clamp(14px, 4vw, 48px);
+        align-items: baseline;
+        margin-bottom: 18px;
+      }
+      .prompt, .title { font-weight: 950; }
+      .prompt { font-size: 23px; line-height: 1.45; }
+      .title { margin-bottom: 12px; font-size: 24px; }
+      .list { display: grid; gap: 10px; }
+      .item {
+        display: grid;
+        grid-template-columns: 2.2em minmax(0, 1fr);
+        gap: 10px;
+        align-items: baseline;
+        font-size: 21px;
+      }
+      .marker { color: #69717b; font-weight: 950; }
+      .blank, .answer {
+        display: inline-grid;
+        place-items: center;
+        min-width: 4.6ch;
+        max-width: min(70vw, 26em);
+        margin: 0 2px;
+        border: 1px solid #d8d3c6;
+        border-radius: 7px;
+        vertical-align: baseline;
+        font-weight: 900;
+        text-align: center;
+        white-space: normal;
+      }
+      .blank::before {
+        content: attr(data-answer);
+        visibility: hidden;
+      }
+      .answer {
+        color: #fffefa;
+        border-color: #314b58;
+        background: #314b58;
+      }
+      .blank {
+        color: transparent;
+        background: #ebe6dc;
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+      }
+      .wide { min-width: 16ch; }
+      .long { width: 24ch; }
+      .note {
+        margin-top: 14px;
+        padding: 12px 14px;
+        border-radius: 8px;
+        background: #f7f6f1;
+        color: #49535f;
+        font-size: 15px;
+        line-height: 1.45;
+      }
+
+      .style-1 .blank, .style-1 .answer {
+        min-height: 1.8em;
+        padding: 0.12em 0.62em;
+        font-size: 1.02em;
+        line-height: 1.45;
+      }
+      .style-1 .item { line-height: 1.9; }
+
+      .style-2 .blank, .style-2 .answer {
+        min-height: 2em;
+        padding: 0.18em 0.72em;
+        font-size: 1.08em;
+        line-height: 1.55;
+        border-radius: 8px;
+      }
+      .style-2 .item { line-height: 2.05; }
+
+      .style-3 .blank, .style-3 .answer {
+        min-height: 1.9em;
+        padding: 0.14em 0.68em;
+        font-size: 1.04em;
+        line-height: 1.65;
+        border-radius: 10px;
+      }
+      .style-3 .answer {
+        color: #172329;
+        border-color: #b8d4d3;
+        background: #dff0ef;
+      }
+      .style-3 .item { line-height: 2.05; }
+
+      .style-4 .blank, .style-4 .answer {
+        min-height: 1.95em;
+        padding: 0.2em 0.75em;
+        font-size: 1.12em;
+        line-height: 1.65;
+        border-radius: 7px;
+      }
+      .style-4 .prompt { font-size: 24px; }
+      .style-4 .item { font-size: 22px; line-height: 2.1; }
+
+      .style-5 .blank, .style-5 .answer {
+        min-height: 2.1em;
+        padding: 0.25em 0.82em;
+        font-size: 1.1em;
+        line-height: 1.75;
+        border-radius: 8px;
+      }
+      .style-5 .blank {
+        background: #f0ece2;
+      }
+      .style-5 .answer {
+        color: #fffefa;
+        background: #263f4a;
+      }
+      .style-5 .item { line-height: 2.18; }
+
+      @media (max-width: 900px) {
+        body { padding: 16px; }
+        .compare { grid-template-columns: 1fr; }
+        .card { grid-template-columns: 36px minmax(0, 1fr); }
+        .actions { grid-column: 2; justify-content: flex-end; }
+        .pair { grid-template-columns: 1fr; row-gap: 8px; }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>답 공개 가독성 개선 시안</h1>
+    <p class="lead">가림막 공개 전/후를 같이 비교합니다. 공통 목표는 답 글씨를 키우고, 두 줄 이상 답의 줄간격을 넉넉하게 하며, 가림막에 세로 여유를 주는 것입니다.</p>
+
+    <main>
+      <section class="option style-1">
+        <h2>시안 1. 살짝 키운 균형형</h2>
+        <p>현재 디자인을 크게 바꾸지 않고 답 글씨와 세로 여유만 올립니다.</p>
+        <div class="compare">
+          <div class="panel"><h3>공개 전</h3><Sample hidden /></div>
+          <div class="panel"><h3>공개 후</h3><Sample /></div>
+        </div>
+        <div class="note">가장 안전한 수정안입니다. 전체 UI 톤을 유지하면서 답답함만 줄입니다.</div>
+      </section>
+
+      <section class="option style-2">
+        <h2>시안 2. 큼직한 답 칩형</h2>
+        <p>답을 눈에 잘 들어오게 키웁니다. 터치하기 쉽고 공개 후 가독성이 좋습니다.</p>
+        <div class="compare">
+          <div class="panel"><h3>공개 전</h3><Sample hidden /></div>
+          <div class="panel"><h3>공개 후</h3><Sample /></div>
+        </div>
+        <div class="note">모바일에서 특히 좋습니다. 다만 한 화면에 보이는 카드 수는 조금 줄어듭니다.</div>
+      </section>
+
+      <section class="option style-3">
+        <h2>시안 3. 밝은 공개 답형</h2>
+        <p>공개된 답을 어두운 칩이 아니라 밝은 청록 칩으로 보여줍니다. 덜 무겁습니다.</p>
+        <div class="compare">
+          <div class="panel"><h3>공개 전</h3><Sample hidden /></div>
+          <div class="panel"><h3>공개 후</h3><Sample /></div>
+        </div>
+        <div class="note">긴 답이 많을 때 피로감이 적습니다. 단, 공개 상태의 강조감은 조금 약합니다.</div>
+      </section>
+
+      <section class="option style-4">
+        <h2>시안 4. 답 우선 큰 글씨형</h2>
+        <p>답 글씨를 확실히 키우고 줄간격도 넉넉하게 둡니다. 암기 확인용으로 가장 선명합니다.</p>
+        <div class="compare">
+          <div class="panel"><h3>공개 전</h3><Sample hidden /></div>
+          <div class="panel"><h3>공개 후</h3><Sample /></div>
+        </div>
+        <div class="note">가독성 최우선입니다. 대신 카드 높이가 조금 커집니다.</div>
+      </section>
+
+      <section class="option style-5">
+        <h2>시안 5. 넉넉한 호흡형</h2>
+        <p>가림막과 공개 답 모두 여백을 충분히 둡니다. 두 줄 이상 답에서 가장 덜 빽빽합니다.</p>
+        <div class="compare">
+          <div class="panel"><h3>공개 전</h3><Sample hidden /></div>
+          <div class="panel"><h3>공개 후</h3><Sample /></div>
+        </div>
+        <div class="note">긴 문장형 답이 많으면 좋습니다. 단어 암기 위주라면 조금 과할 수 있습니다.</div>
+      </section>
+    </main>
+
+    <template id="sample-template">
+      <div class="card">
+        <div class="num">7</div>
+        <div class="body">
+          <div class="pair">
+            <span class="prompt">D</span>
+            <span class="slot long" data-answer="긴 답입니다. 한 줄에 다 들어가지 않으면 두 줄 이상으로 자연스럽게 표시됩니다."></span>
+          </div>
+          <div class="title">커피의 3가지 분류</div>
+          <div class="list">
+            <div class="item"><span class="marker">1.</span><span><span class="slot" data-answer="아메리카노"></span> : 아주 <span class="slot" data-answer="오래된"></span> 커피</span></div>
+            <div class="item"><span class="marker">2.</span><span><span class="slot" data-answer="카페라떼"></span> : 아주 <span class="slot" data-answer="맛있는"></span> 커피</span></div>
+            <div class="item"><span class="marker">3.</span><span>카페라떼 : <span class="slot long" data-answer="우유가 많이 들어가고 부드러운 맛이 나는"></span> 커피</span></div>
+          </div>
+        </div>
+        <div class="actions"><div class="icon">☆</div><div class="icon">⌫</div></div>
+      </div>
+    </template>
+
+    <script>
+      customElements.define(
+        'sample-card',
+        class extends HTMLElement {
+          connectedCallback() {}
+        },
+      );
+      document.querySelectorAll('Sample, sample').forEach((node) => node.remove());
+      document.querySelectorAll('.panel').forEach((panel) => {
+        const hidden = panel.querySelector('h3')?.textContent?.includes('전');
+        const html = document.querySelector('#sample-template').innerHTML;
+        panel.insertAdjacentHTML('beforeend', html);
+        panel.querySelectorAll('.slot').forEach((slot) => {
+          const text = slot.getAttribute('data-answer') || '';
+          slot.textContent = hidden ? '' : text;
+          slot.classList.add(hidden ? 'blank' : 'answer');
+        });
+      });
+    </script>
+  </body>
+</html>

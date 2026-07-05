@@ -1,0 +1,25 @@
+
+  <svg width="1280" height="900" viewBox="0 0 1280 900" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1280" height="900" fill="#f7f6f1"/>
+    <rect x="60" y="48" width="1160" height="76" rx="8" fill="#fffefa" stroke="#d8d3c6"/>
+    <text x="88" y="80" font-family="Arial, Noto Sans KR, sans-serif" font-size="18" font-weight="800" fill="#69717b" text-anchor="start">공유코드</text>
+    <text x="88" y="108" font-family="Arial, Noto Sans KR, sans-serif" font-size="26" font-weight="950" fill="#182029" text-anchor="start">coffee-test</text>
+    <rect x="910" y="68" width="150" height="38" rx="19" fill="#fffefa" stroke="#d8d3c6"/>
+    <text x="985" y="94" font-family="Arial, Noto Sans KR, sans-serif" font-size="17" font-weight="800" fill="#314b58" text-anchor="middle">클라우드 저장</text>
+    <rect x="1078" y="66" width="96" height="42" rx="8" fill="#fffefa" stroke="#d8d3c6"/>
+    <text x="1126" y="94" font-family="Arial, Noto Sans KR, sans-serif" font-size="17" font-weight="850" fill="#182029" text-anchor="middle">코드 변경</text>
+    <text x="70" y="184" font-family="Arial, Noto Sans KR, sans-serif" font-size="36" font-weight="950" fill="#182029" text-anchor="start">입력 오류 예상</text>
+    <text x="70" y="220" font-family="Arial, Noto Sans KR, sans-serif" font-size="20" font-weight="750" fill="#69717b" text-anchor="start">규칙이 어긋난 줄은 저장 전 미리보기/입력창에서 경고합니다.</text>
+    
+    <rect x="70" y="258" width="690" height="574" rx="8" fill="#fffefa" stroke="#d8d3c6"/>
+    <text x="96" y="306" font-family="Arial, Noto Sans KR, sans-serif" font-size="25" font-weight="950" fill="#182029" text-anchor="start">원문 입력</text>
+    <rect x="96" y="334" width="638" height="352" rx="8" fill="#fffefa" stroke="#cfc8ba"/>
+    <text x="124" y="382" font-family="Arial, Noto Sans KR, sans-serif" font-size="25" font-weight="750" fill="#182029" text-anchor="start">커피의 3가지 분류:</text><text x="124" y="423.25" font-family="Arial, Noto Sans KR, sans-serif" font-size="25" font-weight="750" fill="#182029" text-anchor="start">-[아메리카노]: 아주 [오래된] 커피</text><text x="124" y="464.5" font-family="Arial, Noto Sans KR, sans-serif" font-size="25" font-weight="750" fill="#182029" text-anchor="start">카페인: 각성 효과</text><text x="124" y="505.75" font-family="Arial, Noto Sans KR, sans-serif" font-size="25" font-weight="750" fill="#182029" text-anchor="start">- [에스프레소]: 아주 [쓴] 커피</text>
+    <rect x="96" y="710" width="638" height="68" rx="8" fill="#fff1ed" stroke="#efb7a8"/>
+    <text x="122" y="752" font-family="Arial, Noto Sans KR, sans-serif" font-size="21" font-weight="850" fill="#9f3b27" text-anchor="start">목록 기호 뒤에는 공백이 필요합니다. 묶음 중간 일반 문장도 확인하세요.</text>
+    <rect x="788" y="258" width="422" height="574" rx="8" fill="#fffefa" stroke="#d8d3c6"/>
+    <text x="814" y="306" font-family="Arial, Noto Sans KR, sans-serif" font-size="25" font-weight="950" fill="#182029" text-anchor="start">미리보기 경고</text>
+    <rect x="814" y="334" width="370" height="122" rx="8" fill="#fff1ed" stroke="#efb7a8"/>
+    <text x="840" y="378" font-family="Arial, Noto Sans KR, sans-serif" font-size="22" font-weight="850" fill="#9f3b27" text-anchor="start">2번 줄: 목록 기호 뒤 공백 필요</text><text x="840" y="409.9" font-family="Arial, Noto Sans KR, sans-serif" font-size="22" font-weight="850" fill="#9f3b27" text-anchor="start">3번 줄: 묶음 중간 일반 문장</text>
+  
+  </svg>

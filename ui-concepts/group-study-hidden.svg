@@ -1,0 +1,57 @@
+
+  <svg width="1280" height="900" viewBox="0 0 1280 900" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1280" height="900" fill="#f7f6f1"/>
+    <rect x="60" y="48" width="1160" height="76" rx="8" fill="#fffefa" stroke="#d8d3c6"/>
+    <text x="88" y="80" font-family="Arial, Noto Sans KR, sans-serif" font-size="18" font-weight="800" fill="#69717b" text-anchor="start">공유코드</text>
+    <text x="88" y="108" font-family="Arial, Noto Sans KR, sans-serif" font-size="26" font-weight="950" fill="#182029" text-anchor="start">coffee-test</text>
+    <rect x="910" y="68" width="150" height="38" rx="19" fill="#fffefa" stroke="#d8d3c6"/>
+    <text x="985" y="94" font-family="Arial, Noto Sans KR, sans-serif" font-size="17" font-weight="800" fill="#314b58" text-anchor="middle">클라우드 저장</text>
+    <rect x="1078" y="66" width="96" height="42" rx="8" fill="#fffefa" stroke="#d8d3c6"/>
+    <text x="1126" y="94" font-family="Arial, Noto Sans KR, sans-serif" font-size="17" font-weight="850" fill="#182029" text-anchor="middle">코드 변경</text>
+    <text x="70" y="184" font-family="Arial, Noto Sans KR, sans-serif" font-size="36" font-weight="950" fill="#182029" text-anchor="start">암기모드 예상: 가림 상태</text>
+    <text x="70" y="220" font-family="Arial, Noto Sans KR, sans-serif" font-size="20" font-weight="750" fill="#69717b" text-anchor="start">묶음 전체가 카드 하나 안에 보이고, [ ] 부분만 가려집니다.</text>
+    
+    <rect x="70" y="258" width="1140" height="438" rx="8" fill="#fffefa" stroke="#d8d3c6"/>
+    <circle cx="112" cy="312" r="29" fill="#e7eef0"/>
+    <text x="112" y="322" font-family="Arial, Noto Sans KR, sans-serif" font-size="22" font-weight="950" fill="#314b58" text-anchor="middle">1</text>
+    <text x="162" y="322" font-family="Arial, Noto Sans KR, sans-serif" font-size="31" font-weight="950" fill="#182029" text-anchor="start">커피의 3가지 분류</text>
+    <rect x="1068" y="282" width="52" height="52" rx="8" fill="#fffefa" stroke="#d8d3c6"/>
+    <text x="1094" y="319" font-family="Arial, Noto Sans KR, sans-serif" font-size="34" font-weight="900" fill="#182029" text-anchor="middle">☆</text>
+    <rect x="1134" y="282" width="52" height="52" rx="8" fill="#fffefa" stroke="#d8d3c6"/>
+    <text x="1160" y="316" font-family="Arial, Noto Sans KR, sans-serif" font-size="28" font-weight="900" fill="#182029" text-anchor="middle">⌫</text>
+    <text x="164" y="394" font-family="Arial, Noto Sans KR, sans-serif" font-size="27" font-weight="780" fill="#182029" text-anchor="start">- 아메리카노: 아주</text>
+    <clipPath id="m422364"><rect x="422" y="364" width="150" height="52" rx="8"/></clipPath>
+  <rect x="422" y="364" width="150" height="52" rx="8" fill="#f0eee7" stroke="#d8d3c6"/>
+  <g clip-path="url(#m422364)">
+    <rect x="422" y="364" width="12" height="52" fill="#d0c9bb"/><rect x="444" y="364" width="12" height="52" fill="#d0c9bb"/><rect x="466" y="364" width="12" height="52" fill="#d0c9bb"/><rect x="488" y="364" width="12" height="52" fill="#d0c9bb"/><rect x="510" y="364" width="12" height="52" fill="#d0c9bb"/><rect x="532" y="364" width="12" height="52" fill="#d0c9bb"/><rect x="554" y="364" width="12" height="52" fill="#d0c9bb"/><rect x="576" y="364" width="12" height="52" fill="#d0c9bb"/><rect x="598" y="364" width="12" height="52" fill="#d0c9bb"/><rect x="620" y="364" width="12" height="52" fill="#d0c9bb"/><rect x="642" y="364" width="12" height="52" fill="#d0c9bb"/><rect x="664" y="364" width="12" height="52" fill="#d0c9bb"/><rect x="686" y="364" width="12" height="52" fill="#d0c9bb"/><rect x="708" y="364" width="12" height="52" fill="#d0c9bb"/><rect x="730" y="364" width="12" height="52" fill="#d0c9bb"/><rect x="752" y="364" width="12" height="52" fill="#d0c9bb"/>
+  </g>
+    <text x="592" y="394" font-family="Arial, Noto Sans KR, sans-serif" font-size="27" font-weight="780" fill="#182029" text-anchor="start">커피</text>
+    <text x="164" y="474" font-family="Arial, Noto Sans KR, sans-serif" font-size="27" font-weight="780" fill="#182029" text-anchor="start">- </text>
+    <clipPath id="m194444"><rect x="194" y="444" width="164" height="52" rx="8"/></clipPath>
+  <rect x="194" y="444" width="164" height="52" rx="8" fill="#f0eee7" stroke="#d8d3c6"/>
+  <g clip-path="url(#m194444)">
+    <rect x="194" y="444" width="12" height="52" fill="#d0c9bb"/><rect x="216" y="444" width="12" height="52" fill="#d0c9bb"/><rect x="238" y="444" width="12" height="52" fill="#d0c9bb"/><rect x="260" y="444" width="12" height="52" fill="#d0c9bb"/><rect x="282" y="444" width="12" height="52" fill="#d0c9bb"/><rect x="304" y="444" width="12" height="52" fill="#d0c9bb"/><rect x="326" y="444" width="12" height="52" fill="#d0c9bb"/><rect x="348" y="444" width="12" height="52" fill="#d0c9bb"/><rect x="370" y="444" width="12" height="52" fill="#d0c9bb"/><rect x="392" y="444" width="12" height="52" fill="#d0c9bb"/><rect x="414" y="444" width="12" height="52" fill="#d0c9bb"/><rect x="436" y="444" width="12" height="52" fill="#d0c9bb"/><rect x="458" y="444" width="12" height="52" fill="#d0c9bb"/><rect x="480" y="444" width="12" height="52" fill="#d0c9bb"/><rect x="502" y="444" width="12" height="52" fill="#d0c9bb"/><rect x="524" y="444" width="12" height="52" fill="#d0c9bb"/>
+  </g>
+    <text x="374" y="474" font-family="Arial, Noto Sans KR, sans-serif" font-size="27" font-weight="780" fill="#182029" text-anchor="start">: 아주</text>
+    <clipPath id="m462444"><rect x="462" y="444" width="150" height="52" rx="8"/></clipPath>
+  <rect x="462" y="444" width="150" height="52" rx="8" fill="#f0eee7" stroke="#d8d3c6"/>
+  <g clip-path="url(#m462444)">
+    <rect x="462" y="444" width="12" height="52" fill="#d0c9bb"/><rect x="484" y="444" width="12" height="52" fill="#d0c9bb"/><rect x="506" y="444" width="12" height="52" fill="#d0c9bb"/><rect x="528" y="444" width="12" height="52" fill="#d0c9bb"/><rect x="550" y="444" width="12" height="52" fill="#d0c9bb"/><rect x="572" y="444" width="12" height="52" fill="#d0c9bb"/><rect x="594" y="444" width="12" height="52" fill="#d0c9bb"/><rect x="616" y="444" width="12" height="52" fill="#d0c9bb"/><rect x="638" y="444" width="12" height="52" fill="#d0c9bb"/><rect x="660" y="444" width="12" height="52" fill="#d0c9bb"/><rect x="682" y="444" width="12" height="52" fill="#d0c9bb"/><rect x="704" y="444" width="12" height="52" fill="#d0c9bb"/><rect x="726" y="444" width="12" height="52" fill="#d0c9bb"/><rect x="748" y="444" width="12" height="52" fill="#d0c9bb"/><rect x="770" y="444" width="12" height="52" fill="#d0c9bb"/><rect x="792" y="444" width="12" height="52" fill="#d0c9bb"/>
+  </g>
+    <text x="632" y="474" font-family="Arial, Noto Sans KR, sans-serif" font-size="27" font-weight="780" fill="#182029" text-anchor="start">커피</text>
+    <text x="164" y="554" font-family="Arial, Noto Sans KR, sans-serif" font-size="27" font-weight="780" fill="#182029" text-anchor="start">- 우유 : 아주</text>
+    <clipPath id="m354524"><rect x="354" y="524" width="128" height="52" rx="8"/></clipPath>
+  <rect x="354" y="524" width="128" height="52" rx="8" fill="#f0eee7" stroke="#d8d3c6"/>
+  <g clip-path="url(#m354524)">
+    <rect x="354" y="524" width="12" height="52" fill="#d0c9bb"/><rect x="376" y="524" width="12" height="52" fill="#d0c9bb"/><rect x="398" y="524" width="12" height="52" fill="#d0c9bb"/><rect x="420" y="524" width="12" height="52" fill="#d0c9bb"/><rect x="442" y="524" width="12" height="52" fill="#d0c9bb"/><rect x="464" y="524" width="12" height="52" fill="#d0c9bb"/><rect x="486" y="524" width="12" height="52" fill="#d0c9bb"/><rect x="508" y="524" width="12" height="52" fill="#d0c9bb"/><rect x="530" y="524" width="12" height="52" fill="#d0c9bb"/><rect x="552" y="524" width="12" height="52" fill="#d0c9bb"/><rect x="574" y="524" width="12" height="52" fill="#d0c9bb"/><rect x="596" y="524" width="12" height="52" fill="#d0c9bb"/><rect x="618" y="524" width="12" height="52" fill="#d0c9bb"/><rect x="640" y="524" width="12" height="52" fill="#d0c9bb"/><rect x="662" y="524" width="12" height="52" fill="#d0c9bb"/><rect x="684" y="524" width="12" height="52" fill="#d0c9bb"/>
+  </g>
+    <text x="502" y="554" font-family="Arial, Noto Sans KR, sans-serif" font-size="27" font-weight="780" fill="#182029" text-anchor="start">음료</text>
+    <rect x="70" y="724" width="1140" height="92" rx="8" fill="#fffefa" stroke="#d8d3c6"/>
+    <text x="162" y="780" font-family="Arial, Noto Sans KR, sans-serif" font-size="28" font-weight="900" fill="#69717b" text-anchor="start">다음 카드</text>
+    <clipPath id="m930744"><rect x="930" y="744" width="170" height="52" rx="8"/></clipPath>
+  <rect x="930" y="744" width="170" height="52" rx="8" fill="#f0eee7" stroke="#d8d3c6"/>
+  <g clip-path="url(#m930744)">
+    <rect x="930" y="744" width="12" height="52" fill="#d0c9bb"/><rect x="952" y="744" width="12" height="52" fill="#d0c9bb"/><rect x="974" y="744" width="12" height="52" fill="#d0c9bb"/><rect x="996" y="744" width="12" height="52" fill="#d0c9bb"/><rect x="1018" y="744" width="12" height="52" fill="#d0c9bb"/><rect x="1040" y="744" width="12" height="52" fill="#d0c9bb"/><rect x="1062" y="744" width="12" height="52" fill="#d0c9bb"/><rect x="1084" y="744" width="12" height="52" fill="#d0c9bb"/><rect x="1106" y="744" width="12" height="52" fill="#d0c9bb"/><rect x="1128" y="744" width="12" height="52" fill="#d0c9bb"/><rect x="1150" y="744" width="12" height="52" fill="#d0c9bb"/><rect x="1172" y="744" width="12" height="52" fill="#d0c9bb"/><rect x="1194" y="744" width="12" height="52" fill="#d0c9bb"/><rect x="1216" y="744" width="12" height="52" fill="#d0c9bb"/><rect x="1238" y="744" width="12" height="52" fill="#d0c9bb"/><rect x="1260" y="744" width="12" height="52" fill="#d0c9bb"/>
+  </g>
+  
+  </svg>

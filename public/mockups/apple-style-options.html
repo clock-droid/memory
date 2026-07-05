@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Apple-inspired UI Style Options</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 28px;
+        color: #1c1c1e;
+        background: #f2f2f7;
+        font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+      }
+      h1 { margin: 0 0 8px; font-size: 30px; letter-spacing: 0; }
+      .lead { margin: 0 0 26px; color: #6e6e73; line-height: 1.55; }
+      .option {
+        margin-bottom: 34px;
+        padding: 22px;
+        border: 1px solid rgba(0,0,0,.08);
+        border-radius: 18px;
+        background: rgba(255,255,255,.74);
+        box-shadow: 0 18px 60px rgba(0,0,0,.06);
+      }
+      .option > h2 { margin: 0 0 6px; font-size: 23px; }
+      .option > p { margin: 0 0 18px; color: #6e6e73; line-height: 1.5; }
+      .pair {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(320px, 1fr));
+        gap: 18px;
+      }
+      .shot h3 { margin: 0 0 10px; color: #6e6e73; font-size: 16px; }
+      .phone {
+        width: 100%;
+        max-width: 430px;
+        min-height: 720px;
+        overflow: hidden;
+        border-radius: 34px;
+        margin: 0 auto;
+        position: relative;
+      }
+      .screen { min-height: 720px; padding: 22px; }
+      .top {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 18px;
+      }
+      .eyebrow { margin: 0 0 4px; font-size: 12px; font-weight: 800; }
+      .title { margin: 0; font-size: 30px; line-height: 1.08; letter-spacing: 0; font-weight: 820; }
+      .btn, .icon-btn, .pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 0;
+        font-weight: 820;
+      }
+      .btn { min-height: 42px; padding: 0 14px; white-space: nowrap; }
+      .icon-btn { width: 40px; height: 40px; font-size: 22px; }
+      .pill { min-height: 34px; padding: 0 12px; font-size: 13px; white-space: nowrap; }
+      .deck-list, .card-list, .sections { display: grid; gap: 10px; }
+      .deck {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 12px;
+        padding: 14px;
+      }
+      .deck strong { display: block; margin-bottom: 5px; font-size: 18px; }
+      .meta { font-size: 13px; font-weight: 700; }
+      .sections { margin-top: 10px; }
+      .section-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        min-height: 48px;
+        padding: 0 12px;
+      }
+      .section-row strong { font-size: 15px; }
+      .study-top {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+      .study-title h4 { margin: 0; font-size: 27px; }
+      .controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+      .memory-card {
+        position: relative;
+        display: grid;
+        grid-template-columns: 36px minmax(0, 1fr);
+        gap: 12px;
+        min-height: 118px;
+        padding: 14px 72px 14px 14px;
+      }
+      .num {
+        width: 34px; height: 34px;
+        display: grid; place-items: center;
+        border-radius: 999px;
+        font-weight: 920;
+      }
+      .card-actions {
+        position: absolute;
+        top: 14px; right: 10px;
+        display: flex; gap: 4px;
+      }
+      .card-actions .icon-btn { width: 28px; height: 28px; font-size: 15px; }
+      .prompt { display: block; margin-bottom: 10px; font-size: 21px; font-weight: 920; line-height: 1.38; }
+      .line { font-size: 19px; line-height: 1.9; word-break: keep-all; overflow-wrap: anywhere; }
+      .blank {
+        display: inline-grid;
+        place-items: center;
+        min-width: 8ch;
+        max-width: 100%;
+        min-height: 2.05em;
+        padding: .22em .8em;
+        border-radius: 10px;
+        color: transparent;
+        font-weight: 920;
+        line-height: 1.65;
+        vertical-align: baseline;
+      }
+      .blank::before { content: attr(data-answer); visibility: hidden; }
+      .blank.full { display: grid; width: 100%; margin-top: 8px; }
+      .group-title { display: block; margin-bottom: 10px; font-size: 21px; font-weight: 920; }
+      .group-line { font-size: 18px; line-height: 2.05; }
+      .badge { display: inline-flex; align-items: center; min-height: 26px; padding: 0 8px; border-radius: 999px; font-size: 12px; font-weight: 860; }
+      .progress { height: 8px; border-radius: 999px; overflow: hidden; margin-top: 10px; }
+      .progress span { display: block; height: 100%; border-radius: inherit; }
+
+      .a1 .phone { background: #f5f5f7; border: 1px solid rgba(0,0,0,.06); box-shadow: 0 26px 78px rgba(30,30,40,.13); }
+      .a1 .screen { background: linear-gradient(180deg, #fbfbfd 0%, #f0f0f5 100%); }
+      .a1 .eyebrow, .a1 .meta { color: #6e6e73; }
+      .a1 .title, .a1 .prompt, .a1 .group-title, .a1 .deck strong { color: #1d1d1f; }
+      .a1 .btn, .a1 .pill.active { color: #fff; background: #007aff; border-radius: 14px; box-shadow: 0 8px 18px rgba(0,122,255,.16); }
+      .a1 .pill, .a1 .icon-btn { color: #1d1d1f; background: rgba(255,255,255,.72); border: 1px solid rgba(255,255,255,.92); border-radius: 14px; backdrop-filter: blur(18px) saturate(1.15); }
+      .a1 .deck, .a1 .memory-card { background: rgba(255,255,255,.70); border: 1px solid rgba(255,255,255,.92); border-radius: 22px; box-shadow: 0 14px 34px rgba(45,45,60,.075); backdrop-filter: blur(22px) saturate(1.12); }
+      .a1 .section-row { background: rgba(255,255,255,.52); border: 1px solid rgba(255,255,255,.78); border-radius: 18px; }
+      .a1 .num { color: #007aff; background: rgba(0,122,255,.12); }
+      .a1 .blank { background: rgba(230,230,235,.72); border: 1px solid rgba(200,200,208,.64); }
+      .a1 .badge { color: #007aff; background: rgba(0,122,255,.12); }
+      .a1 .progress { background: rgba(60,60,67,.13); } .a1 .progress span { background: #007aff; }
+
+      .a2 .phone { background: #eef5ff; border: 1px solid rgba(120,150,195,.20); box-shadow: 0 30px 86px rgba(70,100,150,.16); }
+      .a2 .screen { background: radial-gradient(circle at 82% 0%, rgba(0,122,255,.22), transparent 34%), radial-gradient(circle at 8% 18%, rgba(180,215,255,.22), transparent 28%), linear-gradient(180deg, #fbfdff, #edf5ff); }
+      .a2 .eyebrow, .a2 .meta { color: #657386; }
+      .a2 .title, .a2 .prompt, .a2 .group-title, .a2 .deck strong { color: #142033; }
+      .a2 .btn, .a2 .pill.active { color: #fff; background: linear-gradient(180deg, #4f9cff, #007aff); border-radius: 18px; box-shadow: inset 0 1px 0 rgba(255,255,255,.28), 0 12px 26px rgba(0,122,255,.20); }
+      .a2 .pill, .a2 .icon-btn { color: #142033; background: rgba(255,255,255,.58); border: 1px solid rgba(255,255,255,.86); border-radius: 18px; backdrop-filter: blur(24px) saturate(1.32); }
+      .a2 .deck, .a2 .memory-card { background: rgba(255,255,255,.54); border: 1px solid rgba(255,255,255,.86); border-radius: 26px; box-shadow: inset 0 1px 0 rgba(255,255,255,.64), 0 18px 42px rgba(70,100,150,.115); backdrop-filter: blur(28px) saturate(1.32); }
+      .a2 .section-row { background: rgba(255,255,255,.40); border: 1px solid rgba(255,255,255,.72); border-radius: 20px; }
+      .a2 .num { color: #007aff; background: rgba(255,255,255,.66); box-shadow: inset 0 1px 0 rgba(255,255,255,.86); }
+      .a2 .blank { background: rgba(255,255,255,.50); border: 1px solid rgba(255,255,255,.78); box-shadow: inset 0 1px 0 rgba(255,255,255,.62); }
+      .a2 .badge { color: #007aff; background: rgba(255,255,255,.58); }
+      .a2 .progress { background: rgba(255,255,255,.58); } .a2 .progress span { background: linear-gradient(90deg, #007aff, #88bdff); }
+
+      .a3 .phone { background: #fafafa; border: 1px solid rgba(0,0,0,.045); box-shadow: 0 34px 92px rgba(35,38,48,.16); }
+      .a3 .screen { background: linear-gradient(180deg, #ffffff, #f3f4f7); }
+      .a3 .eyebrow, .a3 .meta { color: #70747c; }
+      .a3 .title, .a3 .prompt, .a3 .group-title, .a3 .deck strong { color: #15161a; }
+      .a3 .btn, .a3 .pill.active { color: #fff; background: #1c1c1e; border-radius: 16px; box-shadow: 0 10px 24px rgba(0,0,0,.16); }
+      .a3 .pill, .a3 .icon-btn { color: #15161a; background: rgba(255,255,255,.82); border: 1px solid rgba(235,236,240,.95); border-radius: 16px; backdrop-filter: blur(16px); box-shadow: 0 8px 20px rgba(30,34,45,.055); }
+      .a3 .deck, .a3 .memory-card { background: rgba(255,255,255,.86); border: 1px solid rgba(232,234,240,.92); border-radius: 24px; box-shadow: 0 22px 48px rgba(32,36,48,.11); backdrop-filter: blur(16px); }
+      .a3 .section-row { background: rgba(255,255,255,.70); border: 1px solid rgba(232,234,240,.86); border-radius: 18px; box-shadow: 0 10px 24px rgba(32,36,48,.045); }
+      .a3 .num { color: #1c1c1e; background: #f0f1f5; }
+      .a3 .blank { background: #eef0f4; border: 1px solid #dfe2e8; }
+      .a3 .badge { color: #1c1c1e; background: #f0f1f5; }
+      .a3 .progress { background: #e5e7ec; } .a3 .progress span { background: #1c1c1e; }
+
+      .a4 .phone { background: #f8f8fb; border: 1px solid rgba(190,194,205,.28); box-shadow: 0 30px 86px rgba(65,70,90,.14); }
+      .a4 .screen { background: radial-gradient(circle at 50% -8%, rgba(255,255,255,.95), transparent 35%), linear-gradient(180deg, #fdfdff, #f0f1f6); }
+      .a4 .eyebrow, .a4 .meta { color: #737883; }
+      .a4 .title, .a4 .prompt, .a4 .group-title, .a4 .deck strong { color: #1c1c1e; }
+      .a4 .btn, .a4 .pill.active { color: #fff; background: rgba(28,28,30,.92); border-radius: 999px; box-shadow: inset 0 1px 0 rgba(255,255,255,.18), 0 10px 24px rgba(28,28,30,.14); }
+      .a4 .pill, .a4 .icon-btn { color: #1c1c1e; background: rgba(255,255,255,.62); border: 1px solid rgba(255,255,255,.94); border-radius: 999px; backdrop-filter: blur(30px) saturate(1.22); }
+      .a4 .deck, .a4 .memory-card { background: linear-gradient(180deg, rgba(255,255,255,.72), rgba(255,255,255,.52)); border: 1px solid rgba(255,255,255,.98); border-radius: 28px; box-shadow: inset 0 1px 0 rgba(255,255,255,.70), 0 18px 44px rgba(65,70,90,.10); backdrop-filter: blur(32px) saturate(1.22); }
+      .a4 .section-row { background: rgba(255,255,255,.44); border: 1px solid rgba(255,255,255,.80); border-radius: 22px; }
+      .a4 .num { color: #1c1c1e; background: rgba(255,255,255,.70); box-shadow: inset 0 1px 0 rgba(255,255,255,.92); }
+      .a4 .blank { background: rgba(245,246,249,.66); border: 1px solid rgba(255,255,255,.86); box-shadow: inset 0 1px 0 rgba(255,255,255,.78); }
+      .a4 .badge { color: #1c1c1e; background: rgba(255,255,255,.62); }
+      .a4 .progress { background: rgba(210,214,222,.42); } .a4 .progress span { background: rgba(28,28,30,.92); }
+
+      .capture-page {
+        width: 430px;
+        height: 720px;
+        min-height: 720px;
+        padding: 0;
+        overflow: hidden;
+      }
+      .capture-page .capture-wrap { width: 430px; height: 720px; min-height: 720px; overflow: hidden; }
+      .capture-page .phone { max-width: none; width: 430px; height: 720px; min-height: 720px; border-radius: 0; margin: 0; box-shadow: none; }
+      .capture-page .screen { height: 720px; min-height: 720px; }
+      .capture-page.a1 { background: #f0f0f5; }
+      .capture-page.a2 { background: #edf5ff; }
+      .capture-page.a3 { background: #f3f4f7; }
+      .capture-page.a4 { background: #f0f1f6; }
+
+      @media (max-width: 760px) {
+        body { padding: 16px; }
+        .pair { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>4A 기반 iOS Light UI 4안</h1>
+    <p class="lead">UX와 컴포넌트 배치는 그대로 두고, 밝고 깨끗한 iOS 스타일 안에서 그림자, 반투명, 유리 효과의 강도만 다르게 적용했습니다.</p>
+
+    <section class="option a1">
+      <h2>4A-1. Soft Grouped Glass</h2>
+      <p>iOS 설정앱의 밝은 그룹 카드 느낌을 유지하면서, 얕은 유리감과 아주 부드러운 그림자만 더했습니다.</p>
+      <div class="pair"><div class="shot"><h3>첫화면</h3><div data-shot="home"></div></div><div class="shot"><h3>암기화면</h3><div data-shot="study"></div></div></div>
+    </section>
+    <section class="option a2">
+      <h2>4A-2. Clean Blue Frosted</h2>
+      <p>밝은 흰 배경에 은은한 블루 틴트와 frosted glass 질감을 넣은 가장 iOS다운 파란 계열입니다.</p>
+      <div class="pair"><div class="shot"><h3>첫화면</h3><div data-shot="home"></div></div><div class="shot"><h3>암기화면</h3><div data-shot="study"></div></div></div>
+    </section>
+    <section class="option a3">
+      <h2>4A-3. Floating White Layers</h2>
+      <p>화이트 카드가 살짝 떠 있는 느낌을 강조했습니다. 반투명보다 정돈된 그림자와 선명한 레이어감 중심입니다.</p>
+      <div class="pair"><div class="shot"><h3>첫화면</h3><div data-shot="home"></div></div><div class="shot"><h3>암기화면</h3><div data-shot="study"></div></div></div>
+    </section>
+    <section class="option a4">
+      <h2>4A-4. Polished Liquid White</h2>
+      <p>가장 유리 효과가 강한 밝은 시안입니다. 둥근 캡슐 버튼과 고광택 반투명 패널을 사용했습니다.</p>
+      <div class="pair"><div class="shot"><h3>첫화면</h3><div data-shot="home"></div></div><div class="shot"><h3>암기화면</h3><div data-shot="study"></div></div></div>
+    </section>
+
+    <template id="home-template">
+      <div class="phone">
+        <div class="screen">
+          <div class="top">
+            <div>
+              <p class="eyebrow">내 암기장</p>
+              <h4 class="title">오늘 외울 목록</h4>
+            </div>
+            <button class="btn">새 암기장</button>
+          </div>
+          <div class="deck-list">
+            <div class="deck">
+              <div>
+                <strong>한방 시험</strong>
+                <span class="meta">4개 세부 암기장 · 86문항</span>
+                <div class="progress"><span style="width: 67%"></span></div>
+              </div>
+              <span class="pill active">선택됨</span>
+            </div>
+            <div class="sections">
+              <div class="section-row"><strong>경혈</strong><span class="meta">24문항</span></div>
+              <div class="section-row"><strong>방제</strong><span class="meta">18문항</span></div>
+              <div class="section-row"><strong>본초</strong><span class="meta">21문항</span></div>
+            </div>
+            <div class="deck">
+              <div>
+                <strong>한국사</strong>
+                <span class="meta">3개 세부 암기장 · 52문항</span>
+                <div class="progress"><span style="width: 38%"></span></div>
+              </div>
+              <span class="pill">열기</span>
+            </div>
+            <div class="deck">
+              <div>
+                <strong>영어 단어</strong>
+                <span class="meta">2개 세부 암기장 · 120문항</span>
+                <div class="progress"><span style="width: 44%"></span></div>
+              </div>
+              <span class="pill">열기</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <template id="study-template">
+      <div class="phone">
+        <div class="screen">
+          <div class="study-top">
+            <button class="icon-btn">‹</button>
+            <div class="study-title">
+              <p class="eyebrow">한방 시험 / 경혈</p>
+              <h4>암기</h4>
+            </div>
+            <button class="btn">편집</button>
+          </div>
+          <div class="controls">
+            <span class="pill active">셔플 ON</span>
+            <span class="pill">별표 우선</span>
+            <span class="badge">별표 4</span>
+          </div>
+          <div class="card-list">
+            <div class="memory-card">
+              <span class="num">1</span>
+              <div>
+                <span class="prompt">족양명위경의 오수혈 :</span>
+                <div class="line"><span class="blank" data-answer="여태"></span>, <span class="blank" data-answer="내정"></span>, <span class="blank" data-answer="함곡"></span></div>
+              </div>
+              <div class="card-actions"><button class="icon-btn">☆</button><button class="icon-btn">⌫</button></div>
+            </div>
+            <div class="memory-card">
+              <span class="num">2</span>
+              <div>
+                <span class="prompt">대장의 복모혈</span>
+                <span class="blank full" data-answer="천추"></span>
+              </div>
+              <div class="card-actions"><button class="icon-btn">★</button><button class="icon-btn">⌫</button></div>
+            </div>
+            <div class="memory-card">
+              <span class="num">3</span>
+              <div>
+                <span class="group-title">커피의 3가지 분류</span>
+                <div class="group-line">1. <span class="blank" data-answer="아메리카노"></span> : 아주 <span class="blank" data-answer="오래된"></span> 커피</div>
+                <div class="group-line">2. <span class="blank" data-answer="에스프레소"></span> : 아주 <span class="blank" data-answer="쓴"></span> 커피</div>
+              </div>
+              <div class="card-actions"><button class="icon-btn">☆</button><button class="icon-btn">⌫</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <script>
+      const home = document.querySelector("#home-template").innerHTML;
+      const study = document.querySelector("#study-template").innerHTML;
+      const params = new URLSearchParams(location.search);
+      const style = params.get("style");
+      const screen = params.get("screen");
+      if (style && screen) {
+        document.body.className = `capture-page ${style}`;
+        document.body.innerHTML = `<main class="capture-wrap ${style}">${screen === "study" ? study : home}</main>`;
+      } else {
+        document.querySelectorAll('[data-shot="home"]').forEach((node) => { node.outerHTML = home; });
+        document.querySelectorAll('[data-shot="study"]').forEach((node) => { node.outerHTML = study; });
+      }
+    </script>
+  </body>
+</html>

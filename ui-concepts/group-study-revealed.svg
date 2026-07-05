@@ -1,0 +1,45 @@
+
+  <svg width="1280" height="900" viewBox="0 0 1280 900" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1280" height="900" fill="#f7f6f1"/>
+    <rect x="60" y="48" width="1160" height="76" rx="8" fill="#fffefa" stroke="#d8d3c6"/>
+    <text x="88" y="80" font-family="Arial, Noto Sans KR, sans-serif" font-size="18" font-weight="800" fill="#69717b" text-anchor="start">공유코드</text>
+    <text x="88" y="108" font-family="Arial, Noto Sans KR, sans-serif" font-size="26" font-weight="950" fill="#182029" text-anchor="start">coffee-test</text>
+    <rect x="910" y="68" width="150" height="38" rx="19" fill="#fffefa" stroke="#d8d3c6"/>
+    <text x="985" y="94" font-family="Arial, Noto Sans KR, sans-serif" font-size="17" font-weight="800" fill="#314b58" text-anchor="middle">클라우드 저장</text>
+    <rect x="1078" y="66" width="96" height="42" rx="8" fill="#fffefa" stroke="#d8d3c6"/>
+    <text x="1126" y="94" font-family="Arial, Noto Sans KR, sans-serif" font-size="17" font-weight="850" fill="#182029" text-anchor="middle">코드 변경</text>
+    <text x="70" y="184" font-family="Arial, Noto Sans KR, sans-serif" font-size="36" font-weight="950" fill="#182029" text-anchor="start">암기모드 예상: 답 공개 상태</text>
+    <text x="70" y="220" font-family="Arial, Noto Sans KR, sans-serif" font-size="20" font-weight="750" fill="#69717b" text-anchor="start">가림 상태에서 이미 답 높이를 예약하므로 공개해도 카드가 밀리지 않습니다.</text>
+    
+    <rect x="70" y="258" width="1140" height="438" rx="8" fill="#fffefa" stroke="#d8d3c6"/>
+    <circle cx="112" cy="312" r="29" fill="#e7eef0"/>
+    <text x="112" y="322" font-family="Arial, Noto Sans KR, sans-serif" font-size="22" font-weight="950" fill="#314b58" text-anchor="middle">1</text>
+    <text x="162" y="322" font-family="Arial, Noto Sans KR, sans-serif" font-size="31" font-weight="950" fill="#182029" text-anchor="start">커피의 3가지 분류</text>
+    <rect x="1068" y="282" width="52" height="52" rx="8" fill="#fffefa" stroke="#d8d3c6"/>
+    <text x="1094" y="319" font-family="Arial, Noto Sans KR, sans-serif" font-size="34" font-weight="900" fill="#182029" text-anchor="middle">☆</text>
+    <rect x="1134" y="282" width="52" height="52" rx="8" fill="#fffefa" stroke="#d8d3c6"/>
+    <text x="1160" y="316" font-family="Arial, Noto Sans KR, sans-serif" font-size="28" font-weight="900" fill="#182029" text-anchor="middle">⌫</text>
+    <text x="164" y="394" font-family="Arial, Noto Sans KR, sans-serif" font-size="27" font-weight="780" fill="#182029" text-anchor="start">- 아메리카노: 아주</text>
+    <rect x="422" y="360" width="150" height="60" rx="8" fill="#314b58"/>
+  <text x="497" y="398" font-family="Arial, Noto Sans KR, sans-serif" font-size="23" font-weight="950" fill="#fffefa" text-anchor="middle">오래된</text>
+    <text x="592" y="394" font-family="Arial, Noto Sans KR, sans-serif" font-size="27" font-weight="780" fill="#182029" text-anchor="start">커피</text>
+    <text x="164" y="474" font-family="Arial, Noto Sans KR, sans-serif" font-size="27" font-weight="780" fill="#182029" text-anchor="start">- </text>
+    <rect x="194" y="440" width="164" height="60" rx="8" fill="#314b58"/>
+  <text x="276" y="478" font-family="Arial, Noto Sans KR, sans-serif" font-size="23" font-weight="950" fill="#fffefa" text-anchor="middle">카페라떼</text>
+    <text x="374" y="474" font-family="Arial, Noto Sans KR, sans-serif" font-size="27" font-weight="780" fill="#182029" text-anchor="start">: 아주</text>
+    <rect x="462" y="440" width="150" height="60" rx="8" fill="#314b58"/>
+  <text x="537" y="478" font-family="Arial, Noto Sans KR, sans-serif" font-size="23" font-weight="950" fill="#fffefa" text-anchor="middle">맛있는</text>
+    <text x="632" y="474" font-family="Arial, Noto Sans KR, sans-serif" font-size="27" font-weight="780" fill="#182029" text-anchor="start">커피</text>
+    <text x="164" y="554" font-family="Arial, Noto Sans KR, sans-serif" font-size="27" font-weight="780" fill="#182029" text-anchor="start">- 우유 : 아주</text>
+    <rect x="354" y="520" width="128" height="60" rx="8" fill="#314b58"/>
+  <text x="418" y="558" font-family="Arial, Noto Sans KR, sans-serif" font-size="23" font-weight="950" fill="#fffefa" text-anchor="middle">하얀</text>
+    <text x="502" y="554" font-family="Arial, Noto Sans KR, sans-serif" font-size="27" font-weight="780" fill="#182029" text-anchor="start">음료</text>
+    <rect x="70" y="724" width="1140" height="92" rx="8" fill="#fffefa" stroke="#d8d3c6"/>
+    <text x="162" y="780" font-family="Arial, Noto Sans KR, sans-serif" font-size="28" font-weight="900" fill="#69717b" text-anchor="start">다음 카드</text>
+    <clipPath id="m930744"><rect x="930" y="744" width="170" height="52" rx="8"/></clipPath>
+  <rect x="930" y="744" width="170" height="52" rx="8" fill="#f0eee7" stroke="#d8d3c6"/>
+  <g clip-path="url(#m930744)">
+    <rect x="930" y="744" width="12" height="52" fill="#d0c9bb"/><rect x="952" y="744" width="12" height="52" fill="#d0c9bb"/><rect x="974" y="744" width="12" height="52" fill="#d0c9bb"/><rect x="996" y="744" width="12" height="52" fill="#d0c9bb"/><rect x="1018" y="744" width="12" height="52" fill="#d0c9bb"/><rect x="1040" y="744" width="12" height="52" fill="#d0c9bb"/><rect x="1062" y="744" width="12" height="52" fill="#d0c9bb"/><rect x="1084" y="744" width="12" height="52" fill="#d0c9bb"/><rect x="1106" y="744" width="12" height="52" fill="#d0c9bb"/><rect x="1128" y="744" width="12" height="52" fill="#d0c9bb"/><rect x="1150" y="744" width="12" height="52" fill="#d0c9bb"/><rect x="1172" y="744" width="12" height="52" fill="#d0c9bb"/><rect x="1194" y="744" width="12" height="52" fill="#d0c9bb"/><rect x="1216" y="744" width="12" height="52" fill="#d0c9bb"/><rect x="1238" y="744" width="12" height="52" fill="#d0c9bb"/><rect x="1260" y="744" width="12" height="52" fill="#d0c9bb"/>
+  </g>
+  
+  </svg>

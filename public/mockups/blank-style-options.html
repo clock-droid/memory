@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>가림막 디자인 5가지 시안</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 28px;
+        color: #171f2a;
+        background: #f7f6f1;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 30px;
+        letter-spacing: 0;
+      }
+
+      .lead {
+        margin: 0 0 26px;
+        color: #69717b;
+        line-height: 1.55;
+      }
+
+      .grid {
+        display: grid;
+        gap: 22px;
+      }
+
+      .option {
+        padding: 22px;
+        border: 1px solid #d8d3c6;
+        border-radius: 8px;
+        background: #fffefa;
+      }
+
+      .option h2 {
+        margin: 0 0 5px;
+        font-size: 22px;
+      }
+
+      .option p {
+        margin: 0 0 18px;
+        color: #69717b;
+        line-height: 1.45;
+      }
+
+      .card {
+        display: grid;
+        grid-template-columns: 42px minmax(0, 1fr) auto;
+        gap: 14px;
+        align-items: start;
+        padding: 16px;
+        border: 1px solid #d8d3c6;
+        border-radius: 8px;
+        background: #fffefa;
+      }
+
+      .num {
+        width: 34px;
+        height: 34px;
+        display: grid;
+        place-items: center;
+        border-radius: 999px;
+        color: #314b58;
+        background: #e7eef0;
+        font-weight: 950;
+      }
+
+      .actions {
+        display: flex;
+        gap: 8px;
+      }
+
+      .icon {
+        width: 42px;
+        height: 42px;
+        display: grid;
+        place-items: center;
+        border: 1px solid #d8d3c6;
+        border-radius: 8px;
+        font-size: 24px;
+      }
+
+      .body {
+        min-width: 0;
+      }
+
+      .pair {
+        display: grid;
+        grid-template-columns: fit-content(32ch) minmax(8ch, max-content);
+        column-gap: clamp(14px, 4vw, 48px);
+        align-items: baseline;
+        margin-bottom: 18px;
+      }
+
+      .prompt,
+      .title {
+        font-weight: 950;
+      }
+
+      .prompt {
+        font-size: 23px;
+      }
+
+      .title {
+        margin-bottom: 12px;
+        font-size: 24px;
+      }
+
+      .list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .item {
+        display: grid;
+        grid-template-columns: 2.2em minmax(0, 1fr);
+        gap: 10px;
+        align-items: baseline;
+        font-size: 21px;
+        line-height: 1.8;
+      }
+
+      .marker {
+        color: #69717b;
+        font-weight: 950;
+      }
+
+      .blank {
+        display: inline-grid;
+        place-items: center;
+        min-width: 4.6ch;
+        max-width: min(70vw, 24em);
+        min-height: 1.45em;
+        margin: 0 2px;
+        padding: 0 0.45em;
+        vertical-align: baseline;
+        color: transparent;
+        font-weight: 900;
+        line-height: 1.25;
+        white-space: normal;
+      }
+
+      .blank.wide {
+        min-width: 14ch;
+      }
+
+      .blank.long {
+        width: 23ch;
+        min-height: 3.05em;
+      }
+
+      .blank::before {
+        content: attr(data-answer);
+        visibility: hidden;
+        grid-area: 1 / 1;
+      }
+
+      .style-1 .blank {
+        border: 1px solid #d8d3c6;
+        border-radius: 7px;
+        background: #ebe6dc;
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+      }
+
+      .style-2 .blank {
+        border: 0;
+        border-bottom: 4px solid #b8ad9c;
+        border-radius: 0;
+        background: transparent;
+      }
+
+      .style-3 .blank {
+        border: 1px solid #c9d7d9;
+        border-radius: 999px;
+        background: #edf5f5;
+        box-shadow: inset 0 -2px 0 rgba(49, 75, 88, 0.12);
+      }
+
+      .style-4 .blank {
+        border: 1px dashed #b7ac9a;
+        border-radius: 7px;
+        background: #fbfaf5;
+      }
+
+      .style-5 .blank {
+        border: 1px solid #d3c7b0;
+        border-radius: 6px;
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.38), rgba(255, 255, 255, 0)),
+          #e7dfd0;
+        box-shadow: 0 1px 0 rgba(27, 32, 40, 0.06);
+      }
+
+      .note {
+        margin-top: 14px;
+        padding: 12px 14px;
+        border-radius: 8px;
+        background: #f7f6f1;
+        color: #49535f;
+        font-size: 15px;
+        line-height: 1.45;
+      }
+
+      @media (max-width: 760px) {
+        body {
+          padding: 16px;
+        }
+
+        .card {
+          grid-template-columns: 36px minmax(0, 1fr);
+        }
+
+        .actions {
+          grid-column: 2;
+          justify-content: flex-end;
+        }
+
+        .pair {
+          grid-template-columns: 1fr;
+          row-gap: 8px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>가림막 디자인 5가지 시안</h1>
+    <p class="lead">
+      같은 A:B 카드와 목록형 카드를 기준으로 비교합니다. 줄무늬는 전부 제거했고, 긴 답은 두 줄 높이까지 확보되는 예시를 포함했습니다.
+    </p>
+
+    <main class="grid">
+      <section class="option style-1">
+        <h2>시안 1. 기본 연베이지 칩</h2>
+        <p>가장 무난합니다. 현재 톤과 잘 맞고, 클릭 가능한 빈칸이라는 인식이 쉽습니다.</p>
+        <div class="card">
+          <div class="num">1</div>
+          <div class="body">
+            <div class="pair"><span class="prompt">A는</span><span class="blank wide" data-answer="탄핵소추 의결기관"></span></div>
+            <div class="title">커피의 3가지 분류</div>
+            <div class="list">
+              <div class="item"><span class="marker">1.</span><span><span class="blank" data-answer="아메리카노"></span> : 아주 <span class="blank" data-answer="오래된"></span> 커피</span></div>
+              <div class="item"><span class="marker">2.</span><span><span class="blank" data-answer="카페라떼"></span> : 아주 <span class="blank" data-answer="맛있는"></span> 커피</span></div>
+              <div class="item"><span class="marker">3.</span><span>카페라떼 : <span class="blank long" data-answer="우유가 많이 들어가고 부드러운 맛이 나는"></span> 커피</span></div>
+            </div>
+          </div>
+          <div class="actions"><div class="icon">☆</div><div class="icon">⌫</div></div>
+        </div>
+        <div class="note">추천도 높음. 버튼처럼 보이면서도 너무 튀지 않는 균형안입니다.</div>
+      </section>
+
+      <section class="option style-2">
+        <h2>시안 2. 밑줄 빈칸형</h2>
+        <p>시험지 빈칸 느낌입니다. 가장 가볍고 문장 흐름을 덜 방해합니다.</p>
+        <div class="card">
+          <div class="num">2</div>
+          <div class="body">
+            <div class="pair"><span class="prompt">A는</span><span class="blank wide" data-answer="탄핵소추 의결기관"></span></div>
+            <div class="title">커피의 3가지 분류</div>
+            <div class="list">
+              <div class="item"><span class="marker">1.</span><span><span class="blank" data-answer="아메리카노"></span> : 아주 <span class="blank" data-answer="오래된"></span> 커피</span></div>
+              <div class="item"><span class="marker">2.</span><span><span class="blank" data-answer="카페라떼"></span> : 아주 <span class="blank" data-answer="맛있는"></span> 커피</span></div>
+              <div class="item"><span class="marker">3.</span><span>카페라떼 : <span class="blank long" data-answer="우유가 많이 들어가고 부드러운 맛이 나는"></span> 커피</span></div>
+            </div>
+          </div>
+          <div class="actions"><div class="icon">☆</div><div class="icon">⌫</div></div>
+        </div>
+        <div class="note">가독성은 좋지만 클릭 영역이 조금 덜 명확합니다.</div>
+      </section>
+
+      <section class="option style-3">
+        <h2>시안 3. 옅은 청록 알약형</h2>
+        <p>빈칸이 더 명확하게 보입니다. 별표/셔플의 청록 톤과도 연결됩니다.</p>
+        <div class="card">
+          <div class="num">3</div>
+          <div class="body">
+            <div class="pair"><span class="prompt">A는</span><span class="blank wide" data-answer="탄핵소추 의결기관"></span></div>
+            <div class="title">커피의 3가지 분류</div>
+            <div class="list">
+              <div class="item"><span class="marker">1.</span><span><span class="blank" data-answer="아메리카노"></span> : 아주 <span class="blank" data-answer="오래된"></span> 커피</span></div>
+              <div class="item"><span class="marker">2.</span><span><span class="blank" data-answer="카페라떼"></span> : 아주 <span class="blank" data-answer="맛있는"></span> 커피</span></div>
+              <div class="item"><span class="marker">3.</span><span>카페라떼 : <span class="blank long" data-answer="우유가 많이 들어가고 부드러운 맛이 나는"></span> 커피</span></div>
+            </div>
+          </div>
+          <div class="actions"><div class="icon">☆</div><div class="icon">⌫</div></div>
+        </div>
+        <div class="note">터치 대상이 뚜렷합니다. 다만 빈칸이 약간 UI스럽게 느껴질 수 있습니다.</div>
+      </section>
+
+      <section class="option style-4">
+        <h2>시안 4. 점선 박스형</h2>
+        <p>가려진 영역이라는 느낌이 강합니다. 학습지/체크리스트 느낌입니다.</p>
+        <div class="card">
+          <div class="num">4</div>
+          <div class="body">
+            <div class="pair"><span class="prompt">A는</span><span class="blank wide" data-answer="탄핵소추 의결기관"></span></div>
+            <div class="title">커피의 3가지 분류</div>
+            <div class="list">
+              <div class="item"><span class="marker">1.</span><span><span class="blank" data-answer="아메리카노"></span> : 아주 <span class="blank" data-answer="오래된"></span> 커피</span></div>
+              <div class="item"><span class="marker">2.</span><span><span class="blank" data-answer="카페라떼"></span> : 아주 <span class="blank" data-answer="맛있는"></span> 커피</span></div>
+              <div class="item"><span class="marker">3.</span><span>카페라떼 : <span class="blank long" data-answer="우유가 많이 들어가고 부드러운 맛이 나는"></span> 커피</span></div>
+            </div>
+          </div>
+          <div class="actions"><div class="icon">☆</div><div class="icon">⌫</div></div>
+        </div>
+        <div class="note">명확하지만 다소 산만할 수 있습니다. 경고/편집 UI와 겹쳐 보일 가능성이 있습니다.</div>
+      </section>
+
+      <section class="option style-5">
+        <h2>시안 5. 살짝 눌린 종이칩형</h2>
+        <p>가림막이 빈칸보다는 덮개처럼 보입니다. 질감은 있지만 줄무늬보다 차분합니다.</p>
+        <div class="card">
+          <div class="num">5</div>
+          <div class="body">
+            <div class="pair"><span class="prompt">A는</span><span class="blank wide" data-answer="탄핵소추 의결기관"></span></div>
+            <div class="title">커피의 3가지 분류</div>
+            <div class="list">
+              <div class="item"><span class="marker">1.</span><span><span class="blank" data-answer="아메리카노"></span> : 아주 <span class="blank" data-answer="오래된"></span> 커피</span></div>
+              <div class="item"><span class="marker">2.</span><span><span class="blank" data-answer="카페라떼"></span> : 아주 <span class="blank" data-answer="맛있는"></span> 커피</span></div>
+              <div class="item"><span class="marker">3.</span><span>카페라떼 : <span class="blank long" data-answer="우유가 많이 들어가고 부드러운 맛이 나는"></span> 커피</span></div>
+            </div>
+          </div>
+          <div class="actions"><div class="icon">☆</div><div class="icon">⌫</div></div>
+        </div>
+        <div class="note">개인적으로는 시안 1 다음으로 괜찮습니다. 조금 더 물성 있는 느낌입니다.</div>
+      </section>
+    </main>
+  </body>
+</html>

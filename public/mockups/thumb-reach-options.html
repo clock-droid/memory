@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>오른손 엄지 사용성 UI 시안</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 28px;
+        color: #171f2a;
+        background: #f7f6f1;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      h1 { margin: 0 0 8px; font-size: 30px; }
+      .lead { margin: 0 0 26px; color: #69717b; line-height: 1.55; }
+      .option {
+        margin-bottom: 28px;
+        padding: 22px;
+        border: 1px solid #d8d3c6;
+        border-radius: 8px;
+        background: #fffefa;
+      }
+      .option h2 { margin: 0 0 6px; font-size: 23px; }
+      .option > p { margin: 0 0 18px; color: #69717b; line-height: 1.5; }
+      .phone {
+        position: relative;
+        width: min(100%, 390px);
+        height: 720px;
+        overflow: hidden;
+        border: 1px solid #d8d3c6;
+        border-radius: 26px;
+        background: #fbfaf6;
+        box-shadow: 0 18px 50px rgba(27, 32, 40, 0.1);
+      }
+      .screen { height: 100%; padding: 18px 12px 24px; overflow: hidden; }
+      .top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin: 4px 4px 12px;
+      }
+      .back, .edit {
+        min-height: 36px;
+        padding: 0 12px;
+        border: 1px solid #d8d3c6;
+        border-radius: 8px;
+        background: #fffefa;
+        font-weight: 900;
+      }
+      .title { min-width: 0; }
+      .title p { margin: 0; color: #69717b; font-size: 12px; font-weight: 850; }
+      .title h3 { margin: 2px 0 0; font-size: 22px; }
+      .tools {
+        display: flex;
+        gap: 8px;
+        margin: 0 4px 12px;
+      }
+      .pill {
+        min-height: 34px;
+        padding: 0 12px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid #d8d3c6;
+        border-radius: 999px;
+        background: #fffefa;
+        font-size: 13px;
+        font-weight: 900;
+      }
+      .pill.active { color: #fffefa; background: #314b58; border-color: #314b58; }
+      .list { display: grid; gap: 10px; }
+      .card {
+        position: relative;
+        display: grid;
+        grid-template-columns: 34px minmax(0, 1fr);
+        gap: 12px;
+        align-items: start;
+        min-height: 116px;
+        padding: 14px 68px 14px 14px;
+        border: 1px solid #d8d3c6;
+        border-radius: 8px;
+        background: #fffefa;
+      }
+      .num {
+        width: 34px;
+        height: 34px;
+        display: grid;
+        place-items: center;
+        border-radius: 999px;
+        color: #314b58;
+        background: #e7eef0;
+        font-weight: 950;
+      }
+      .body { min-width: 0; }
+      .prompt {
+        display: block;
+        margin-bottom: 10px;
+        font-size: 21px;
+        font-weight: 950;
+        line-height: 1.38;
+      }
+      .blank {
+        display: block;
+        width: 100%;
+        min-height: 56px;
+        border: 1px solid #d8d3c6;
+        border-radius: 8px;
+        background: #ebe6dc;
+        box-shadow: inset 0 0 0 1px rgba(255,255,255,.45);
+      }
+      .blank.small {
+        width: 72%;
+        min-height: 42px;
+      }
+      .actions {
+        position: absolute;
+        top: 14px;
+        right: 10px;
+        display: flex;
+        gap: 4px;
+      }
+      .icon {
+        width: 28px;
+        height: 28px;
+        display: grid;
+        place-items: center;
+        border: 1px solid #d8d3c6;
+        border-radius: 8px;
+        background: #fffefa;
+        font-size: 18px;
+        font-weight: 900;
+      }
+      .thumb-zone {
+        position: absolute;
+        right: -78px;
+        bottom: 28px;
+        width: 250px;
+        height: 410px;
+        border-radius: 999px 0 0 999px;
+        background: rgba(214, 103, 77, .10);
+        border: 1px solid rgba(214, 103, 77, .2);
+        pointer-events: none;
+      }
+      .thumb-label {
+        position: absolute;
+        right: 18px;
+        bottom: 174px;
+        color: #9b4a36;
+        font-size: 12px;
+        font-weight: 900;
+      }
+      .right-tap {
+        position: absolute;
+        top: 52px;
+        right: 0;
+        bottom: 0;
+        width: 74px;
+        border-left: 1px dashed rgba(49,75,88,.22);
+        background: linear-gradient(90deg, rgba(49,75,88,0), rgba(49,75,88,.07));
+      }
+      .right-tap span {
+        position: absolute;
+        right: 10px;
+        top: 210px;
+        writing-mode: vertical-rl;
+        color: #314b58;
+        font-size: 13px;
+        font-weight: 950;
+      }
+      .card.right-open { padding-right: 88px; }
+      .card.right-open .blank { margin-right: -12px; width: calc(100% + 12px); }
+      .tap-button {
+        position: absolute;
+        right: 12px;
+        top: 52px;
+        bottom: 14px;
+        width: 52px;
+        display: grid;
+        place-items: center;
+        border: 1px solid #c7d5d7;
+        border-radius: 8px;
+        color: #314b58;
+        background: #edf5f5;
+        font-weight: 950;
+      }
+      .bottom-bar {
+        position: absolute;
+        left: 14px;
+        right: 14px;
+        bottom: 16px;
+        height: 62px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        padding: 8px;
+        border: 1px solid #d8d3c6;
+        border-radius: 16px;
+        background: rgba(255,254,250,.94);
+        box-shadow: 0 12px 28px rgba(27,32,40,.12);
+      }
+      .bottom-bar button {
+        border: 0;
+        border-radius: 12px;
+        color: #fffefa;
+        background: #314b58;
+        font-size: 15px;
+        font-weight: 950;
+      }
+      .bottom-bar button:last-child { color: #314b58; background: #edf5f5; }
+      .card.with-number-tap .num {
+        box-shadow: 0 0 0 8px rgba(49,75,88,.08);
+        background: #dbe9ec;
+      }
+      .tap-hint {
+        display: inline-block;
+        margin-top: 8px;
+        color: #69717b;
+        font-size: 12px;
+        font-weight: 850;
+      }
+      .overlay-answer {
+        position: absolute;
+        right: 12px;
+        left: 66px;
+        bottom: 16px;
+        padding: 14px;
+        border-radius: 10px;
+        color: #fffefa;
+        background: #314b58;
+        box-shadow: 0 18px 36px rgba(27,32,40,.2);
+        font-size: 19px;
+        font-weight: 900;
+        line-height: 1.55;
+      }
+      .note {
+        margin-top: 14px;
+        padding: 12px 14px;
+        border-radius: 8px;
+        background: #f7f6f1;
+        color: #49535f;
+        font-size: 15px;
+        line-height: 1.45;
+      }
+      @media (max-width: 760px) {
+        body { padding: 16px; }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>오른손 엄지 사용성 UI 시안</h1>
+    <p class="lead">오른손으로 잡고 엄지로 조작하는 상황을 기준으로, 미적 디자인을 크게 해치지 않으면서 답 공개를 쉽게 만드는 후보입니다. 붉은 영역은 대략적인 오른손 엄지 도달 영역입니다.</p>
+
+    <section class="option">
+      <h2>제안 1. 카드 오른쪽 탭 존</h2>
+      <p>가림막 자체를 누르지 않아도, 카드 오른쪽의 얇은 영역을 누르면 해당 카드의 답이 열립니다.</p>
+      <div class="phone">
+        <div class="thumb-zone"></div><div class="thumb-label">엄지 도달 쉬운 영역</div>
+        <div class="screen">
+          <div class="top"><button class="back">목록</button><div class="title"><p>한별 시험</p><h3>헌법</h3></div><button class="edit">편집</button></div>
+          <div class="tools"><span class="pill active">셔플</span><span class="pill">별표 우선</span></div>
+          <div class="list">
+            <div class="card right-open">
+              <div class="num">21</div><div class="body"><span class="prompt">ST14</span><span class="blank"></span></div>
+              <div class="actions"><div class="icon">☆</div><div class="icon">⌫</div></div>
+              <div class="right-tap"><span>탭해서 열기</span></div>
+            </div>
+            <div class="card right-open">
+              <div class="num">22</div><div class="body"><span class="prompt">족양명위경의 오수혈 :</span><span class="blank small"></span></div>
+              <div class="actions"><div class="icon">☆</div><div class="icon">⌫</div></div>
+              <div class="right-tap"><span>열기</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="note">추천도 높음. 디자인 변화가 작고, 사용자는 오른쪽을 톡 치면 됩니다. 단점은 오른쪽 영역의 의미를 처음에 알아야 합니다.</div>
+    </section>
+
+    <section class="option">
+      <h2>제안 2. 우측 세로 열기 버튼</h2>
+      <p>각 카드 오른쪽에 작고 명확한 열기 버튼을 둡니다. 답 가림막은 그대로 두고 조작 지점만 엄지 쪽으로 옮깁니다.</p>
+      <div class="phone">
+        <div class="thumb-zone"></div><div class="thumb-label">엄지 도달 쉬운 영역</div>
+        <div class="screen">
+          <div class="top"><button class="back">목록</button><div class="title"><p>한별 시험</p><h3>헌법</h3></div><button class="edit">편집</button></div>
+          <div class="list">
+            <div class="card" style="padding-right:78px">
+              <div class="num">21</div><div class="body"><span class="prompt">ST14</span><span class="blank"></span></div>
+              <div class="actions"><div class="icon">☆</div><div class="icon">⌫</div></div>
+              <div class="tap-button">열기</div>
+            </div>
+            <div class="card" style="padding-right:78px">
+              <div class="num">22</div><div class="body"><span class="prompt">족양명위경의 오수혈 :</span><span class="blank small"></span></div>
+              <div class="actions"><div class="icon">☆</div><div class="icon">⌫</div></div>
+              <div class="tap-button">열기</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="note">가장 직관적입니다. 다만 카드 오른쪽에 버튼이 하나 더 생겨서 약간 도구 느낌이 강해집니다.</div>
+    </section>
+
+    <section class="option">
+      <h2>제안 3. 하단 엄지 컨트롤 바</h2>
+      <p>현재 보고 있는 카드의 답 열기/다음 카드 이동을 하단 고정 바에서 합니다. 엄지 조작은 가장 편합니다.</p>
+      <div class="phone">
+        <div class="thumb-zone"></div><div class="thumb-label">엄지 도달 쉬운 영역</div>
+        <div class="screen">
+          <div class="top"><button class="back">목록</button><div class="title"><p>한별 시험</p><h3>헌법</h3></div><button class="edit">편집</button></div>
+          <div class="list">
+            <div class="card">
+              <div class="num">21</div><div class="body"><span class="prompt">ST14</span><span class="blank"></span><span class="tap-hint">선택된 카드</span></div>
+              <div class="actions"><div class="icon">☆</div><div class="icon">⌫</div></div>
+            </div>
+            <div class="card" style="opacity:.62">
+              <div class="num">22</div><div class="body"><span class="prompt">ST15</span><span class="blank"></span></div>
+              <div class="actions"><div class="icon">☆</div><div class="icon">⌫</div></div>
+            </div>
+          </div>
+          <div class="bottom-bar"><button>답 보기</button><button>다음</button></div>
+        </div>
+      </div>
+      <div class="note">엄지는 제일 편합니다. 단점은 리스트형 암기 흐름에서 “현재 선택 카드” 개념이 필요해져 UX가 조금 바뀝니다.</div>
+    </section>
+
+    <section class="option">
+      <h2>제안 4. 번호 원형 버튼도 답 열기</h2>
+      <p>왼쪽 번호를 탭해도 답이 열리게 합니다. 오른쪽 엄지는 아니지만, 가림막보다 훨씬 큰 터치 영역을 제공합니다.</p>
+      <div class="phone">
+        <div class="screen">
+          <div class="top"><button class="back">목록</button><div class="title"><p>한별 시험</p><h3>헌법</h3></div><button class="edit">편집</button></div>
+          <div class="list">
+            <div class="card with-number-tap">
+              <div class="num">21</div><div class="body"><span class="prompt">ST14</span><span class="blank"></span><span class="tap-hint">번호 또는 빈칸 탭</span></div>
+              <div class="actions"><div class="icon">☆</div><div class="icon">⌫</div></div>
+            </div>
+            <div class="card with-number-tap">
+              <div class="num">22</div><div class="body"><span class="prompt">족양명위경의 오수혈 :</span><span class="blank small"></span><span class="tap-hint">번호 또는 빈칸 탭</span></div>
+              <div class="actions"><div class="icon">☆</div><div class="icon">⌫</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="note">디자인 변화가 거의 없습니다. 하지만 오른손 엄지 기준으로는 왼쪽 번호가 멀 수 있습니다.</div>
+    </section>
+
+    <section class="option">
+      <h2>제안 5. 오른쪽 탭 + 답 오버레이</h2>
+      <p>오른쪽을 탭하면 카드 안에서 답이 아래에 오버레이처럼 뜹니다. 긴 답을 읽기 쉽고 원래 빈칸 위치는 유지됩니다.</p>
+      <div class="phone">
+        <div class="thumb-zone"></div><div class="thumb-label">엄지 도달 쉬운 영역</div>
+        <div class="screen">
+          <div class="top"><button class="back">목록</button><div class="title"><p>한별 시험</p><h3>헌법</h3></div><button class="edit">편집</button></div>
+          <div class="list">
+            <div class="card right-open" style="min-height:190px">
+              <div class="num">21</div><div class="body"><span class="prompt">ST14</span><span class="blank"></span></div>
+              <div class="actions"><div class="icon">☆</div><div class="icon">⌫</div></div>
+              <div class="right-tap"><span>열기</span></div>
+              <div class="overlay-answer">庫房(고방). 창고 방이라는 뜻입니다. 흉부의 기혈이 모이는 곳입니다.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="note">긴 답 가독성은 좋습니다. 단점은 화면이 조금 더 앱스럽고, 오버레이가 과하게 느껴질 수 있습니다.</div>
+    </section>
+  </body>
+</html>

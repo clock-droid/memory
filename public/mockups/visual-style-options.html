@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>암기장 UI 비주얼 스타일 시안</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 28px;
+        color: #17202a;
+        background: #f3f4f6;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      h1 { margin: 0 0 8px; font-size: 30px; letter-spacing: 0; }
+      .lead { margin: 0 0 26px; color: #667085; line-height: 1.55; }
+      .option {
+        margin-bottom: 34px;
+        padding: 22px;
+        border: 1px solid #d9dee7;
+        border-radius: 12px;
+        background: #fff;
+      }
+      .option > h2 { margin: 0 0 6px; font-size: 23px; }
+      .option > p { margin: 0 0 18px; color: #667085; line-height: 1.5; }
+      .pair {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(320px, 1fr));
+        gap: 18px;
+      }
+      .shot h3 { margin: 0 0 10px; color: #475467; font-size: 16px; }
+      .phone {
+        width: 100%;
+        max-width: 430px;
+        min-height: 720px;
+        overflow: hidden;
+        border-radius: 28px;
+        margin: 0 auto;
+        position: relative;
+      }
+      .screen { min-height: 720px; padding: 22px; }
+      .top {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 18px;
+      }
+      .eyebrow { margin: 0 0 4px; font-size: 12px; font-weight: 800; }
+      .title { margin: 0; font-size: 28px; line-height: 1.12; letter-spacing: 0; }
+      .btn, .icon-btn, .pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 0;
+        font-weight: 850;
+      }
+      .btn { min-height: 42px; padding: 0 14px; white-space: nowrap; }
+      .icon-btn { width: 40px; height: 40px; font-size: 21px; }
+      .pill { min-height: 34px; padding: 0 12px; font-size: 13px; white-space: nowrap; }
+      .deck-list, .card-list, .sections { display: grid; gap: 10px; }
+      .deck {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 12px;
+        padding: 14px;
+      }
+      .deck strong { display: block; margin-bottom: 5px; font-size: 18px; }
+      .meta { font-size: 13px; font-weight: 720; }
+      .sections { margin-top: 10px; }
+      .section-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        min-height: 48px;
+        padding: 0 12px;
+      }
+      .section-row strong { font-size: 15px; }
+      .study-top {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+      .study-title h4 { margin: 0; font-size: 26px; }
+      .controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+      .memory-card {
+        position: relative;
+        display: grid;
+        grid-template-columns: 36px minmax(0, 1fr);
+        gap: 12px;
+        min-height: 118px;
+        padding: 14px 72px 14px 14px;
+      }
+      .num {
+        width: 34px; height: 34px;
+        display: grid; place-items: center;
+        border-radius: 999px;
+        font-weight: 950;
+      }
+      .card-actions {
+        position: absolute;
+        top: 14px; right: 10px;
+        display: flex; gap: 4px;
+      }
+      .card-actions .icon-btn { width: 28px; height: 28px; font-size: 15px; }
+      .prompt { display: block; margin-bottom: 10px; font-size: 21px; font-weight: 950; line-height: 1.38; }
+      .line { font-size: 19px; line-height: 1.9; word-break: keep-all; overflow-wrap: anywhere; }
+      .blank {
+        display: inline-grid;
+        place-items: center;
+        min-width: 8ch;
+        max-width: 100%;
+        min-height: 2.05em;
+        padding: .22em .8em;
+        border-radius: 8px;
+        color: transparent;
+        font-weight: 950;
+        line-height: 1.65;
+        vertical-align: baseline;
+      }
+      .blank::before { content: attr(data-answer); visibility: hidden; }
+      .blank.full { display: grid; width: 100%; margin-top: 8px; }
+      .group-title { display: block; margin-bottom: 10px; font-size: 21px; font-weight: 950; }
+      .group-line { font-size: 18px; line-height: 2.05; }
+      .badge { display: inline-flex; align-items: center; gap: 5px; min-height: 26px; padding: 0 8px; border-radius: 999px; font-size: 12px; font-weight: 900; }
+      .progress { height: 8px; border-radius: 999px; overflow: hidden; margin-top: 10px; }
+      .progress span { display: block; height: 100%; border-radius: inherit; }
+
+      .s1 .phone { background: #fff; border: 1px solid #d8dee8; box-shadow: 0 18px 52px rgba(15,23,42,.08); }
+      .s1 .screen { background: #ffffff; }
+      .s1 .eyebrow, .s1 .meta { color: #737b8c; }
+      .s1 .title { color: #111827; font-weight: 850; }
+      .s1 .btn, .s1 .pill.active { color: #fff; background: #2f6fed; border-radius: 8px; box-shadow: 0 6px 14px rgba(47,111,237,.18); }
+      .s1 .pill, .s1 .icon-btn { color: #273142; background: #fff; border: 1px solid #d8dee8; border-radius: 8px; }
+      .s1 .deck, .s1 .memory-card { background: #fff; border: 1px solid #e1e5ee; border-radius: 8px; box-shadow: 0 4px 12px rgba(15,23,42,.035); }
+      .s1 .section-row { background: #f6f7f9; border: 1px solid #edf0f4; border-radius: 8px; }
+      .s1 .num { color: #2f6fed; background: #edf3ff; }
+      .s1 .blank { background: #f1f3f6; border: 1px solid #d8dde6; }
+      .s1 .badge { color: #2f6fed; background: #edf3ff; }
+      .s1 .progress { background: #e5e8ee; } .s1 .progress span { background: #2f6fed; }
+
+      .s2 .phone { background: #0b5cff; border: 1px solid #0750dc; box-shadow: 0 28px 76px rgba(0,64,180,.22); }
+      .s2 .screen { background: linear-gradient(180deg, #0b5cff 0%, #0b5cff 21%, #f4f7fb 21%, #f4f7fb 100%); }
+      .s2 .eyebrow { color: rgba(255,255,255,.78); }
+      .s2 .meta { color: #65758f; }
+      .s2 .title { color: #fff; font-size: 30px; font-weight: 950; }
+      .s2 .btn, .s2 .pill.active { color: #0b5cff; background: #fff; border-radius: 999px; box-shadow: 0 10px 24px rgba(0,36,120,.18); }
+      .s2 .pill, .s2 .icon-btn { color: #08265a; background: #fff; border: 1px solid #d7e2f3; border-radius: 999px; }
+      .s2 .badge { color: #0b5cff; background: #dcebff; }
+      .s2 .deck, .s2 .memory-card { background: #fff; border: 0; border-radius: 18px; box-shadow: 0 14px 32px rgba(15,50,110,.12); }
+      .s2 .section-row { background: #fff; border: 1px solid #e5edf7; border-radius: 16px; box-shadow: 0 8px 18px rgba(15,50,110,.055); }
+      .s2 .deck strong, .s2 .prompt, .s2 .group-title { color: #071a3d; font-weight: 950; }
+      .s2 .num { color: #fff; background: #0b5cff; font-size: 18px; }
+      .s2 .blank { background: #e9f1ff; border: 1px solid #c8dbff; }
+      .s2 .progress { background: #e1e9f5; } .s2 .progress span { background: #0b5cff; }
+
+      .s3 .phone { background: #fff8fb; border: 1px solid #f1d7e4; box-shadow: 0 24px 70px rgba(191,93,140,.13); }
+      .s3 .screen { background: linear-gradient(180deg, #fff8fb 0%, #fffdf6 100%); }
+      .s3 .eyebrow, .s3 .meta { color: #8a7180; }
+      .s3 .title { color: #3f2b35; }
+      .s3 .btn, .s3 .pill.active { color: #3f2b35; background: #ffd36e; border-radius: 16px; }
+      .s3 .pill, .s3 .icon-btn { color: #3f2b35; background: #fff; border: 1px solid #efd8df; border-radius: 16px; }
+      .s3 .deck, .s3 .memory-card { background: rgba(255,255,255,.90); border: 1px solid #efd8df; border-radius: 18px; box-shadow: 0 12px 28px rgba(191,93,140,.08); }
+      .s3 .section-row { background: #fff2d8; border-radius: 16px; }
+      .s3 .num { color: #7b4561; background: #ffe5ef; }
+      .s3 .blank { background: #fff0d5; border: 1px solid #f0d3a4; }
+      .s3 .badge { color: #7b4561; background: #ffe5ef; }
+      .s3 .progress { background: #f6e6cf; } .s3 .progress span { background: #ff9f7a; }
+      .s3 .mascot { display:block; font-size: 31px; margin-bottom: 8px; }
+
+      .s4 .phone { background: #f5f2ee; border: 1px solid rgba(130,120,105,.18); box-shadow: 0 26px 80px rgba(80,70,60,.16); }
+      .s4 .screen { background: linear-gradient(180deg, #faf8f5, #eee9e2); }
+      .s4 .eyebrow, .s4 .meta { color: #81796e; }
+      .s4 .title { color: #1c1c1e; font-weight: 800; }
+      .s4 .btn, .s4 .pill.active { color: #fff; background: #1c1c1e; border-radius: 16px; }
+      .s4 .pill, .s4 .icon-btn { color: #1c1c1e; background: rgba(255,255,255,.56); border: 1px solid rgba(255,255,255,.78); border-radius: 16px; backdrop-filter: blur(16px); }
+      .s4 .deck, .s4 .memory-card { background: rgba(255,255,255,.58); border: 1px solid rgba(255,255,255,.82); border-radius: 22px; box-shadow: 0 18px 38px rgba(80,70,60,.09); backdrop-filter: blur(20px); }
+      .s4 .section-row { background: rgba(255,255,255,.44); border: 1px solid rgba(255,255,255,.62); border-radius: 18px; }
+      .s4 .num { color: #1c1c1e; background: rgba(255,255,255,.70); }
+      .s4 .blank { background: rgba(218,211,201,.68); border: 1px solid rgba(188,178,164,.55); }
+      .s4 .badge { color: #1c1c1e; background: rgba(255,255,255,.62); }
+      .s4 .progress { background: rgba(60,50,40,.10); } .s4 .progress span { background: #1c1c1e; }
+
+      .s5 .phone { background: #101828; border: 1px solid #2b364c; box-shadow: 0 24px 70px rgba(16,24,40,.22); }
+      .s5 .screen { background: radial-gradient(circle at top right, #263b70 0%, #111827 48%, #0f172a 100%); }
+      .s5 .eyebrow, .s5 .meta, .s5 .group-line, .s5 .line { color: #d7e1f5; }
+      .s5 .title, .s5 .deck strong, .s5 .prompt, .s5 .group-title { color: #fff; }
+      .s5 .btn, .s5 .pill.active { color: #111827; background: #7dd3fc; border-radius: 14px; }
+      .s5 .pill, .s5 .icon-btn { color: #eaf2ff; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14); border-radius: 14px; }
+      .s5 .deck, .s5 .memory-card { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14); border-radius: 18px; box-shadow: 0 18px 40px rgba(0,0,0,.18); }
+      .s5 .section-row { background: rgba(255,255,255,.08); border-radius: 14px; }
+      .s5 .num { color: #111827; background: #facc15; }
+      .s5 .blank { background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.22); }
+      .s5 .badge { color: #111827; background: #facc15; }
+      .s5 .progress { background: rgba(255,255,255,.12); } .s5 .progress span { background: linear-gradient(90deg, #22c55e, #facc15, #fb7185); }
+
+      @media (max-width: 760px) {
+        body { padding: 16px; }
+        .pair { grid-template-columns: 1fr; }
+      }
+      .capture-page {
+        width: 430px;
+        height: 720px;
+        min-height: 720px;
+        padding: 0;
+        background: #e5e7eb;
+        overflow: hidden;
+      }
+      .capture-page .capture-wrap {
+        width: 430px;
+        height: 720px;
+        min-height: 720px;
+        overflow: hidden;
+      }
+      .capture-page .phone {
+        max-width: none;
+        width: 430px;
+        height: 720px;
+        min-height: 720px;
+        border-radius: 0;
+        margin: 0;
+        box-shadow: none;
+      }
+      .capture-page .screen {
+        height: 720px;
+        min-height: 720px;
+      }
+      .capture-page.s1 { background: #ffffff; }
+      .capture-page.s2 { background: #f4f7fb; }
+      .capture-page.s3 { background: #fffdf6; }
+      .capture-page.s4 { background: #eee9e2; }
+      .capture-page.s5 { background: #0f172a; }
+    </style>
+  </head>
+  <body>
+    <h1>UX 고정 · UI 비주얼 스타일 5안</h1>
+    <p class="lead">
+      레이아웃, 컴포넌트 위치, 카드/버튼/탭 개수, 정보 위계, 화면 흐름, 텍스트 밀도, 모바일 비율은 동일하게 유지했습니다.
+      아래 시안은 색상, 질감, 테두리, 그림자, 타이포 톤만 다르게 적용한 하이파이 제품 목업입니다.
+    </p>
+
+    <section class="option s1">
+      <h2>1. Minimal White SaaS Dashboard</h2>
+      <p>깨끗한 흰 배경, 부드러운 회색 경계, 차분한 파란 포인트. 가장 업무 도구처럼 신뢰감 있게 보입니다.</p>
+      <div class="pair">
+        <div class="shot"><h3>첫화면</h3><div data-shot="home"></div></div>
+        <div class="shot"><h3>암기화면</h3><div data-shot="study"></div></div>
+      </div>
+    </section>
+
+    <section class="option s2">
+      <h2>2. Modern Korean Fintech App</h2>
+      <p>한국 핀테크 앱처럼 숫자와 계층을 강하게 세운 스타일. 읽기 쉽고 단단한 인상을 줍니다.</p>
+      <div class="pair">
+        <div class="shot"><h3>첫화면</h3><div data-shot="home"></div></div>
+        <div class="shot"><h3>암기화면</h3><div data-shot="study"></div></div>
+      </div>
+    </section>
+
+    <section class="option s3">
+      <h2>3. Cute Friendly App UI</h2>
+      <p>둥근 카드와 부드러운 파스텔 컬러. 친근하고 부담 없는 암기 앱 느낌을 줍니다.</p>
+      <div class="pair">
+        <div class="shot"><h3>첫화면</h3><div data-shot="home"></div></div>
+        <div class="shot"><h3>암기화면</h3><div data-shot="study"></div></div>
+      </div>
+    </section>
+
+    <section class="option s4">
+      <h2>4. Apple-inspired Native Mobile UI</h2>
+      <p>반투명 레이어, 절제된 그림자, 네이티브 모바일 앱 같은 차분한 위계가 특징입니다.</p>
+      <div class="pair">
+        <div class="shot"><h3>첫화면</h3><div data-shot="home"></div></div>
+        <div class="shot"><h3>암기화면</h3><div data-shot="study"></div></div>
+      </div>
+    </section>
+
+    <section class="option s5">
+      <h2>5. Gamified Habit Tracking App</h2>
+      <p>진행 바와 배지 느낌을 살린 동기부여형 스타일. 활기 있지만 유치하지 않게 잡았습니다.</p>
+      <div class="pair">
+        <div class="shot"><h3>첫화면</h3><div data-shot="home"></div></div>
+        <div class="shot"><h3>암기화면</h3><div data-shot="study"></div></div>
+      </div>
+    </section>
+
+    <template id="home-template">
+      <div class="phone">
+        <div class="screen">
+          <div class="top">
+            <div>
+              <span class="mascot">◦</span>
+              <p class="eyebrow">내 암기장</p>
+              <h4 class="title">오늘 외울 목록</h4>
+            </div>
+            <button class="btn">새 암기장</button>
+          </div>
+          <div class="deck-list">
+            <div class="deck">
+              <div>
+                <strong>한방 시험</strong>
+                <span class="meta">4개 세부 암기장 · 86문항</span>
+                <div class="progress"><span style="width: 67%"></span></div>
+              </div>
+              <span class="pill active">선택됨</span>
+            </div>
+            <div class="sections">
+              <div class="section-row">
+                <strong>경혈</strong>
+                <span class="meta">24문항</span>
+              </div>
+              <div class="section-row">
+                <strong>방제</strong>
+                <span class="meta">18문항</span>
+              </div>
+              <div class="section-row">
+                <strong>본초</strong>
+                <span class="meta">21문항</span>
+              </div>
+            </div>
+            <div class="deck">
+              <div>
+                <strong>한국사</strong>
+                <span class="meta">3개 세부 암기장 · 52문항</span>
+                <div class="progress"><span style="width: 38%"></span></div>
+              </div>
+              <span class="pill">열기</span>
+            </div>
+            <div class="deck">
+              <div>
+                <strong>영어 단어</strong>
+                <span class="meta">2개 세부 암기장 · 120문항</span>
+                <div class="progress"><span style="width: 44%"></span></div>
+              </div>
+              <span class="pill">열기</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <template id="study-template">
+      <div class="phone">
+        <div class="screen">
+          <div class="study-top">
+            <button class="icon-btn">‹</button>
+            <div class="study-title">
+              <p class="eyebrow">한방 시험 / 경혈</p>
+              <h4>암기</h4>
+            </div>
+            <button class="btn">편집</button>
+          </div>
+          <div class="controls">
+            <span class="pill active">셔플 ON</span>
+            <span class="pill">별표 우선</span>
+            <span class="badge">별표 4</span>
+          </div>
+          <div class="card-list">
+            <div class="memory-card">
+              <span class="num">1</span>
+              <div>
+                <span class="prompt">족양명위경의 오수혈 :</span>
+                <div class="line"><span class="blank" data-answer="여태"></span>, <span class="blank" data-answer="내정"></span>, <span class="blank" data-answer="함곡"></span></div>
+              </div>
+              <div class="card-actions"><button class="icon-btn">☆</button><button class="icon-btn">⌫</button></div>
+            </div>
+            <div class="memory-card">
+              <span class="num">2</span>
+              <div>
+                <span class="prompt">대장의 복모혈</span>
+                <span class="blank full" data-answer="천추"></span>
+              </div>
+              <div class="card-actions"><button class="icon-btn">★</button><button class="icon-btn">⌫</button></div>
+            </div>
+            <div class="memory-card">
+              <span class="num">3</span>
+              <div>
+                <span class="group-title">커피의 3가지 분류</span>
+                <div class="group-line">1. <span class="blank" data-answer="아메리카노"></span> : 아주 <span class="blank" data-answer="오래된"></span> 커피</div>
+                <div class="group-line">2. <span class="blank" data-answer="에스프레소"></span> : 아주 <span class="blank" data-answer="쓴"></span> 커피</div>
+              </div>
+              <div class="card-actions"><button class="icon-btn">☆</button><button class="icon-btn">⌫</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <script>
+      const home = document.querySelector("#home-template").innerHTML;
+      const study = document.querySelector("#study-template").innerHTML;
+      const params = new URLSearchParams(location.search);
+      const style = params.get("style");
+      const screen = params.get("screen");
+
+      if (style && screen) {
+        document.body.className = `capture-page ${style}`;
+        document.body.innerHTML = `<main class="capture-wrap ${style}">${screen === "study" ? study : home}</main>`;
+      } else {
+        document.querySelectorAll('[data-shot="home"]').forEach((node) => { node.outerHTML = home; });
+        document.querySelectorAll('[data-shot="study"]').forEach((node) => { node.outerHTML = study; });
+      }
+    </script>
+  </body>
+</html>

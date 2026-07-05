@@ -1,0 +1,17 @@
+{
+  "name": "시험암기",
+  "short_name": "시험암기",
+  "description": "PC와 아이폰에서 실시간으로 공유하는 빈칸 암기 도구",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f3ea",
+  "theme_color": "#18332f",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

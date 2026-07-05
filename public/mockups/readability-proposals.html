@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>가림 UI 개선 예상 시안</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 28px;
+        color: #1b2028;
+        background: #f7f6f1;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 30px;
+        letter-spacing: 0;
+      }
+
+      .lead {
+        margin: 0 0 26px;
+        color: #69717b;
+        line-height: 1.55;
+      }
+
+      .proposal {
+        margin-bottom: 28px;
+        padding: 22px;
+        border: 1px solid #d8d3c6;
+        border-radius: 8px;
+        background: #fffefa;
+      }
+
+      .proposal h2 {
+        margin: 0 0 6px;
+        font-size: 23px;
+      }
+
+      .proposal > p {
+        margin: 0 0 18px;
+        color: #69717b;
+      }
+
+      .memory-list {
+        display: grid;
+        gap: 12px;
+      }
+
+      .card {
+        display: grid;
+        grid-template-columns: 42px minmax(0, 1fr) auto;
+        gap: 14px;
+        align-items: center;
+        padding: 16px;
+        border: 1px solid #d8d3c6;
+        border-radius: 8px;
+        background: #fffefa;
+      }
+
+      .num {
+        width: 34px;
+        height: 34px;
+        display: grid;
+        place-items: center;
+        border-radius: 999px;
+        color: #314b58;
+        background: #e7eef0;
+        font-weight: 950;
+      }
+
+      .actions {
+        display: flex;
+        gap: 8px;
+      }
+
+      .icon {
+        width: 42px;
+        height: 42px;
+        display: grid;
+        place-items: center;
+        border: 1px solid #d8d3c6;
+        border-radius: 8px;
+        font-size: 24px;
+      }
+
+      .pair-row {
+        display: grid;
+        grid-template-columns: minmax(160px, 0.9fr) minmax(180px, 1.1fr);
+        align-items: center;
+        gap: 20px;
+      }
+
+      .prompt {
+        font-size: 22px;
+        font-weight: 950;
+        line-height: 1.45;
+      }
+
+      .answer-slot {
+        min-height: 38px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        justify-self: start;
+        padding: 6px 14px;
+        border: 1px solid #d8d3c6;
+        border-radius: 8px;
+        background: #f3f0e8;
+        color: #827a6c;
+        font-weight: 900;
+        line-height: 1.25;
+      }
+
+      .answer-slot.short {
+        min-width: 56px;
+      }
+
+      .answer-slot.medium {
+        min-width: 120px;
+      }
+
+      .answer-slot.long {
+        min-width: 280px;
+      }
+
+      .bar-mask {
+        display: inline-flex;
+        gap: 5px;
+      }
+
+      .bar-mask i {
+        width: 8px;
+        height: 20px;
+        border-radius: 5px;
+        background: #cfc6b6;
+      }
+
+      .textline {
+        font-size: 22px;
+        font-weight: 850;
+        line-height: 1.9;
+      }
+
+      .inline-blank {
+        min-width: 72px;
+        min-height: 30px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 4px;
+        padding: 2px 10px;
+        border: 1px solid #d8d3c6;
+        border-radius: 7px;
+        background: #f3f0e8;
+        vertical-align: middle;
+      }
+
+      .inline-blank .bar-mask i {
+        width: 7px;
+        height: 17px;
+      }
+
+      .group-card {
+        align-items: start;
+      }
+
+      .group-body {
+        min-width: 0;
+      }
+
+      .group-title {
+        margin: 2px 0 14px;
+        font-size: 24px;
+        font-weight: 950;
+      }
+
+      .group-table {
+        display: grid;
+        gap: 10px;
+      }
+
+      .group-item {
+        display: grid;
+        grid-template-columns: 34px minmax(0, 1fr);
+        gap: 10px;
+        align-items: start;
+        padding: 10px 12px;
+        border-radius: 8px;
+        background: #f8f6ef;
+      }
+
+      .marker {
+        color: #69717b;
+        font-size: 20px;
+        font-weight: 950;
+        line-height: 1.8;
+      }
+
+      .underline-blank {
+        min-width: 72px;
+        display: inline-block;
+        margin: 0 4px;
+        border-bottom: 4px solid #bfb5a4;
+        vertical-align: -2px;
+      }
+
+      .answer-open {
+        color: #fffefa;
+        background: #314b58;
+        border-color: #314b58;
+      }
+
+      .compact-card {
+        grid-template-columns: 42px minmax(0, 1fr) auto;
+      }
+
+      .compact-card .pair-row {
+        grid-template-columns: minmax(120px, 0.7fr) minmax(180px, 1fr);
+      }
+
+      @media (max-width: 760px) {
+        body {
+          padding: 16px;
+        }
+
+        .card {
+          grid-template-columns: 36px minmax(0, 1fr);
+        }
+
+        .actions {
+          grid-column: 2;
+          justify-content: flex-end;
+        }
+
+        .pair-row {
+          grid-template-columns: 1fr;
+          gap: 8px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>가림 UI 개선 예상 시안</h1>
+    <p class="lead">
+      실제 수정 전 예상 화면입니다. 핵심은 큰 가림 박스를 줄이고, 문장/목록의 원래 흐름 안에서 가림이 자연스럽게 보이도록 하는 것입니다.
+    </p>
+
+    <section class="proposal">
+      <h2>시안 A. 답 영역은 오른쪽 칼럼, 가림은 더 얇고 낮게</h2>
+      <p>A:B 카드에서 답이 멀리 떠 보이지 않게 칼럼을 정리하고, 가림 박스 높이를 줄입니다.</p>
+      <div class="memory-list">
+        <article class="card compact-card">
+          <div class="num">5</div>
+          <div class="pair-row">
+            <div class="prompt">B</div>
+            <div class="answer-slot medium">
+              <span class="bar-mask"><i></i><i></i><i></i><i></i><i></i></span>
+            </div>
+          </div>
+          <div class="actions"><div class="icon">☆</div><div class="icon">⌫</div></div>
+        </article>
+        <article class="card compact-card">
+          <div class="num">6</div>
+          <div class="pair-row">
+            <div class="prompt">C</div>
+            <div class="answer-slot short">
+              <span class="bar-mask"><i></i><i></i></span>
+            </div>
+          </div>
+          <div class="actions"><div class="icon">☆</div><div class="icon">⌫</div></div>
+        </article>
+        <article class="card compact-card">
+          <div class="num">7</div>
+          <div class="pair-row">
+            <div class="prompt">D</div>
+            <div class="answer-slot long">
+              <span class="bar-mask"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+            </div>
+          </div>
+          <div class="actions"><div class="icon">☆</div><div class="icon">⌫</div></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="proposal">
+      <h2>시안 B. 목록형은 문장 흐름 그대로, 빈칸만 인라인으로 가림</h2>
+      <p>현재처럼 오른쪽에 가림 박스가 따로 몰리지 않고, 각 목록 문장 안에서 [ ] 위치만 가립니다. 추천 방향입니다.</p>
+      <div class="memory-list">
+        <article class="card group-card">
+          <div class="num">8</div>
+          <div class="group-body">
+            <div class="group-title">커피의 3가지 분류</div>
+            <div class="group-table">
+              <div class="group-item">
+                <div class="marker">1.</div>
+                <div class="textline">아메리카노 : 아주 <span class="inline-blank"><span class="bar-mask"><i></i><i></i><i></i></span></span> 커피</div>
+              </div>
+              <div class="group-item">
+                <div class="marker">2.</div>
+                <div class="textline"><span class="inline-blank"><span class="bar-mask"><i></i><i></i><i></i><i></i></span></span> : 아주 <span class="inline-blank"><span class="bar-mask"><i></i><i></i></span></span> 커피</div>
+              </div>
+              <div class="group-item">
+                <div class="marker">3.</div>
+                <div class="textline">우유 : 아주 <span class="inline-blank"><span class="bar-mask"><i></i><i></i></span></span> 음료</div>
+              </div>
+            </div>
+          </div>
+          <div class="actions"><div class="icon">☆</div><div class="icon">⌫</div></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="proposal">
+      <h2>시안 C. 가장 미니멀한 밑줄형 가림</h2>
+      <p>박스 자체를 거의 없애고 빈칸 느낌으로 만듭니다. 여백은 가장 적지만 클릭 영역은 조금 작아집니다.</p>
+      <div class="memory-list">
+        <article class="card group-card">
+          <div class="num">8</div>
+          <div class="group-body">
+            <div class="group-title">커피의 3가지 분류</div>
+            <div class="group-table">
+              <div class="group-item">
+                <div class="marker">1.</div>
+                <div class="textline">아메리카노 : 아주 <span class="underline-blank">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> 커피</div>
+              </div>
+              <div class="group-item">
+                <div class="marker">2.</div>
+                <div class="textline"><span class="underline-blank">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> : 아주 <span class="underline-blank">&nbsp;&nbsp;&nbsp;&nbsp;</span> 커피</div>
+              </div>
+              <div class="group-item">
+                <div class="marker">3.</div>
+                <div class="textline">우유 : 아주 <span class="answer-slot answer-open">하얀</span> 음료</div>
+              </div>
+            </div>
+          </div>
+          <div class="actions"><div class="icon">☆</div><div class="icon">⌫</div></div>
+        </article>
+      </div>
+    </section>
+  </body>
+</html>

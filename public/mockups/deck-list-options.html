@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>암기장 목록 UI 시안</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 28px;
+        color: #171f2a;
+        background: #f7f6f1;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 30px;
+      }
+
+      .lead {
+        margin: 0 0 26px;
+        color: #69717b;
+        line-height: 1.55;
+      }
+
+      .option {
+        margin-bottom: 28px;
+        padding: 22px;
+        border: 1px solid #d8d3c6;
+        border-radius: 8px;
+        background: #fffefa;
+      }
+
+      .option h2 {
+        margin: 0 0 6px;
+        font-size: 23px;
+      }
+
+      .option > p {
+        margin: 0 0 18px;
+        color: #69717b;
+      }
+
+      .phone {
+        width: min(100%, 420px);
+        min-height: 660px;
+        overflow: hidden;
+        border: 1px solid #d8d3c6;
+        border-radius: 22px;
+        background: #fbfaf6;
+        box-shadow: 0 18px 50px rgba(27, 32, 40, 0.1);
+      }
+
+      .wide {
+        width: min(100%, 920px);
+        min-height: 520px;
+        border-radius: 14px;
+      }
+
+      .screen {
+        padding: 22px;
+      }
+
+      .top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 20px;
+      }
+
+      .eyebrow {
+        margin: 0 0 4px;
+        color: #69717b;
+        font-size: 13px;
+        font-weight: 850;
+      }
+
+      .title {
+        margin: 0;
+        font-size: 28px;
+        font-weight: 950;
+        letter-spacing: 0;
+      }
+
+      .add {
+        min-width: 42px;
+        height: 42px;
+        display: grid;
+        place-items: center;
+        border: 1px solid #d8d3c6;
+        border-radius: 8px;
+        color: #fffefa;
+        background: #314b58;
+        font-size: 26px;
+        font-weight: 850;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        min-height: 34px;
+        padding: 0 12px;
+        border: 1px solid #d8d3c6;
+        border-radius: 999px;
+        color: #314b58;
+        background: #fffefa;
+        font-size: 14px;
+        font-weight: 850;
+      }
+
+      .list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 12px;
+        padding: 14px;
+        border: 1px solid #d8d3c6;
+        border-radius: 8px;
+        background: #fffefa;
+      }
+
+      .row strong {
+        display: block;
+        margin-bottom: 5px;
+        font-size: 18px;
+      }
+
+      .meta {
+        color: #69717b;
+        font-size: 13px;
+        font-weight: 780;
+      }
+
+      .arrow {
+        color: #8c8374;
+        font-size: 24px;
+      }
+
+      .minimal-list .row {
+        border-width: 0 0 1px;
+        border-radius: 0;
+        background: transparent;
+        padding: 16px 2px;
+      }
+
+      .minimal-list .row:first-child {
+        border-top: 1px solid #d8d3c6;
+      }
+
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .cover {
+        min-height: 168px;
+        display: grid;
+        align-content: space-between;
+        gap: 18px;
+        padding: 16px;
+        border: 1px solid #d8d3c6;
+        border-radius: 8px;
+        background: #fffefa;
+      }
+
+      .cover:nth-child(1) {
+        background: linear-gradient(135deg, #fffefa 0%, #e7eef0 100%);
+      }
+
+      .cover:nth-child(2) {
+        background: linear-gradient(135deg, #fffefa 0%, #f4ead5 100%);
+      }
+
+      .cover:nth-child(3) {
+        background: linear-gradient(135deg, #fffefa 0%, #f0e5e1 100%);
+      }
+
+      .cover:nth-child(4) {
+        background: linear-gradient(135deg, #fffefa 0%, #e9efe3 100%);
+      }
+
+      .cover-icon {
+        width: 46px;
+        height: 46px;
+        display: grid;
+        place-items: center;
+        border-radius: 8px;
+        color: #fffefa;
+        background: #314b58;
+        font-size: 25px;
+      }
+
+      .cover strong {
+        display: block;
+        font-size: 20px;
+      }
+
+      .cover .meta {
+        margin-top: 5px;
+      }
+
+      .folder-grid {
+        display: grid;
+        grid-template-columns: 240px minmax(0, 1fr);
+        gap: 14px;
+      }
+
+      .side {
+        padding: 12px;
+        border: 1px solid #d8d3c6;
+        border-radius: 8px;
+        background: #fffefa;
+      }
+
+      .folder {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 48px;
+        padding: 0 10px;
+        border-radius: 8px;
+        font-weight: 900;
+      }
+
+      .folder.active {
+        color: #fffefa;
+        background: #314b58;
+      }
+
+      .folder span:first-child {
+        font-size: 22px;
+      }
+
+      .main {
+        padding: 16px;
+        border: 1px solid #d8d3c6;
+        border-radius: 8px;
+        background: #fffefa;
+      }
+
+      .main-head {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+
+      .section {
+        display: grid;
+        grid-template-columns: 26px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 10px;
+        padding: 13px 0;
+        border-bottom: 1px solid #ece7dc;
+      }
+
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: #d6674d;
+      }
+
+      .dashboard {
+        display: grid;
+        grid-template-columns: minmax(0, 1.1fr) minmax(260px, 0.9fr);
+        gap: 14px;
+      }
+
+      .hero-deck {
+        min-height: 260px;
+        display: grid;
+        align-content: space-between;
+        padding: 20px;
+        border-radius: 8px;
+        color: #fffefa;
+        background: #314b58;
+      }
+
+      .hero-deck h3 {
+        margin: 0;
+        font-size: 32px;
+      }
+
+      .hero-deck p {
+        margin: 8px 0 0;
+        color: rgba(255, 254, 250, 0.78);
+      }
+
+      .quick {
+        display: grid;
+        gap: 10px;
+      }
+
+      .stat {
+        padding: 16px;
+        border: 1px solid #d8d3c6;
+        border-radius: 8px;
+        background: #fffefa;
+      }
+
+      .stat b {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 24px;
+      }
+
+      .note {
+        margin-top: 14px;
+        padding: 12px 14px;
+        border-radius: 8px;
+        background: #f7f6f1;
+        color: #49535f;
+        font-size: 15px;
+        line-height: 1.45;
+      }
+
+      @media (max-width: 760px) {
+        body {
+          padding: 16px;
+        }
+
+        .cards,
+        .folder-grid,
+        .dashboard {
+          grid-template-columns: 1fr;
+        }
+
+        .phone {
+          min-height: auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>암기장 목록 UI 시안</h1>
+    <p class="lead">앱 첫 화면에서 암기장 목록을 어떻게 보여줄지 비교하는 예상 시안입니다.</p>
+
+    <section class="option">
+      <h2>시안 1. 초심플 텍스트 리스트</h2>
+      <p>가장 빠르고 조용합니다. 암기장이 많아도 스캔이 쉽습니다.</p>
+      <div class="phone">
+        <div class="screen">
+          <div class="top">
+            <div>
+              <p class="eyebrow">공유코드 coffee-test</p>
+              <h3 class="title">암기장</h3>
+            </div>
+            <div class="add">+</div>
+          </div>
+          <div class="minimal-list">
+            <div class="row"><div><strong>한별 시험</strong><div class="meta">3개 세부 암기장 · 48문제 · 오늘 수정</div></div><div class="arrow">›</div></div>
+            <div class="row"><div><strong>약리학</strong><div class="meta">8개 세부 암기장 · 132문제</div></div><div class="arrow">›</div></div>
+            <div class="row"><div><strong>한국사 왕</strong><div class="meta">5개 세부 암기장 · 91문제</div></div><div class="arrow">›</div></div>
+            <div class="row"><div><strong>영단어</strong><div class="meta">2개 세부 암기장 · 260문제</div></div><div class="arrow">›</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="note">추천: 단어장 수가 많아질수록 제일 안정적입니다. 대신 조금 밋밋합니다.</div>
+    </section>
+
+    <section class="option">
+      <h2>시안 2. 정보 밀도 높은 리스트</h2>
+      <p>현재 앱 흐름과 가장 잘 맞습니다. 세부 암기장/문제 수/최근 수정이 한눈에 보입니다.</p>
+      <div class="phone">
+        <div class="screen">
+          <div class="top">
+            <div>
+              <p class="eyebrow">암기장 목록</p>
+              <h3 class="title">오늘 외울 것</h3>
+            </div>
+            <div class="add">+</div>
+          </div>
+          <div class="list">
+            <div class="row"><div><strong>한별 시험</strong><div class="meta">헌법 · 행정법 · 판례 · 48문제</div></div><span class="pill">바로 암기</span></div>
+            <div class="row"><div><strong>약리학</strong><div class="meta">처방증상 · 부작용 · 금기 · 132문제</div></div><span class="pill">바로 암기</span></div>
+            <div class="row"><div><strong>한국사 왕</strong><div class="meta">조선 · 고려 · 대한제국 · 91문제</div></div><span class="pill">바로 암기</span></div>
+            <div class="row"><div><strong>영단어</strong><div class="meta">Day 1 · Day 2 · 260문제</div></div><span class="pill">바로 암기</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="note">추천: 기능성과 단순함의 균형이 좋습니다. 지금 앱을 개선한다면 이 방향이 가장 무난합니다.</div>
+    </section>
+
+    <section class="option">
+      <h2>시안 3. 암기장 표지 카드형</h2>
+      <p>암기장마다 표지 느낌을 줍니다. 적은 수의 암기장을 반복해서 쓸 때 좋습니다.</p>
+      <div class="phone">
+        <div class="screen">
+          <div class="top">
+            <div>
+              <p class="eyebrow">내 암기장</p>
+              <h3 class="title">선택</h3>
+            </div>
+            <div class="add">+</div>
+          </div>
+          <div class="cards">
+            <div class="cover"><div class="cover-icon">책</div><div><strong>한별 시험</strong><div class="meta">48문제</div></div></div>
+            <div class="cover"><div class="cover-icon">약</div><div><strong>약리학</strong><div class="meta">132문제</div></div></div>
+            <div class="cover"><div class="cover-icon">史</div><div><strong>한국사 왕</strong><div class="meta">91문제</div></div></div>
+            <div class="cover"><div class="cover-icon">A</div><div><strong>영단어</strong><div class="meta">260문제</div></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="note">장점: 보기 좋고 구분이 쉽습니다. 단점: 암기장이 많아지면 스크롤이 길어집니다.</div>
+    </section>
+
+    <section class="option">
+      <h2>시안 4. 폴더/세부 암기장 동시 보기</h2>
+      <p>데스크톱에서 좋습니다. 암기장을 고르면 오른쪽에 세부 암기장이 바로 보입니다.</p>
+      <div class="phone wide">
+        <div class="screen">
+          <div class="top">
+            <div>
+              <p class="eyebrow">공유코드 coffee-test</p>
+              <h3 class="title">암기장</h3>
+            </div>
+            <div class="add">+</div>
+          </div>
+          <div class="folder-grid">
+            <aside class="side">
+              <div class="folder active"><span>▣</span><span>한별 시험</span></div>
+              <div class="folder"><span>▣</span><span>약리학</span></div>
+              <div class="folder"><span>▣</span><span>한국사 왕</span></div>
+              <div class="folder"><span>▣</span><span>영단어</span></div>
+            </aside>
+            <main class="main">
+              <div class="main-head">
+                <div><p class="eyebrow">한별 시험</p><h3 class="title">세부 암기장</h3></div>
+                <span class="pill">+ 세부 추가</span>
+              </div>
+              <div class="section"><span class="dot"></span><strong>헌법</strong><span class="meta">21문제</span></div>
+              <div class="section"><span class="dot"></span><strong>행정법</strong><span class="meta">14문제</span></div>
+              <div class="section"><span class="dot"></span><strong>판례</strong><span class="meta">13문제</span></div>
+            </main>
+          </div>
+        </div>
+      </div>
+      <div class="note">장점: 구조가 명확합니다. 단점: 아이폰에서는 한 화면에 다 담기 어렵습니다.</div>
+    </section>
+
+    <section class="option">
+      <h2>시안 5. 최근 암기장 강조형</h2>
+      <p>가장 최근 공부하던 암기장을 크게 보여주고, 나머지는 빠른 목록으로 둡니다.</p>
+      <div class="phone wide">
+        <div class="screen">
+          <div class="top">
+            <div>
+              <p class="eyebrow">이어하기</p>
+              <h3 class="title">암기장</h3>
+            </div>
+            <div class="add">+</div>
+          </div>
+          <div class="dashboard">
+            <div class="hero-deck">
+              <div>
+                <p class="eyebrow" style="color: rgba(255,255,255,.72)">최근 학습</p>
+                <h3>한별 시험</h3>
+                <p>헌법 · 별표 7개 · 48문제</p>
+              </div>
+              <span class="pill">바로 암기</span>
+            </div>
+            <div class="quick">
+              <div class="stat"><b>약리학</b><span class="meta">132문제 · 어제 수정</span></div>
+              <div class="stat"><b>한국사 왕</b><span class="meta">91문제</span></div>
+              <div class="stat"><b>영단어</b><span class="meta">260문제</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="note">장점: 매일 같은 암기장을 이어서 볼 때 좋습니다. 단점: 전체 목록성이 조금 약합니다.</div>
+    </section>
+  </body>
+</html>

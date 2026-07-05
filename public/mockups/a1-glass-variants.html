@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>4A-1 Glass Variants</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 28px;
+        background: #f2f2f7;
+        color: #1d1d1f;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+      }
+      h1 { margin: 0 0 8px; font-size: 30px; letter-spacing: 0; }
+      .lead { margin: 0 0 24px; color: #6e6e73; line-height: 1.55; }
+      .option {
+        margin-bottom: 34px;
+        padding: 22px;
+        border-radius: 22px;
+        border: 1px solid rgba(0, 0, 0, .08);
+        background: rgba(255, 255, 255, .68);
+        box-shadow: 0 18px 54px rgba(0, 0, 0, .06);
+      }
+      .option > h2 { margin: 0 0 6px; font-size: 23px; }
+      .option > p { margin: 0 0 18px; color: #6e6e73; line-height: 1.5; }
+      .pair {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(320px, 1fr));
+        gap: 18px;
+      }
+      .shot h3 { margin: 0 0 10px; color: #6e6e73; font-size: 15px; }
+      .phone {
+        width: 390px;
+        height: 650px;
+        margin: 0 auto;
+        overflow: hidden;
+        border-radius: 34px;
+        position: relative;
+      }
+      .screen { height: 100%; padding: 22px; }
+      .top {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 18px;
+      }
+      .eyebrow { margin: 0 0 5px; color: #6e6e73; font-size: 12px; font-weight: 820; }
+      .title { margin: 0; font-size: 29px; line-height: 1.06; font-weight: 850; letter-spacing: 0; }
+      .btn, .icon, .pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 0;
+        font-weight: 850;
+      }
+      .btn { height: 42px; padding: 0 14px; border-radius: 15px; color: white; background: #007aff; }
+      .icon { width: 40px; height: 40px; border-radius: 14px; font-size: 21px; }
+      .pill { min-height: 34px; padding: 0 12px; border-radius: 999px; font-size: 13px; }
+      .deck, .row, .card, .pill, .icon { backdrop-filter: blur(24px) saturate(1.18); -webkit-backdrop-filter: blur(24px) saturate(1.18); }
+      .deck {
+        padding: 14px;
+        margin-bottom: 10px;
+        border-radius: 22px;
+      }
+      .deck strong { display: block; margin-bottom: 5px; font-size: 18px; }
+      .meta { color: #6e6e73; font-size: 13px; font-weight: 760; }
+      .progress { height: 8px; margin-top: 10px; overflow: hidden; border-radius: 999px; background: rgba(60, 60, 67, .13); }
+      .progress span { display: block; height: 100%; border-radius: inherit; background: #007aff; }
+      .row {
+        min-height: 50px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin: 8px 0;
+        padding: 0 14px;
+        border-radius: 18px;
+      }
+      .study-top {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+      .controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+      .pill.on { color: white; background: #007aff; }
+      .card {
+        position: relative;
+        display: grid;
+        grid-template-columns: 34px minmax(0, 1fr);
+        gap: 12px;
+        min-height: 116px;
+        margin: 10px 0;
+        padding: 14px 70px 14px 14px;
+        border-radius: 22px;
+      }
+      .num {
+        width: 34px;
+        height: 34px;
+        display: grid;
+        place-items: center;
+        border-radius: 999px;
+        color: #007aff;
+        background: rgba(0, 122, 255, .12);
+        font-weight: 900;
+      }
+      .actions { position: absolute; top: 14px; right: 10px; display: flex; gap: 4px; }
+      .actions button {
+        width: 28px;
+        height: 28px;
+        border: 0;
+        border-radius: 10px;
+        background: rgba(255, 255, 255, .78);
+      }
+      .prompt { display: block; margin-bottom: 10px; font-size: 21px; line-height: 1.38; font-weight: 900; }
+      .line { font-size: 19px; line-height: 1.9; word-break: keep-all; overflow-wrap: anywhere; }
+      .blank {
+        display: inline-block;
+        min-width: 9ch;
+        height: 2.05em;
+        border-radius: 10px;
+        vertical-align: middle;
+      }
+
+      .v1 .phone { background: #f5f5f7; border: 1px solid rgba(0,0,0,.06); box-shadow: 0 26px 78px rgba(30,30,40,.13); }
+      .v1 .screen { background: linear-gradient(180deg, #fbfbfd 0%, #f0f0f5 100%); }
+      .v1 .deck, .v1 .row, .v1 .card { background: rgba(255,255,255,.70); border: 1px solid rgba(255,255,255,.92); box-shadow: 0 14px 34px rgba(45,45,60,.075); }
+      .v1 .pill, .v1 .icon { background: rgba(255,255,255,.72); border: 1px solid rgba(255,255,255,.92); }
+      .v1 .blank { background: rgba(230,230,235,.72); border: 1px solid rgba(200,200,208,.64); }
+
+      .v2 .phone { background: #f7f9ff; border: 1px solid rgba(255,255,255,.9); box-shadow: 0 30px 92px rgba(40,68,120,.18); }
+      .v2 .screen { background: radial-gradient(circle at 78% -8%, rgba(255,255,255,.96), transparent 30%), radial-gradient(circle at 16% 8%, rgba(80,160,255,.16), transparent 34%), linear-gradient(180deg, #fbfdff, #eef4fb); }
+      .v2 .deck, .v2 .row, .v2 .card { background: rgba(255,255,255,.54); border: 1px solid rgba(255,255,255,.94); box-shadow: inset 0 1px 0 rgba(255,255,255,.72), 0 18px 46px rgba(60,80,120,.12); backdrop-filter: blur(30px) saturate(1.28); -webkit-backdrop-filter: blur(30px) saturate(1.28); }
+      .v2 .pill, .v2 .icon { background: rgba(255,255,255,.56); border: 1px solid rgba(255,255,255,.9); box-shadow: inset 0 1px 0 rgba(255,255,255,.7); }
+      .v2 .blank { background: rgba(255,255,255,.48); border: 1px solid rgba(255,255,255,.85); box-shadow: inset 0 1px 0 rgba(255,255,255,.66), 0 8px 18px rgba(80,100,140,.08); }
+
+      .v3 .phone { background: #f5f6fa; border: 1px solid rgba(210,216,230,.5); box-shadow: 0 32px 86px rgba(42,50,72,.17); }
+      .v3 .screen { background: linear-gradient(180deg, #ffffff, #f0f2f7); }
+      .v3 .deck, .v3 .row, .v3 .card { background: linear-gradient(180deg, rgba(255,255,255,.88), rgba(255,255,255,.64)); border: 1px solid rgba(232,236,245,.96); box-shadow: inset 0 1px 0 rgba(255,255,255,.86), 0 24px 56px rgba(30,36,54,.13); }
+      .v3 .pill, .v3 .icon { background: linear-gradient(180deg, rgba(255,255,255,.94), rgba(255,255,255,.68)); border: 1px solid rgba(230,234,242,.96); box-shadow: 0 10px 22px rgba(30,36,54,.07); }
+      .v3 .blank { background: linear-gradient(180deg, #f7f8fb, #e8ebf1); border: 1px solid #dde2eb; box-shadow: inset 0 1px 0 rgba(255,255,255,.9); }
+
+      .v4 .phone { background: #f8f9fb; border: 1px solid rgba(255,255,255,.95); box-shadow: 0 34px 98px rgba(48,54,72,.18); }
+      .v4 .screen { background: radial-gradient(circle at 50% -8%, rgba(255,255,255,1), transparent 34%), radial-gradient(circle at 20% 20%, rgba(0,122,255,.10), transparent 26%), linear-gradient(180deg, #fcfcff, #eff1f6); }
+      .v4 .deck, .v4 .row, .v4 .card { background: linear-gradient(145deg, rgba(255,255,255,.78), rgba(255,255,255,.36)); border: 1px solid rgba(255,255,255,1); box-shadow: inset 0 1px 0 rgba(255,255,255,.92), inset 0 -1px 0 rgba(180,190,210,.18), 0 20px 54px rgba(60,70,96,.13); backdrop-filter: blur(36px) saturate(1.35); -webkit-backdrop-filter: blur(36px) saturate(1.35); }
+      .v4 .pill, .v4 .icon { background: linear-gradient(145deg, rgba(255,255,255,.82), rgba(255,255,255,.44)); border: 1px solid rgba(255,255,255,.96); box-shadow: inset 0 1px 0 rgba(255,255,255,.9); }
+      .v4 .blank { background: linear-gradient(145deg, rgba(255,255,255,.74), rgba(230,234,242,.50)); border: 1px solid rgba(255,255,255,.92); box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 8px 18px rgba(70,80,105,.08); }
+
+      @media (max-width: 760px) {
+        body { padding: 16px; }
+        .pair { grid-template-columns: 1fr; }
+        .phone { width: min(390px, 100%); }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>4A-1 유리감 강화 시안</h1>
+    <p class="lead">UX, 레이아웃, 카드 위치는 유지하고 4A-1의 밝은 iOS grouped 톤에서 유리감, 광택, 레이어, 그림자만 다르게 강조했습니다.</p>
+
+    <section class="option v1">
+      <h2>1. 원본 유지형</h2>
+      <p>기존 4A-1에 가장 가깝습니다. 유리감은 얕고, 읽기 안정성이 가장 높습니다.</p>
+      <div class="pair"><div class="shot"><h3>첫 화면</h3><div data-shot="home"></div></div><div class="shot"><h3>암기 화면</h3><div data-shot="study"></div></div></div>
+    </section>
+    <section class="option v2">
+      <h2>2. Frosted Blue Glass</h2>
+      <p>반투명과 blur를 더 올리고, 아주 약한 블루 빛을 더했습니다. iOS 유리 느낌이 가장 자연스럽습니다.</p>
+      <div class="pair"><div class="shot"><h3>첫 화면</h3><div data-shot="home"></div></div><div class="shot"><h3>암기 화면</h3><div data-shot="study"></div></div></div>
+    </section>
+    <section class="option v3">
+      <h2>3. Glossy Layered White</h2>
+      <p>유리보다 고급 흰 레이어와 광택을 강조했습니다. 깔끔하고 제품 앱 느낌이 강합니다.</p>
+      <div class="pair"><div class="shot"><h3>첫 화면</h3><div data-shot="home"></div></div><div class="shot"><h3>암기 화면</h3><div data-shot="study"></div></div></div>
+    </section>
+    <section class="option v4">
+      <h2>4. Liquid Glass Strong</h2>
+      <p>가장 강한 유리감입니다. 반투명, 내부 하이라이트, 깊은 그림자를 적극적으로 넣었습니다.</p>
+      <div class="pair"><div class="shot"><h3>첫 화면</h3><div data-shot="home"></div></div><div class="shot"><h3>암기 화면</h3><div data-shot="study"></div></div></div>
+    </section>
+
+    <template id="home-template">
+      <div class="phone">
+        <div class="screen">
+          <div class="top">
+            <div>
+              <p class="eyebrow">암기장</p>
+              <h4 class="title">오늘 외울 목록</h4>
+            </div>
+            <button class="btn">새 암기장</button>
+          </div>
+          <div class="deck">
+            <strong>한법 시험</strong>
+            <span class="meta">4개 세부 암기장 · 86문항</span>
+            <div class="progress"><span style="width: 67%"></span></div>
+          </div>
+          <div class="row"><strong>경예</strong><span class="meta">24문항</span></div>
+          <div class="row"><strong>방제</strong><span class="meta">18문항</span></div>
+          <div class="row"><strong>본초</strong><span class="meta">21문항</span></div>
+          <div class="deck">
+            <strong>한국사</strong>
+            <span class="meta">3개 세부 암기장 · 52문항</span>
+            <div class="progress"><span style="width: 38%"></span></div>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <template id="study-template">
+      <div class="phone">
+        <div class="screen">
+          <div class="study-top">
+            <button class="icon">‹</button>
+            <div>
+              <p class="eyebrow">한법 시험</p>
+              <h4 class="title">경예</h4>
+            </div>
+            <button class="icon">✎</button>
+          </div>
+          <div class="controls">
+            <button class="pill on">셔플</button>
+            <button class="pill">별표 우선</button>
+          </div>
+          <div class="card">
+            <div class="num">1</div>
+            <div>
+              <strong class="prompt">탄핵소추 의결기관</strong>
+              <span class="blank"></span>
+            </div>
+            <div class="actions"><button>★</button><button>✓</button></div>
+          </div>
+          <div class="card">
+            <div class="num">2</div>
+            <div>
+              <strong class="prompt">대통령 임기</strong>
+              <span class="blank"></span>
+            </div>
+            <div class="actions"><button>☆</button><button>✓</button></div>
+          </div>
+          <div class="card">
+            <div class="num">3</div>
+            <div class="line">정기회는 <span class="blank"></span> 을 초과할 수 없다</div>
+            <div class="actions"><button>☆</button><button>✓</button></div>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <script>
+      const home = document.getElementById('home-template').innerHTML;
+      const study = document.getElementById('study-template').innerHTML;
+      document.querySelectorAll('[data-shot="home"]').forEach((target) => { target.innerHTML = home; });
+      document.querySelectorAll('[data-shot="study"]').forEach((target) => { target.innerHTML = study; });
+    </script>
+  </body>
+</html>

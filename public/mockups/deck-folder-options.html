@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>암기장 폴더 구조 UI 후보</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 28px;
+        color: #171f2a;
+        background: #f7f6f1;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      h1 { margin: 0 0 8px; font-size: 30px; }
+      .lead { margin: 0 0 26px; color: #69717b; line-height: 1.55; }
+      .option {
+        margin-bottom: 28px;
+        padding: 22px;
+        border: 1px solid #d8d3c6;
+        border-radius: 8px;
+        background: #fffefa;
+      }
+      .option h2 { margin: 0 0 6px; font-size: 23px; }
+      .option > p { margin: 0 0 18px; color: #69717b; }
+      .phone {
+        width: min(100%, 460px);
+        min-height: 680px;
+        overflow: hidden;
+        border: 1px solid #d8d3c6;
+        border-radius: 22px;
+        background: #fbfaf6;
+        box-shadow: 0 18px 50px rgba(27, 32, 40, 0.1);
+      }
+      .wide { width: min(100%, 960px); min-height: 560px; border-radius: 14px; }
+      .screen { padding: 22px; }
+      .top {
+        display: flex;
+        justify-content: space-between;
+        align-items: end;
+        gap: 12px;
+        margin-bottom: 18px;
+      }
+      .eyebrow { margin: 0 0 4px; color: #69717b; font-size: 13px; font-weight: 850; }
+      .title { margin: 0; font-size: 28px; font-weight: 950; letter-spacing: 0; }
+      .add {
+        min-width: 42px;
+        height: 42px;
+        display: grid;
+        place-items: center;
+        border: 1px solid #d8d3c6;
+        border-radius: 8px;
+        color: #fffefa;
+        background: #314b58;
+        font-size: 26px;
+        font-weight: 850;
+      }
+      .deck {
+        border: 1px solid #d8d3c6;
+        border-radius: 8px;
+        background: #fffefa;
+        overflow: hidden;
+      }
+      .deck + .deck { margin-top: 10px; }
+      .deck-head {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 10px;
+        padding: 14px;
+      }
+      .deck-head strong { display: block; margin-bottom: 5px; font-size: 18px; }
+      .meta { color: #69717b; font-size: 13px; font-weight: 780; }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 34px;
+        padding: 0 12px;
+        border: 1px solid #d8d3c6;
+        border-radius: 999px;
+        color: #314b58;
+        background: #fffefa;
+        font-size: 14px;
+        font-weight: 850;
+        white-space: nowrap;
+      }
+      .study-pill { color: #fffefa; background: #314b58; border-color: #314b58; }
+      .tree {
+        margin: 0 14px 14px;
+        padding: 8px 0 0 16px;
+        border-left: 2px solid #d8d3c6;
+      }
+      .section {
+        display: grid;
+        grid-template-columns: 16px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 8px;
+        min-height: 44px;
+      }
+      .branch { width: 16px; border-top: 2px solid #d8d3c6; }
+      .dot { width: 9px; height: 9px; border-radius: 999px; background: #d6674d; }
+      .section-name { display: flex; align-items: center; gap: 8px; min-width: 0; font-weight: 900; }
+      .section-name span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .section-actions { display: flex; gap: 6px; }
+      .icon {
+        width: 34px;
+        height: 34px;
+        display: grid;
+        place-items: center;
+        border: 1px solid #d8d3c6;
+        border-radius: 8px;
+        background: #fffefa;
+      }
+      .add-section {
+        width: 100%;
+        margin-top: 8px;
+        min-height: 40px;
+        border: 1px dashed #cfc8ba;
+        border-radius: 8px;
+        color: #314b58;
+        background: #f7f6f1;
+        font-weight: 900;
+      }
+      .compact-tree .deck-head { padding-bottom: 10px; }
+      .compact-tree .tree {
+        border-left: 0;
+        margin: 0;
+        padding: 0 14px 14px;
+      }
+      .compact-tree .section {
+        grid-template-columns: minmax(0, 1fr) auto;
+        min-height: 48px;
+        padding: 0 10px;
+        border-radius: 8px;
+        background: #f8f6ef;
+      }
+      .compact-tree .section + .section { margin-top: 8px; }
+      .compact-tree .section-name::before {
+        content: "";
+        width: 9px;
+        height: 9px;
+        border-radius: 999px;
+        background: #d6674d;
+        flex: 0 0 auto;
+      }
+      .two-pane {
+        display: grid;
+        grid-template-columns: 280px minmax(0, 1fr);
+        gap: 14px;
+      }
+      .side, .main {
+        border: 1px solid #d8d3c6;
+        border-radius: 8px;
+        background: #fffefa;
+      }
+      .side { padding: 10px; }
+      .side-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: center;
+        min-height: 52px;
+        padding: 0 10px;
+        border-radius: 8px;
+        font-weight: 900;
+      }
+      .side-row.active { color: #fffefa; background: #314b58; }
+      .main { padding: 16px; }
+      .main-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: end;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+      .detail-section {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto auto;
+        align-items: center;
+        gap: 8px;
+        min-height: 58px;
+        border-bottom: 1px solid #ece7dc;
+      }
+      .swipe-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 92px;
+        border-radius: 8px;
+        overflow: hidden;
+        border: 1px solid #d8d3c6;
+        background: #fffefa;
+      }
+      .swipe-row + .swipe-row { margin-top: 10px; }
+      .swipe-content {
+        padding: 14px;
+      }
+      .swipe-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+      }
+      .swipe-actions div {
+        display: grid;
+        place-items: center;
+        color: #fffefa;
+        font-weight: 950;
+      }
+      .edit { background: #314b58; }
+      .delete { background: #d6674d; }
+      .note {
+        margin-top: 14px;
+        padding: 12px 14px;
+        border-radius: 8px;
+        background: #f7f6f1;
+        color: #49535f;
+        font-size: 15px;
+        line-height: 1.45;
+      }
+      @media (max-width: 780px) {
+        body { padding: 16px; }
+        .two-pane { grid-template-columns: 1fr; }
+        .wide { min-height: auto; }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>시안 2 기반 폴더 구조 UI 후보</h1>
+    <p class="lead">정보 밀도 높은 암기장 리스트를 유지하면서, 세부 암기장을 어떻게 펼치고 추가/삭제할지 비교합니다.</p>
+
+    <section class="option">
+      <h2>후보 A. 펼침형 폴더 트리</h2>
+      <p>암기장을 누르면 바로 아래에 세부 암기장이 트리처럼 펼쳐집니다. 현재 흐름과 가장 가깝습니다.</p>
+      <div class="phone">
+        <div class="screen">
+          <div class="top"><div><p class="eyebrow">암기장 목록</p><h3 class="title">오늘 외울 것</h3></div><div class="add">+</div></div>
+          <div class="deck">
+            <div class="deck-head"><div><strong>한별 시험</strong><div class="meta">3개 세부 암기장 · 48문제</div></div><span class="pill study-pill">바로 암기</span></div>
+            <div class="tree">
+              <div class="section"><span class="branch"></span><div class="section-name"><span class="dot"></span><span>헌법</span></div><span class="meta">21문제</span></div>
+              <div class="section"><span class="branch"></span><div class="section-name"><span class="dot"></span><span>행정법</span></div><span class="meta">14문제</span></div>
+              <div class="section"><span class="branch"></span><div class="section-name"><span class="dot"></span><span>판례</span></div><span class="meta">13문제</span></div>
+              <button class="add-section">+ 세부 암기장 추가</button>
+            </div>
+          </div>
+          <div class="deck"><div class="deck-head"><div><strong>약리학</strong><div class="meta">8개 세부 암기장 · 132문제</div></div><span class="pill">펼치기</span></div></div>
+          <div class="deck"><div class="deck-head"><div><strong>한국사 왕</strong><div class="meta">5개 세부 암기장 · 91문제</div></div><span class="pill">펼치기</span></div></div>
+        </div>
+      </div>
+      <div class="note">추천도 높음. 한 화면에서 암기장과 세부 암기장을 같이 볼 수 있고, 폴더 구조가 직관적입니다.</div>
+    </section>
+
+    <section class="option">
+      <h2>후보 B. 컴팩트 하위 리스트</h2>
+      <p>트리 선은 없애고, 선택한 암기장 아래에 세부 암기장을 카드형 목록으로 붙입니다. 더 깔끔합니다.</p>
+      <div class="phone compact-tree">
+        <div class="screen">
+          <div class="top"><div><p class="eyebrow">암기장 목록</p><h3 class="title">오늘 외울 것</h3></div><div class="add">+</div></div>
+          <div class="deck">
+            <div class="deck-head"><div><strong>한별 시험</strong><div class="meta">3개 세부 암기장 · 48문제</div></div><span class="pill study-pill">바로 암기</span></div>
+            <div class="tree">
+              <div class="section"><div class="section-name"><span>헌법</span></div><span class="meta">21문제</span></div>
+              <div class="section"><div class="section-name"><span>행정법</span></div><span class="meta">14문제</span></div>
+              <div class="section"><div class="section-name"><span>판례</span></div><span class="meta">13문제</span></div>
+              <button class="add-section">+ 세부 암기장 추가</button>
+            </div>
+          </div>
+          <div class="deck"><div class="deck-head"><div><strong>약리학</strong><div class="meta">8개 세부 암기장 · 132문제</div></div><span class="pill">펼치기</span></div></div>
+        </div>
+      </div>
+      <div class="note">가장 심플합니다. 폴더 느낌은 약하지만, 모바일에서 읽기 좋습니다.</div>
+    </section>
+
+    <section class="option">
+      <h2>후보 C. 데스크톱 2분할 + 모바일은 후보 B</h2>
+      <p>PC에서는 왼쪽 암기장, 오른쪽 세부 암기장을 나눠 보여줍니다. 아이폰에서는 후보 B처럼 한 열로 전환합니다.</p>
+      <div class="phone wide">
+        <div class="screen">
+          <div class="top"><div><p class="eyebrow">공유코드 coffee-test</p><h3 class="title">암기장</h3></div><div class="add">+</div></div>
+          <div class="two-pane">
+            <aside class="side">
+              <div class="side-row active"><span>한별 시험</span><span>48</span></div>
+              <div class="side-row"><span>약리학</span><span>132</span></div>
+              <div class="side-row"><span>한국사 왕</span><span>91</span></div>
+              <div class="side-row"><span>영단어</span><span>260</span></div>
+            </aside>
+            <main class="main">
+              <div class="main-head"><div><p class="eyebrow">한별 시험</p><h3 class="title">세부 암기장</h3></div><span class="pill study-pill">+ 세부 추가</span></div>
+              <div class="detail-section"><strong>헌법</strong><span class="meta">21문제</span><span class="pill">암기</span></div>
+              <div class="detail-section"><strong>행정법</strong><span class="meta">14문제</span><span class="pill">암기</span></div>
+              <div class="detail-section"><strong>판례</strong><span class="meta">13문제</span><span class="pill">암기</span></div>
+            </main>
+          </div>
+        </div>
+      </div>
+      <div class="note">PC에서는 가장 효율적입니다. 다만 모바일/PC 레이아웃을 둘 다 관리해야 해서 구현과 유지보수가 조금 늘어납니다.</div>
+    </section>
+
+    <section class="option">
+      <h2>후보 D. 관리 액션 노출형</h2>
+      <p>세부 암기장 행 오른쪽에 암기/편집/삭제를 바로 보이게 합니다. 관리 작업이 빠릅니다.</p>
+      <div class="phone">
+        <div class="screen">
+          <div class="top"><div><p class="eyebrow">암기장 목록</p><h3 class="title">오늘 외울 것</h3></div><div class="add">+</div></div>
+          <div class="deck">
+            <div class="deck-head"><div><strong>한별 시험</strong><div class="meta">3개 세부 암기장 · 48문제</div></div><span class="pill study-pill">바로 암기</span></div>
+            <div class="tree">
+              <div class="section"><span class="branch"></span><div class="section-name"><span class="dot"></span><span>헌법</span></div><div class="section-actions"><div class="icon">▶</div><div class="icon">✎</div><div class="icon">⌫</div></div></div>
+              <div class="section"><span class="branch"></span><div class="section-name"><span class="dot"></span><span>행정법</span></div><div class="section-actions"><div class="icon">▶</div><div class="icon">✎</div><div class="icon">⌫</div></div></div>
+              <div class="section"><span class="branch"></span><div class="section-name"><span class="dot"></span><span>판례</span></div><div class="section-actions"><div class="icon">▶</div><div class="icon">✎</div><div class="icon">⌫</div></div></div>
+              <button class="add-section">+ 세부 암기장 추가</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="note">작업은 빠르지만 화면이 조금 복잡해집니다. 기본 화면보다는 편집 모드에서만 보이는 쪽이 좋아 보입니다.</div>
+    </section>
+
+    <section class="option">
+      <h2>후보 E. 모바일 스와이프 관리형</h2>
+      <p>기본 상태는 깔끔하게 두고, 세부 암기장을 왼쪽으로 밀면 편집/삭제가 드러나는 방식입니다.</p>
+      <div class="phone">
+        <div class="screen">
+          <div class="top"><div><p class="eyebrow">한별 시험</p><h3 class="title">세부 암기장</h3></div><div class="add">+</div></div>
+          <div class="swipe-row"><div class="swipe-content"><strong>헌법</strong><div class="meta">21문제 · 바로 누르면 암기</div></div><div class="swipe-actions"><div class="edit">편집</div><div class="delete">삭제</div></div></div>
+          <div class="swipe-row"><div class="swipe-content"><strong>행정법</strong><div class="meta">14문제 · 바로 누르면 암기</div></div><div class="swipe-actions"><div class="edit">편집</div><div class="delete">삭제</div></div></div>
+          <div class="swipe-row"><div class="swipe-content"><strong>판례</strong><div class="meta">13문제 · 바로 누르면 암기</div></div><div class="swipe-actions"><div class="edit">편집</div><div class="delete">삭제</div></div></div>
+        </div>
+      </div>
+      <div class="note">깔끔하지만 스와이프 조작이 숨겨져 있어서 직관성이 떨어질 수 있습니다. 아이폰 앱 느낌은 제일 강합니다.</div>
+    </section>
+  </body>
+</html>
