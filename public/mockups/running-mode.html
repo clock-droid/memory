@@ -1,0 +1,484 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>러닝 모드 — 오른손 한 손 학습 시안</title>
+    <style>
+      :root {
+        --ink: #1d1d1f;
+        --muted: #69717b;
+        --accent: #007aff;
+        --answer: #1546ff;
+        --mask: #e5f4ff;
+        --paper: #f1f0ec;
+        --star: #e4b200;
+        --done: #24a148;
+        --line: #dcd8cd;
+        --ease: cubic-bezier(0.22, 1, 0.36, 1);
+        font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+      }
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+      body {
+        margin: 0;
+        padding: 28px 20px 60px;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at 84% -6%, rgba(0, 122, 255, 0.06), transparent 34%),
+          linear-gradient(180deg, #fbfaf7, #eeede8);
+      }
+      h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: -0.02em; }
+      .lead { margin: 0 auto 22px; max-width: 760px; color: var(--muted); line-height: 1.6; }
+      .stage {
+        display: grid;
+        grid-template-columns: min(100%, 380px) minmax(0, 320px);
+        gap: 30px;
+        justify-content: center;
+        align-items: start;
+      }
+      @media (max-width: 780px) { .stage { grid-template-columns: min(100%, 380px); } }
+
+      /* ---- phone frame ---- */
+      .phone {
+        position: relative;
+        width: min(100%, 380px);
+        height: 760px;
+        margin: 0 auto;
+        border-radius: 40px;
+        background: var(--paper);
+        border: 10px solid #14161c;
+        box-shadow: 0 30px 70px rgba(20, 22, 28, 0.28);
+        overflow: hidden;
+      }
+      .run {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+      }
+
+      /* ---- top: info only ---- */
+      .run-top {
+        display: grid;
+        grid-template-columns: 1fr auto auto;
+        align-items: center;
+        gap: 12px;
+        padding: 16px 18px 10px;
+      }
+      .progress {
+        height: 8px;
+        border-radius: 999px;
+        background: rgba(0, 0, 0, 0.08);
+        overflow: hidden;
+      }
+      .progress > i {
+        display: block;
+        height: 100%;
+        width: 12%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #2f9bff, #007aff);
+        transition: width 260ms var(--ease);
+      }
+      .count { font-variant-numeric: tabular-nums; font-weight: 800; font-size: 15px; }
+      .count b { color: var(--accent); }
+      .count small { color: var(--muted); font-weight: 700; }
+      .exit {
+        width: 38px; height: 38px;
+        display: grid; place-items: center;
+        border: 1px solid var(--line); border-radius: 12px;
+        background: #fff; font-size: 18px; color: var(--muted);
+      }
+
+      /* ---- card body = confirm hit area ---- */
+      .run-card {
+        position: relative;
+        margin: 8px 14px;
+        padding: 30px 22px 22px 26px;
+        border-radius: 24px;
+        background: #ffffff;
+        border: 1px solid rgba(0, 0, 0, 0.05);
+        box-shadow: 0 2px 4px rgba(45, 45, 60, 0.03), 0 16px 34px rgba(45, 45, 60, 0.08);
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        overflow-y: auto;
+        cursor: pointer;
+        user-select: none;
+      }
+      .run-card::before {
+        content: "";
+        position: absolute;
+        left: 0; top: 20px; bottom: 20px;
+        width: 8px;
+        border-radius: 0 6px 6px 0;
+        background: transparent;
+        transition: background 200ms var(--ease);
+      }
+      .run-card[data-mark="star"]::before { background: var(--star); }
+      .run-card[data-mark="done"]::before { background: var(--done); }
+      .badge {
+        position: absolute;
+        top: 16px; right: 16px;
+        width: 30px; height: 30px;
+        display: none;
+        place-items: center;
+        border-radius: 999px;
+        font-size: 15px; font-weight: 900; color: #fff;
+      }
+      .run-card[data-mark="star"] .badge { display: grid; background: var(--star); }
+      .run-card[data-mark="done"] .badge { display: grid; background: var(--done); }
+
+      .q {
+        font-size: clamp(1.7rem, 6.4vw, 2.3rem);
+        font-weight: 850;
+        line-height: 1.3;
+        letter-spacing: -0.01em;
+      }
+      .q .kase { color: var(--muted); font-weight: 800; font-size: 0.62em; display: block; margin-bottom: 6px; letter-spacing: 0.04em; }
+      .a {
+        font-size: clamp(1.5rem, 6vw, 2rem);
+        font-weight: 800;
+        line-height: 1.45;
+        color: var(--answer);
+      }
+      .cloze { font-size: clamp(1.4rem, 5.6vw, 1.9rem); font-weight: 650; line-height: 1.9; }
+
+      /* blanks */
+      .blank {
+        display: inline-grid;
+        vertical-align: baseline;
+        min-height: 1.5em;
+        padding: 0.08em 0.55em;
+        border-radius: 10px;
+        background: var(--mask);
+        color: transparent;
+        font-weight: 800;
+        transition: background 160ms var(--ease);
+      }
+      .blank.is-next { animation: pulse 1.4s var(--ease) infinite; }
+      .blank.on {
+        background: transparent;
+        color: var(--answer);
+        padding-left: 0; padding-right: 0;
+        animation: none;
+      }
+      @keyframes pulse {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(0, 122, 255, 0); }
+        50% { box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.25); }
+      }
+      .group { display: grid; gap: 12px; }
+      .group .gtitle { font-size: clamp(1.5rem, 6vw, 2rem); font-weight: 850; }
+      .group ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 12px; }
+      .group li { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: baseline; font-size: clamp(1.3rem, 5.2vw, 1.7rem); font-weight: 650; }
+      .group .gm { color: var(--muted); font-weight: 800; }
+
+      .tap-hint {
+        margin-top: auto;
+        padding-top: 10px;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 700;
+        text-align: center;
+      }
+
+      /* aux row: only after fully revealed */
+      .aux {
+        display: flex;
+        justify-content: center;
+        gap: 10px;
+        margin: 4px 14px 0;
+        opacity: 0;
+        visibility: hidden;
+        transform: translateY(6px);
+        transition: opacity 240ms var(--ease), transform 240ms var(--ease);
+      }
+      .aux.show { opacity: 1; visibility: visible; transform: none; }
+      .aux button {
+        min-width: 92px; height: 54px;
+        display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+        border: 1px solid var(--line); border-radius: 16px;
+        background: #fff; color: var(--ink);
+        font-size: 15px; font-weight: 800;
+      }
+      .aux button.on.star { border-color: var(--star); color: #a97800; background: #fff4ca; }
+      .aux button.on.done { border-color: var(--done); color: #fff; background: var(--done); }
+
+      /* bottom dock: thumb zone */
+      .dock {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        gap: 14px;
+        padding: 14px 20px calc(18px + env(safe-area-inset-bottom));
+      }
+      .prev {
+        width: 58px; height: 58px;
+        display: inline-grid; place-items: center;
+        border: 1px solid var(--line); border-radius: 999px;
+        background: #fff; color: var(--muted); font-size: 22px; font-weight: 900;
+        justify-self: start;
+      }
+      .next {
+        width: 88px; height: 88px;
+        display: inline-grid; place-items: center;
+        border: 0; border-radius: 999px;
+        background: linear-gradient(180deg, #1f92ff, #007aff 62%);
+        color: #fff;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 12px 26px rgba(0, 122, 255, 0.32);
+        font-size: 16px; font-weight: 900;
+        justify-self: end;
+      }
+      .next:active, .prev:active, .aux button:active, .run-card:active { transform: scale(0.97); }
+      button { cursor: pointer; transition: transform 140ms var(--ease); }
+
+      /* thumb reach overlay */
+      .thumb-arc {
+        position: absolute;
+        right: -120px; bottom: -60px;
+        width: 460px; height: 460px;
+        border-radius: 999px;
+        background: radial-gradient(circle at 70% 70%, rgba(214, 103, 77, 0.16), rgba(214, 103, 77, 0.05) 60%, transparent 72%);
+        border: 1px dashed rgba(214, 103, 77, 0.4);
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 200ms var(--ease);
+      }
+      .thumb-arc.show { opacity: 1; }
+      .thumb-arc span {
+        position: absolute; left: 70px; top: 150px;
+        color: #9b4a36; font-size: 12px; font-weight: 900;
+        transform: rotate(-32deg);
+      }
+
+      /* summary screen */
+      .summary {
+        position: absolute; inset: 0;
+        display: none;
+        flex-direction: column; align-items: center; justify-content: center;
+        gap: 12px; padding: 40px;
+        background: var(--paper);
+        text-align: center;
+      }
+      .summary.show { display: flex; }
+      .summary h2 { margin: 0; font-size: 30px; }
+      .summary p { margin: 0; color: var(--muted); font-weight: 700; font-size: 17px; line-height: 1.7; }
+      .summary .again {
+        margin-top: 14px; min-height: 52px; padding: 0 26px;
+        border: 0; border-radius: 16px; color: #fff;
+        background: linear-gradient(180deg, #1f92ff, #007aff 62%);
+        font-size: 16px; font-weight: 900;
+      }
+
+      /* side notes */
+      .notes { display: grid; gap: 12px; align-content: start; }
+      .note {
+        padding: 14px 16px;
+        border: 1px solid var(--line); border-radius: 14px;
+        background: #fffefb;
+        font-size: 14px; line-height: 1.55; color: #49535f;
+      }
+      .note b { color: var(--ink); }
+      .toggle {
+        display: inline-flex; align-items: center; gap: 8px;
+        min-height: 42px; padding: 0 16px;
+        border: 1px solid var(--line); border-radius: 999px;
+        background: #fff; font-weight: 800; font-size: 14px;
+      }
+      .toggle.on { background: #fff1ed; border-color: #efb7a8; color: #9b4a36; }
+      .legend { display: flex; flex-wrap: wrap; gap: 10px; }
+      .legend span { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: var(--muted); }
+      .dot { width: 12px; height: 12px; border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <h1>러닝 모드 — 오른손 한 손 학습 시안</h1>
+    <p class="lead">
+      달리며 흘긋 보며 오른손 엄지 하나로 굴리는 "집중 모드"입니다. <b>실제로 눌러볼 수 있습니다.</b>
+      카드 본문 아무 데나 탭 = 다음 빈칸 공개, 우하단 큰 버튼 = 다음 카드. 스와이프·롱프레스는 쓰지 않습니다(손 흔들림·OS 홈 제스처 충돌 때문).
+    </p>
+
+    <div class="stage">
+      <div>
+        <div class="phone">
+          <div class="run" id="run">
+            <div class="run-top">
+              <div class="progress"><i id="bar"></i></div>
+              <div class="count"><b id="cur">1</b><small> / <span id="tot">4</span></small></div>
+              <button class="exit" onclick="reset()" aria-label="러닝 종료">✕</button>
+            </div>
+
+            <div class="run-card" id="card" onclick="onCardTap(event)" role="button" aria-label="정답 보기">
+              <span class="badge" id="badge">★</span>
+              <div id="cardBody"></div>
+              <div class="tap-hint" id="tapHint">카드를 탭해 정답을 확인하세요</div>
+            </div>
+
+            <div>
+              <div class="aux" id="aux">
+                <button id="hintBtn" onclick="onHint(event)">💡 힌트</button>
+                <button class="star" id="starBtn" onclick="onMark(event,'star')">★ 별표</button>
+                <button class="done" id="doneBtn" onclick="onMark(event,'done')">✓ 완료</button>
+              </div>
+              <div class="dock">
+                <button class="prev" onclick="go(-1)" aria-label="이전 카드">◀</button>
+                <button class="next" onclick="onNext()" aria-label="다음 카드">다음 ▶</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="summary" id="summary">
+            <h2>한 바퀴 완료 🏃</h2>
+            <p id="summaryText"></p>
+            <button class="again" onclick="reset()">처음부터</button>
+          </div>
+
+          <div class="thumb-arc" id="arc"><span>오른손 엄지 도달권</span></div>
+        </div>
+      </div>
+
+      <div class="notes">
+        <button class="toggle" id="arcToggle" onclick="toggleArc()">👍 엄지 도달권 보기</button>
+        <div class="note">
+          <b>확인과 다음이 물리적으로 분리</b>돼 있습니다. 확인은 카드 본문(넓은 면), 다음은 우하단 코너 고정 버튼(88px). 관성 더블탭이 카드를 건너뛰지 않습니다.
+        </div>
+        <div class="note">
+          <b>정밀 조준 0.</b> 확인은 화면 절반 아무 데나, 다음/이전은 코너 근육기억. 작은 버튼을 정확히 겨눌 일이 없습니다.
+        </div>
+        <div class="note">
+          <b>자기평가는 답 공개 후에만</b> 나타납니다(별표/완료). 오탭으로 상태가 오염되지 않게 아직 안 본 카드에선 숨겨집니다.
+        </div>
+        <div class="note">
+          <b>상태는 색+아이콘+세로 바</b>로 표시 — 직사광선에서도 판별. <span class="legend"><span><span class="dot" style="background:#e4b200"></span>별표</span><span><span class="dot" style="background:#24a148"></span>완료</span></span>
+        </div>
+        <div class="note">
+          여러 빈칸(cloze·묶음)은 탭할 때마다 왼→오 순차 공개. 아직 하나도 안 열린 카드에서 <b>다음</b>을 누르면 "답 안 보고 넘김" 방지를 위해 먼저 전체를 공개합니다.
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const cards = [
+        { type: 'pair', kase: '대한민국의 수도', q: '대한민국의 수도', a: '서울' },
+        { type: 'cloze', parts: ['조선은 ', { b: '1392' }, '년에 ', { b: '이성계' }, '가 세웠다'] },
+        { type: 'group', title: '삼권분립', items: [['입법', '국회'], ['행정', '정부'], ['사법', '법원']] },
+        { type: 'pair', kase: '물의 화학식', q: '물의 화학식', a: 'H₂O' },
+      ];
+
+      let idx = 0;
+      let revealed = []; // booleans per blank in current card
+      let marks = {};    // idx -> 'star' | 'done'
+
+      function blanksInCard(c) {
+        if (c.type === 'pair') return 1;
+        if (c.type === 'cloze') return c.parts.filter((p) => typeof p === 'object').length;
+        if (c.type === 'group') return c.items.length;
+        return 0;
+      }
+
+      function render() {
+        const c = cards[idx];
+        const body = document.getElementById('cardBody');
+        const total = blanksInCard(c);
+        const nextI = revealed.findIndex((v) => !v);
+        let html = '';
+        if (c.type === 'pair') {
+          const on = revealed[0];
+          html = '<div class="q"><span class="kase">' + c.kase + '</span>' + c.q + '</div>' +
+            '<div class="a"><span class="blank ' + (on ? 'on' : (nextI === 0 ? 'is-next' : '')) + '">' + c.a + '</span></div>';
+        } else if (c.type === 'cloze') {
+          let bi = -1;
+          html = '<div class="cloze">' + c.parts.map((p) => {
+            if (typeof p === 'string') return p;
+            bi++;
+            const on = revealed[bi];
+            const isNext = bi === nextI;
+            return '<span class="blank ' + (on ? 'on' : (isNext ? 'is-next' : '')) + '">' + p.b + '</span>';
+          }).join('') + '</div>';
+        } else if (c.type === 'group') {
+          html = '<div class="group"><div class="gtitle">' + c.title + '</div><ul>' +
+            c.items.map((it, i) => {
+              const on = revealed[i];
+              const isNext = i === nextI;
+              return '<li><span class="gm">' + it[0] + '</span><span class="blank ' + (on ? 'on' : (isNext ? 'is-next' : '')) + '">' + it[1] + '</span></li>';
+            }).join('') + '</ul></div>';
+        }
+        body.innerHTML = html;
+
+        const allOn = revealed.every(Boolean);
+        document.getElementById('tapHint').style.display = allOn ? 'none' : '';
+        document.getElementById('aux').classList.toggle('show', allOn);
+
+        const card = document.getElementById('card');
+        card.dataset.mark = marks[idx] || '';
+        document.getElementById('badge').textContent = marks[idx] === 'done' ? '✓' : '★';
+        document.getElementById('starBtn').classList.toggle('on', marks[idx] === 'star');
+        document.getElementById('doneBtn').classList.toggle('on', marks[idx] === 'done');
+
+        document.getElementById('cur').textContent = idx + 1;
+        document.getElementById('tot').textContent = cards.length;
+        document.getElementById('bar').style.width = ((idx + 1) / cards.length * 100) + '%';
+        card.scrollTop = 0;
+      }
+
+      function loadCard() {
+        revealed = new Array(blanksInCard(cards[idx])).fill(false);
+        render();
+      }
+
+      function onCardTap(e) {
+        const ni = revealed.findIndex((v) => !v);
+        if (ni >= 0) { revealed[ni] = true; render(); }
+      }
+
+      function onNext() {
+        // 아직 하나도 안 열렸으면 먼저 전체 공개 (답 안 보고 넘김 방지)
+        if (revealed.length && revealed.every((v) => !v)) {
+          revealed = revealed.map(() => true);
+          render();
+          return;
+        }
+        if (idx < cards.length - 1) { idx++; loadCard(); }
+        else showSummary();
+      }
+
+      function go(delta) {
+        const n = idx + delta;
+        if (n < 0 || n >= cards.length) return;
+        idx = n; loadCard();
+      }
+
+      function onHint(e) {
+        e.stopPropagation();
+        // 데모: 힌트는 "다시 가리기"로 순차 확인을 재현
+        revealed = revealed.map(() => false);
+        render();
+      }
+
+      function onMark(e, kind) {
+        e.stopPropagation();
+        marks[idx] = marks[idx] === kind ? undefined : kind; // 토글 + 상호배타
+        render();
+      }
+
+      function showSummary() {
+        const star = Object.values(marks).filter((m) => m === 'star').length;
+        const done = Object.values(marks).filter((m) => m === 'done').length;
+        document.getElementById('summaryText').innerHTML =
+          '본 카드 ' + cards.length + ' · 별표 ' + star + ' · 완료 ' + done;
+        document.getElementById('summary').classList.add('show');
+      }
+
+      function reset() {
+        document.getElementById('summary').classList.remove('show');
+        idx = 0; marks = {}; loadCard();
+      }
+
+      function toggleArc() {
+        document.getElementById('arc').classList.toggle('show');
+        document.getElementById('arcToggle').classList.toggle('on');
+      }
+
+      loadCard();
+    </script>
+  </body>
+</html>
