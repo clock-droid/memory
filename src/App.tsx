@@ -699,15 +699,19 @@ export default function App() {
   async function saveContent() {
     if (!repository || !selectedDeck || !selectedSection) return;
     setBusy(true);
+    const previousBaseline = editBaselineRef.current;
+    const previousConflictText = conflictText;
     try {
       const sourceText = editText;
       const nextCards = preserveStars(toCards(parsedLines), sectionCards);
-      await repository.setSectionContent(selectedDeck.id, selectedSection.id, sourceText, nextCards);
       editBaselineRef.current = sourceText;
       setConflictText(null);
+      await repository.setSectionContent(selectedDeck.id, selectedSection.id, sourceText, nextCards);
       showToast('success', '저장되었습니다.');
       setView('study');
     } catch (error) {
+      editBaselineRef.current = previousBaseline;
+      setConflictText(previousConflictText);
       showToast('error', error instanceof Error ? error.message : '저장에 실패했습니다. 네트워크를 확인하세요.');
     } finally {
       setBusy(false);
