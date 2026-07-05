@@ -218,6 +218,7 @@ textarea:focus {
 .section-title,
 .add-section-button,
 .reveal-button,
+.hint-button,
 .star-button,
 .mastered-button,
 .room-form button {
@@ -258,6 +259,7 @@ textarea:focus {
 .icon-button:hover,
 .toggle-button:hover,
 .add-section-button:hover,
+.hint-button:hover,
 .star-button:hover,
 .mastered-button:hover {
   background: rgba(242, 242, 247, 0.82);
@@ -406,6 +408,7 @@ textarea:focus {
 }
 
 .icon-button,
+.hint-button,
 .star-button,
 .mastered-button {
   width: 38px;
@@ -544,7 +547,6 @@ textarea:focus {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 14px;
-  cursor: pointer;
 }
 
 .group-card .memory-body {
@@ -756,6 +758,22 @@ textarea:focus {
 
 .reveal-button.shown .answer-text {
   visibility: visible;
+}
+
+/* 가려진 상태에서는 답 길이가 유출되지 않도록 고정 폭 사용.
+   힌트가 열리면 힌트 내용이 잘리지 않게 실제 답 크기로 확장한다. */
+.reveal-button:not(.shown):not(.hinted) .answer-measure,
+.reveal-button:not(.shown):not(.hinted) .answer-text {
+  display: none;
+}
+
+.reveal-button:not(.shown):not(.hinted) .answer-mask {
+  width: 8ch;
+  min-height: calc(var(--blank-min-height) - 2px);
+}
+
+.reveal-button.inline:not(.shown):not(.hinted) .answer-mask {
+  width: 6ch;
 }
 
 .editor-grid {
@@ -1101,29 +1119,19 @@ textarea:focus {
   .memory-card {
     grid-template-columns: 34px minmax(0, 1fr);
     align-items: start;
-    padding-right: 68px;
   }
 
   .memory-actions {
-    position: absolute;
-    top: 14px;
-    right: 10px;
-    grid-column: auto;
+    grid-column: 1 / -1;
     justify-content: flex-end;
-    width: auto;
-    gap: 4px;
+    gap: 8px;
   }
 
-  .memory-actions .icon-button,
+  .memory-actions .hint-button,
   .memory-actions .star-button,
   .memory-actions .mastered-button {
-    width: 28px;
-    height: 28px;
-  }
-
-  .memory-actions svg {
-    width: 15px;
-    height: 15px;
+    width: 40px;
+    height: 40px;
   }
 
   .memory-body {

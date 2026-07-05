@@ -7,6 +7,7 @@ import {
   Edit3,
   Folder,
   FolderOpen,
+  Lightbulb,
   Plus,
   Redo2,
   Save,
@@ -42,9 +43,7 @@ type Toast = { id: number; kind: 'error' | 'success'; message: string };
 type RevealHandlers = {
   revealed: Record<string, boolean>;
   hinted: Record<string, boolean>;
-  startPress: (key: string) => void;
-  endPress: (key: string) => void;
-  cancelPress: (key: string) => void;
+  toggleReveal: (key: string) => void;
 };
 
 function normalizeRoomCode(value: string) {
@@ -488,6 +487,11 @@ export default function App() {
     }
   }, [savedSourceText, editText, selectedSection?.id]);
 
+  useEffect(() => {
+    setShuffle(false);
+    setShuffleCardIds([]);
+  }, [selectedSectionId]);
+
   async function enterRoom(event: FormEvent) {
     event.preventDefault();
     const code = normalizeRoomCode(roomInput);
@@ -708,6 +712,8 @@ export default function App() {
       setConflictText(null);
       await repository.setSectionContent(selectedDeck.id, selectedSection.id, sourceText, nextCards);
       showToast('success', '저장되었습니다.');
+      setShuffle(false);
+      setShuffleCardIds([]);
       setView('study');
     } catch (error) {
       editBaselineRef.current = previousBaseline;
@@ -1698,37 +1704,19 @@ function MemoryCard({
     setRevealed((current) => ({ ...current, [nextRevealKey]: true }));
   }
 
-  function handleCardHint(event: React.PointerEvent<HTMLElement>) {
-    if ((event.target as HTMLElement).closest('.reveal-button, .star-button, .mastered-button')) return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    if (event.clientX < rect.left + rect.width / 2) return;
-    showNextHint();
-  }
-
-  function startPress(_key: string) {
-    // no-op: tap toggles the mask directly.
-  }
-
-  function endPress(key: string) {
-    toggleReveal(key);
-  }
-
-  function cancelPress(_key: string) {
-    // no-op
-  }
-
-  const handlers = { revealed, hinted, startPress, endPress, cancelPress };
+  const hintExhausted = revealKeys.length === 0 || revealKeys.every((key) => revealed[key]);
+  const handlers = { revealed, hinted, toggleReveal };
 
   return (
-    <article
-      className={`memory-card ${card.type === 'group' ? 'group-card' : ''} ${card.type === 'pair' ? 'pair-card' : ''}`}
-      onPointerUp={handleCardHint}
-    >
+    <article className={`memory-card ${card.type === 'group' ? 'group-card' : ''} ${card.type === 'pair' ? 'pair-card' : ''}`}>
       <div className="memory-index">{index}</div>
       <div className="memory-body">
         <MemoryCardBody card={card} handlers={handlers} />
       </div>
       <div className="memory-actions">
+        <button className="hint-button" onClick={showNextHint} disabled={hintExhausted} aria-label="힌트 보기">
+          <Lightbulb size={17} />
+        </button>
         <button
           className={`star-button ${card.starred ? 'active' : ''}`}
           onClick={onToggleStar}
@@ -1759,10 +1747,7 @@ function MemoryCardBody({ card, handlers }: { card: Card; handlers: RevealHandle
           value={card.answers[0] ?? ''}
           shown={Boolean(handlers.revealed[`${card.id}:0`])}
           hint={handlers.hinted[`${card.id}:0`] ? answerHint(card.answers[0] ?? '') : ''}
-          onPointerDown={() => handlers.startPress(`${card.id}:0`)}
-          onPointerUp={() => handlers.endPress(`${card.id}:0`)}
-          onPointerCancel={() => handlers.cancelPress(`${card.id}:0`)}
-          onPointerLeave={() => handlers.cancelPress(`${card.id}:0`)}
+          onToggle={() => handlers.toggleReveal(`${card.id}:0`)}
         />
       </>
     );
@@ -1806,10 +1791,7 @@ function ClozeText({ rawText, keyPrefix, handlers }: { rawText: string; keyPrefi
             inline
             shown={Boolean(handlers.revealed[`${keyPrefix}:${piece.index}`])}
             hint={handlers.hinted[`${keyPrefix}:${piece.index}`] ? answerHint(piece.value) : ''}
-            onPointerDown={() => handlers.startPress(`${keyPrefix}:${piece.index}`)}
-            onPointerUp={() => handlers.endPress(`${keyPrefix}:${piece.index}`)}
-            onPointerCancel={() => handlers.cancelPress(`${keyPrefix}:${piece.index}`)}
-            onPointerLeave={() => handlers.cancelPress(`${keyPrefix}:${piece.index}`)}
+            onToggle={() => handlers.toggleReveal(`${keyPrefix}:${piece.index}`)}
           />
         ),
       )}
@@ -1822,28 +1804,22 @@ function RevealButton({
   shown,
   hint,
   inline = false,
-  onPointerDown,
-  onPointerUp,
-  onPointerCancel,
-  onPointerLeave,
+  onToggle,
 }: {
   value: string;
   shown: boolean;
   hint?: string;
   inline?: boolean;
-  onPointerDown: () => void;
-  onPointerUp: () => void;
-  onPointerCancel: () => void;
-  onPointerLeave: () => void;
+  onToggle: () => void;
 }) {
   return (
     <button
-      className={`reveal-button ${inline ? 'inline' : ''} ${shown ? 'shown' : ''}`}
-      onPointerDown={onPointerDown}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerCancel}
-      onPointerLeave={onPointerLeave}
+      type="button"
+      className={`reveal-button ${inline ? 'inline' : ''} ${shown ? 'shown' : ''} ${hint ? 'hinted' : ''}`}
+      onClick={onToggle}
       onContextMenu={(event) => event.preventDefault()}
+      aria-pressed={shown}
+      aria-label={shown ? undefined : '정답 보기'}
     >
       <span className="answer-measure">{value}</span>
       <span className={`answer-mask ${hint ? 'hinted' : ''}`} aria-hidden="true">
