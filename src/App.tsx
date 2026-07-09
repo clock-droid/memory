@@ -1,1836 +1,1741 @@
-﻿import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
-import {
-  BookOpen,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  Edit3,
-  Folder,
-  FolderOpen,
-  Lightbulb,
-  Plus,
-  Redo2,
-  Save,
-  Shuffle,
-  Star,
-  Trash2,
-  Undo2,
-} from 'lucide-react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import type { ChangeEvent, PointerEvent as ReactPointerEvent } from 'react';
+import { TriangleAlert } from 'lucide-react';
 import { createFirebaseRepository } from './firebase';
 import { createLocalRepository } from './localRepository';
-import { parseInput, splitCloze, toCards } from './parser';
 import { createServerRepository } from './serverRepository';
-import type { Card, Deck, ParsedLine, Repository, Section } from './types';
+import { splitCloze } from './parser';
+import type { Card, Deck, NewCard, Repository, Section } from './types';
 
 const ROOM_KEY = 'exam-memorizer-room-code';
-const LAST_DECK_KEY = 'exam-memorizer-last-deck';
-const LAST_SECTION_PREFIX = 'exam-memorizer-last-section';
+const ACCENT = '#007aff';
+const ACCENT_DEEP = '#0a5dc2';
+const ACCENT_SOFT = 'rgba(0,122,255,0.08)';
+const ACCENT_DASHED = 'rgba(0,122,255,0.4)';
+const SUBJECT_COLORS = ['#007aff', '#af52de', '#ff9500', '#34c759', '#ff2d55', '#5856d6', '#00c7be', '#ff3b30'];
+// PC (mouse) users can't discover swipe — surface the keyboard shortcuts to them.
+const IS_PC = typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(pointer: fine)').matches;
 
-type View = 'home' | 'study' | 'edit';
-type NameDialog =
-  | { type: 'deck'; title: string; label: string; defaultValue: string }
-  | { type: 'section'; deckId: string; title: string; label: string; defaultValue: string };
-type DeckCacheEntry = {
-  cards: Card[];
-  sections: Section[];
-  cardsLoaded: boolean;
-  sectionsLoaded: boolean;
-  cardsError?: boolean;
-  sectionsError?: boolean;
-};
-type DecksState = 'loading' | 'ready' | 'error';
-type Toast = { id: number; kind: 'error' | 'success'; message: string };
-type RevealHandlers = {
-  revealed: Record<string, boolean>;
-  hinted: Record<string, boolean>;
-  toggleReveal: (key: string) => void;
-};
-
+// ------------------------------------------------------------------ helpers
 function normalizeRoomCode(value: string) {
   return value.trim().replace(/[^A-Za-z0-9_-]/g, '').slice(0, 48);
 }
 
-function sectionKey(card: Card) {
-  return card.sectionId ?? 'default';
+function hashStr(value: string) {
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
+  return hash;
 }
 
-function sourceFromCards(cards: Card[]) {
-  return cards.map((card) => card.rawText).join('\n');
+function colorForDeck(deckId: string) {
+  return SUBJECT_COLORS[hashStr(deckId) % SUBJECT_COLORS.length];
 }
 
-function displayDeckName(deck?: Deck) {
-  if (!deck) return '암기장';
-  return deck.name?.trim() || '암기장';
+type Token = { word: string; tail: string; hidden: boolean; gid: number; nl?: boolean };
+type Row = { kind: 'qa'; q: string; a: string } | { kind: 'tokens'; tokens: Token[] };
+
+function splitParticle(word: string): { word: string; tail: string } {
+  const match = word.match(/^(.{2,})([은는이가을를의와과도만])$/);
+  if (match) return { word: match[1], tail: match[2] };
+  return { word, tail: '' };
 }
 
-function displaySectionName(section?: Section) {
-  if (!section) return '세부 암기장';
-  return section.name?.trim() || '세부 암기장';
+function tokenizeLine(line: string, gidStart = 1): Token[] {
+  const tokens: Token[] = [];
+  let gid = gidStart;
+  const re = /\[([^\]]+)\]|\S+/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(line)) !== null) {
+    if (m[1] !== undefined) {
+      tokens.push({ word: m[1].trim(), tail: '', hidden: true, gid: gid++ });
+    } else {
+      const sp = splitParticle(m[0]);
+      tokens.push({ word: sp.word, tail: sp.tail, hidden: false, gid: 0 });
+    }
+  }
+  return tokens;
 }
 
-function emptyDeckCache(): DeckCacheEntry {
-  return { cards: [], sections: [], cardsLoaded: false, sectionsLoaded: false, cardsError: false, sectionsError: false };
+function tokenizeText(text: string, gidStart = 1): Token[] {
+  let g = gidStart;
+  let tokens: Token[] = [];
+  text.split('\n').forEach((line, i) => {
+    if (i > 0) tokens.push({ nl: true, word: '', tail: '', hidden: false, gid: 0 });
+    tokens = tokens.concat(tokenizeLine(line, g));
+    g += 100;
+  });
+  return tokens;
 }
 
-function preserveStars(nextCards: ReturnType<typeof toCards>, previousCards: Card[]) {
-  const statusByRawText = new Map(
-    previousCards.map((card) => [
-      card.rawText.trim(),
-      { starred: Boolean(card.starred), mastered: Boolean(card.mastered) },
-    ]),
-  );
-  return nextCards.map((card) => ({ ...card, ...(statusByRawText.get(card.rawText.trim()) ?? {}) }));
+function tokensToCard(tokens: Token[]): { q: string; a: string[] } {
+  const qParts: string[] = [];
+  const answers: string[] = [];
+  let j = 0;
+  while (j < tokens.length) {
+    const t = tokens[j];
+    if (t.nl) { qParts.push('\n'); j += 1; continue; }
+    if (!t.hidden) { qParts.push(t.word + t.tail); j += 1; continue; }
+    const g = t.gid;
+    const run: Token[] = [];
+    while (j < tokens.length && tokens[j].hidden && tokens[j].gid === g) { run.push(tokens[j]); j += 1; }
+    const ansParts = run.map((tt, k) => (k < run.length - 1 ? tt.word + tt.tail : tt.word));
+    answers.push(ansParts.join(' '));
+    qParts.push('___' + run[run.length - 1].tail);
+  }
+  let q = '';
+  for (const p of qParts) {
+    if (p === '\n') { q = q.replace(/ $/, '') + '\n'; continue; }
+    if (q && !q.endsWith('\n')) q += ' ';
+    q += p;
+  }
+  return { q: q.trim(), a: answers };
 }
 
-function stableShuffle<T>(items: T[], seed: number) {
-  const next = [...items];
-  let state = seed || 1;
-  const random = () => {
-    state = (state * 1664525 + 1013904223) % 4294967296;
-    return state / 4294967296;
+function cardToTokens(q: string, answers: string[]): Token[] {
+  const tokens: Token[] = [];
+  let g = 1;
+  let ai = 0;
+  q.split('\n').forEach((lineQ, li) => {
+    if (li > 0) tokens.push({ nl: true, word: '', tail: '', hidden: false, gid: 0 });
+    const parts = lineQ.split('___');
+    parts.forEach((part, i) => {
+      let rest = part;
+      if (i > 0) {
+        const tm = rest.match(/^(\S*)([\s\S]*)$/);
+        tokens.push({ word: answers[ai++] || '', tail: tm ? tm[1] : '', hidden: true, gid: g++ });
+        rest = tm ? tm[2] : rest;
+      }
+      for (const w of rest.trim().split(/\s+/).filter(Boolean)) {
+        const sp = splitParticle(w);
+        tokens.push({ word: sp.word, tail: sp.tail, hidden: false, gid: 0 });
+      }
+    });
+  });
+  return tokens;
+}
+
+function tokensToText(tokens: Token[]) {
+  return tokens.map((t) => (t.nl ? '\n' : t.word + t.tail)).join(' ').replace(/ ?\n ?/g, '\n').trim();
+}
+
+function parsePaste(text: string, mode: 'auto' | 'one'): Row[] {
+  if (mode === 'one') {
+    const lines = text.replace(/\r/g, '').split('\n').map((x) => x.trim()).filter(Boolean);
+    if (lines.length === 0) return [];
+    return [{ kind: 'tokens', tokens: tokenizeText(lines.join('\n'), 1) }];
+  }
+  const rows: Row[] = [];
+  const cleaned = text.replace(/\r/g, '');
+  const hasBlank = /\n\s*\n/.test(cleaned.trim());
+  const units = hasBlank ? cleaned.split(/\n\s*\n+/) : cleaned.split('\n');
+  let g = 1;
+  for (const rawU of units) {
+    const lines = rawU.split('\n').map((x) => x.trim()).filter(Boolean);
+    if (lines.length === 0) continue;
+    if (lines.length === 1) {
+      const line = lines[0];
+      const hasBracket = /\[[^\]]+\]/.test(line);
+      if (!hasBracket) {
+        const a = line.indexOf('->');
+        const c = line.indexOf(':');
+        const sep = a >= 0 && (c < 0 || a < c) ? { i: a, len: 2 } : c >= 0 ? { i: c, len: 1 } : null;
+        if (sep && line.slice(0, sep.i).trim() && line.slice(sep.i + sep.len).trim()) {
+          rows.push({ kind: 'qa', q: line.slice(0, sep.i).trim(), a: line.slice(sep.i + sep.len).trim() });
+          continue;
+        }
+      }
+      const tokens = tokenizeLine(line, g);
+      g += 100;
+      if (tokens.length > 0) rows.push({ kind: 'tokens', tokens });
+    } else {
+      const tokens = tokenizeText(lines.join('\n'), g);
+      g += 100 * lines.length;
+      if (tokens.length > 0) rows.push({ kind: 'tokens', tokens });
+    }
+  }
+  return rows;
+}
+
+// stored Card -> prototype-style { q(with ___), a[] }
+function deriveGroup(card: Card): { q: string; a: string[] } {
+  const items = card.groupItems ?? [];
+  const anyBlank = items.some((it) => /\[[^\]]+\]/.test(it.text));
+  if (anyBlank) {
+    const qLines = [card.prompt];
+    const a: string[] = [];
+    for (const it of items) {
+      let line = it.marker || '';
+      for (const piece of splitCloze(it.text)) {
+        if (piece.kind === 'text') line += piece.value;
+        else { line += '___'; a.push(piece.value); }
+      }
+      qLines.push(line);
+    }
+    return { q: qLines.join('\n'), a };
+  }
+  const body = items.map((it) => `${it.marker || '· '}${it.text}`).join('\n');
+  return { q: card.prompt, a: [body || card.prompt] };
+}
+
+function deriveQA(card: Card): { q: string; a: string[] } {
+  if (card.type === 'group') return deriveGroup(card);
+  if (card.type === 'cloze') {
+    if (card.prompt.includes('___')) return { q: card.prompt, a: card.answers };
+    const pieces = splitCloze(card.prompt);
+    if (pieces.some((p) => p.kind === 'blank')) {
+      let q = '';
+      const a: string[] = [];
+      for (const piece of pieces) {
+        if (piece.kind === 'text') q += piece.value;
+        else { q += '___'; a.push(piece.value); }
+      }
+      return { q, a };
+    }
+  }
+  return { q: card.prompt, a: card.answers };
+}
+
+function qaToNewCard(q: string, a: string[], mastered: boolean): NewCard {
+  const isCloze = q.includes('___');
+  return {
+    type: isCloze ? 'cloze' : 'pair',
+    prompt: q,
+    answers: a,
+    rawText: isCloze ? q : `${q}: ${a.join(', ')}`,
+    mastered,
   };
-  for (let index = next.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(random() * (index + 1));
-    [next[index], next[swapIndex]] = [next[swapIndex], next[index]];
-  }
-  return next;
 }
 
-function shuffledStudyCards(cards: Card[], seed: number) {
-  const ordered = [...cards].sort((a, b) => a.createdAt - b.createdAt);
-  const starred = stableShuffle(ordered.filter((card) => card.starred), seed);
-  const normal = stableShuffle(ordered.filter((card) => !card.starred && !card.mastered), seed + 19);
-  const mastered = stableShuffle(ordered.filter((card) => !card.starred && card.mastered), seed + 37);
-  return [...starred, ...normal, ...mastered];
+function cardToNewCard(card: Card, masteredOverride?: boolean): NewCard {
+  return {
+    type: card.type,
+    prompt: card.prompt,
+    answers: card.answers,
+    rawText: card.rawText,
+    groupItems: card.groupItems,
+    starred: card.starred,
+    mastered: masteredOverride !== undefined ? masteredOverride : card.mastered,
+  };
 }
 
-function revealKeysForCard(card: Card) {
-  if (card.type === 'pair') return [`${card.id}:0`];
-  if (card.type === 'group') {
-    return (card.groupItems ?? []).flatMap((item, itemIndex) =>
-      splitCloze(item.text)
-        .filter((piece): piece is Extract<ReturnType<typeof splitCloze>[number], { kind: 'blank' }> => piece.kind === 'blank')
-        .map((piece) => `${card.id}:group:${itemIndex}:${piece.index}`),
-    );
-  }
-  return splitCloze(card.rawText)
-    .filter((piece): piece is Extract<ReturnType<typeof splitCloze>[number], { kind: 'blank' }> => piece.kind === 'blank')
-    .map((piece) => `${card.id}:cloze:${piece.index}`);
+// NewCard + a client-only hint so the optimistic cache can keep the card's
+// current id (the server regenerates ids on every content PUT).
+type OptimisticNewCard = NewCard & { optimisticId?: string };
+
+function keepCard(card: Card, masteredOverride?: boolean): OptimisticNewCard {
+  return { ...cardToNewCard(card, masteredOverride), optimisticId: card.id };
 }
 
-function firstVisibleIndex(value: string) {
-  return [...value].findIndex((char) => !/\s/.test(char) && !/^[\p{P}\p{S}]$/u.test(char));
+// ------------------------------------------------------------------ view model
+type ProtoCard = {
+  id: string;
+  q: string;
+  a: string[];
+  memorized: boolean;
+  isGroup: boolean;
+  source: Card;
+};
+
+type ProtoList = {
+  id: string;
+  deckId: string;
+  subject: string;
+  color: string;
+  name: string;
+  synthetic: boolean;
+  cards: ProtoCard[];
+};
+
+type DeckCacheEntry = { cards: Card[]; sections: Section[]; cardsLoaded: boolean; sectionsLoaded: boolean };
+function emptyDeckCache(): DeckCacheEntry {
+  return { cards: [], sections: [], cardsLoaded: false, sectionsLoaded: false };
 }
 
-function hintSegment(value: string) {
-  const chars = [...value];
-  const index = firstVisibleIndex(value);
-  if (index < 0) return '';
-  return chars
-    .map((char, charIndex) => {
-      if (/\s/.test(char)) return char;
-      if (charIndex === index) return char;
-      if (/^[\p{P}\p{S}]$/u.test(char)) return char;
-      return '_';
-    })
-    .join('');
+// ------------------------------------------------------------------ ui state
+type View = 'home' | 'deck' | 'study';
+type UIState = {
+  view: View;
+  activeSectionId: string | null;
+  collapsed: Record<string, boolean>;
+  shuffle: boolean;
+  filter: 'all' | 'unknown' | 'done';
+  again: Record<string, number>;
+  queue: string[];
+  sessionTotal: number;
+  sessionDone: number;
+  revealedIdx: number[];
+  review: boolean;
+  dragX: number;
+  dragging: boolean;
+  snap: boolean;
+  openRowId: string | null;
+  rowDrag: { id: string; x: number; base: number } | null;
+  reorder: { id: string; dy: number; overId?: string | null } | null;
+  sel: { ri: number; start: number; end: number; wasHidden: boolean } | null;
+  sheetOpen: boolean;
+  addTab: 'type' | 'paste';
+  pasteText: string;
+  pasteMode: 'auto' | 'one';
+  sheetRows: Row[];
+  rowSel: { a: number; b: number } | null;
+  rowSelDragging: boolean;
+  typeMode: 'qa' | 'cloze';
+  typeQ: string;
+  typeA: string;
+  typeText: string;
+  typeTokens: Token[];
+  typeAdded: number;
+  editSheetOpen: boolean;
+  editIdx: number | null;
+  editMode: 'qa' | 'tokens';
+  editQ: string;
+  editA: string;
+  editText: string;
+  editTokens: Token[];
+  settingsOpen: boolean;
+  toastMsg: string;
+  toastVisible: boolean;
+};
+
+const initialUI: UIState = {
+  view: 'home', activeSectionId: null, collapsed: {}, shuffle: false, filter: 'all', again: {},
+  queue: [], sessionTotal: 0, sessionDone: 0, revealedIdx: [], review: false,
+  dragX: 0, dragging: false, snap: false,
+  openRowId: null, rowDrag: null, reorder: null, sel: null,
+  sheetOpen: false, addTab: 'type', pasteText: '', pasteMode: 'auto', sheetRows: [], rowSel: null, rowSelDragging: false,
+  typeMode: 'cloze', typeQ: '', typeA: '', typeText: '', typeTokens: [], typeAdded: 0,
+  editSheetOpen: false, editIdx: null, editMode: 'qa', editQ: '', editA: '', editText: '', editTokens: [],
+  settingsOpen: false, toastMsg: '', toastVisible: false,
+};
+
+type Patch = Partial<UIState> | ((s: UIState) => Partial<UIState>);
+function uiReducer(state: UIState, patch: Patch): UIState {
+  return { ...state, ...(typeof patch === 'function' ? patch(state) : patch) };
 }
 
-function answerHint(value: string) {
-  const parts = value.split(/([/,])/);
-  if (parts.length === 1) return hintSegment(value);
-  return parts.map((part) => (part === '/' || part === ',' ? part : hintSegment(part))).join('');
-}
-
-const answerItemDelimiterPattern = /([,\/\u3001\u00b7\u318d;])/;
-
-function answerSeparatorIndex(rawText: string) {
-  const arrowIndex = rawText.indexOf('->');
-  const colonIndex = rawText.indexOf(':');
-  if (arrowIndex < 0 && colonIndex < 0) return null;
-  if (arrowIndex >= 0 && (colonIndex < 0 || arrowIndex < colonIndex)) {
-    return { index: arrowIndex, length: 2 };
-  }
-  return { index: colonIndex, length: 1 };
-}
-
-function maskAnswerSegment(segment: string) {
-  const match = segment.match(/^(\s*)(.*?)(\s*)$/);
-  if (!match) return segment;
-  const [, leading, value, trailing] = match;
-  if (!value.trim()) return segment;
-  if (value.includes('[') || value.includes(']')) return segment;
-  const punctuationMatch = value.match(/^(.*?)([.!?\u3002\uff01\uff1f]+)$/);
-  const core = punctuationMatch ? punctuationMatch[1] : value;
-  const punctuation = punctuationMatch ? punctuationMatch[2] : '';
-  if (!core.trim()) return segment;
-  return `${leading}[${core.trim()}]${punctuation}${trailing}`;
-}
-
-function maskAnswerItems(rawText: string) {
-  const separator = answerSeparatorIndex(rawText);
-  if (!separator) return rawText;
-  const answerStart = separator.index + separator.length;
-  const answer = rawText.slice(answerStart);
-  if (!answer.trim()) return rawText;
-  const maskedAnswer = answerItemDelimiterPattern.test(answer)
-    ? answer
-        .split(answerItemDelimiterPattern)
-        .map((part) => (answerItemDelimiterPattern.test(part) ? part : maskAnswerSegment(part)))
-        .join('')
-    : maskAnswerSegment(answer);
-  const readableAnswer = maskedAnswer.replace(/,(\S)/g, ', $1').replace(/;(\S)/g, '; $1');
-  return `${rawText.slice(0, answerStart)}${readableAnswer}`;
-}
-
+// ================================================================== App
 export default function App() {
   const [roomCode, setRoomCode] = useState(() => localStorage.getItem(ROOM_KEY) ?? '');
-  const [roomInput, setRoomInput] = useState(roomCode);
-  const [decks, setDecks] = useState<Deck[]>([]);
-  const [deckDataById, setDeckDataById] = useState<Record<string, DeckCacheEntry>>({});
-  const [selectedDeckId, setSelectedDeckId] = useState(() => localStorage.getItem(LAST_DECK_KEY) ?? '');
-  const [selectedSectionId, setSelectedSectionId] = useState('');
-  const [view, setView] = useState<View>('home');
-  const [editText, setEditText] = useState('');
-  const [decksState, setDecksState] = useState<DecksState>('loading');
-  const [retryNonce, setRetryNonce] = useState(0);
-  const [shuffle, setShuffle] = useState(false);
-  const [shuffleCardIds, setShuffleCardIds] = useState<string[]>([]);
-  const [revealResetKey, setRevealResetKey] = useState(0);
-  const [busy, setBusy] = useState(false);
-  const [pendingStatusIds, setPendingStatusIds] = useState<Set<string>>(() => new Set());
-  const pendingStatusIdsRef = useRef<Set<string>>(new Set());
-  const prefetchingDeckIdsRef = useRef<Set<string>>(new Set());
-  const prefetchTimersRef = useRef<Map<string, number>>(new Map());
-  const prefetchUnsubscribersRef = useRef<Map<string, Array<() => void>>>(new Map());
-  const pendingDeckRenamesRef = useRef<Record<string, string>>({});
-  const pendingSectionRenamesRef = useRef<Record<string, string>>({});
-  const [nameDialog, setNameDialog] = useState<NameDialog | null>(null);
-  const [nameDialogValue, setNameDialogValue] = useState('');
-  const [nameDialogBusy, setNameDialogBusy] = useState(false);
-  const [nameDialogError, setNameDialogError] = useState('');
-  const [toasts, setToasts] = useState<Toast[]>([]);
-  const toastIdRef = useRef(0);
-  const editBaselineRef = useRef('');
-  const [conflictText, setConflictText] = useState<string | null>(null);
+  if (!roomCode) return <IdGate onSubmit={(code) => { localStorage.setItem(ROOM_KEY, code); setRoomCode(code); }} />;
+  return <Room key={roomCode} roomCode={roomCode} onChangeRoom={(code) => { localStorage.setItem(ROOM_KEY, code); setRoomCode(code); }} />;
+}
 
+function IdGate({ onSubmit }: { onSubmit: (code: string) => void }) {
+  const [value, setValue] = useState('');
+  const normalized = normalizeRoomCode(value);
+  const hasInvalid = value.trim().replace(/[A-Za-z0-9_\s-]/g, '').length > 0;
+  const submit = () => {
+    if (!normalized) return;
+    onSubmit(normalized);
+  };
+  return (
+    <div style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 28px', gap: 22 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ fontSize: 34, fontWeight: 800, letterSpacing: '-0.02em' }}>시험암기</div>
+        <div style={{ fontSize: 15, color: 'rgba(60,60,67,0.6)', lineHeight: 1.6 }}>
+          처음이면 아이디를 <strong style={{ color: '#1d1d1f' }}>새로 정하세요</strong>. 다른 기기(PC·아이폰)에서 쓰던 아이디가 있다면 <strong style={{ color: '#1d1d1f' }}>그대로 입력</strong>하면 그 암기장이 열려요.
+        </div>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(60,60,67,0.45)', letterSpacing: '0.03em' }}>내 아이디</span>
+        <input
+          autoFocus
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
+          placeholder="예: hong-gildong-2026"
+          style={{ height: 54, borderRadius: 16, border: '1.5px solid rgba(60,60,67,0.15)', background: '#fff', padding: '0 16px', fontSize: 17, fontWeight: 600, color: '#000' }}
+        />
+        <span style={{ fontSize: 12.5, color: hasInvalid ? '#ff9500' : 'rgba(60,60,67,0.45)', fontWeight: hasInvalid ? 700 : 400, lineHeight: 1.5 }}>
+          {hasInvalid
+            ? '한글·특수문자는 쓸 수 없어요 — 영문·숫자·- _ 만 남아요'
+            : '영문·숫자·- _ 만 쓸 수 있어요. 남들이 안 쓸 만한 걸로 정하세요(비밀번호는 없어요).'}
+        </span>
+        <div onClick={() => setValue(`memo-${Math.random().toString(36).slice(2, 8)}`)} style={{ alignSelf: 'flex-start', padding: '4px 2px', cursor: 'pointer' }}>
+          <span style={{ fontSize: 13.5, fontWeight: 600, color: ACCENT }}>아이디가 안 떠오르면 → 자동으로 만들기</span>
+        </div>
+      </div>
+      <div
+        onClick={submit}
+        style={{ height: 56, borderRadius: 18, background: normalized ? ACCENT : 'rgba(120,120,128,0.16)', display: 'grid', placeItems: 'center', cursor: 'pointer', boxShadow: normalized ? '0 10px 24px rgba(0,0,0,0.18)' : 'none' }}
+      >
+        <span style={{ fontSize: 17, fontWeight: 700, color: normalized ? '#fff' : 'rgba(60,60,67,0.4)' }}>시작하기</span>
+      </div>
+    </div>
+  );
+}
+
+function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (code: string) => void }) {
   const repository = useMemo<Repository | null>(() => {
     if (!roomCode) return null;
     return createFirebaseRepository(roomCode) ?? createServerRepository(roomCode) ?? createLocalRepository(roomCode);
   }, [roomCode]);
 
-  const selectedDeck = decks.find((deck) => deck.id === selectedDeckId) ?? (selectedDeckId ? undefined : decks[0]);
-  const selectedDeckData = selectedDeck ? deckDataById[selectedDeck.id] : undefined;
-  const deckSectionsReady = Boolean(selectedDeckData?.sectionsLoaded);
-  const visibleSections = selectedDeckData?.sections ?? [];
-  const visibleCards = selectedDeckData?.cards ?? [];
-  const selectedSection = deckSectionsReady
-    ? visibleSections.find((section) => section.id === selectedSectionId) ?? (selectedSectionId ? undefined : visibleSections[0])
-    : undefined;
-  const sectionCards = useMemo(
-    () => (selectedSection ? visibleCards.filter((card) => sectionKey(card) === selectedSection.id) : []),
-    [visibleCards, selectedSection],
-  );
-  const savedSourceText = selectedSection?.sourceText || sourceFromCards(sectionCards);
-  const parsedLines = useMemo(() => parseInput(editText), [editText]);
-  const validCount = parsedLines.filter((line) => line.valid).length;
-  const invalidCount = parsedLines.filter((line) => !line.valid).length;
+  const [decks, setDecks] = useState<Deck[]>([]);
+  const [decksState, setDecksState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [deckDataById, setDeckDataById] = useState<Record<string, DeckCacheEntry>>({});
+  const [state, dispatch] = useReducer(uiReducer, initialUI);
+  const pendingSectionRenamesRef = useRef<Record<string, string>>({});
+  const toastTimer = useRef<number | undefined>(undefined);
+  const lpTimer = useRef<number | undefined>(undefined);
+  const rowStart = useRef<{ x: number; y: number; moved: boolean }>({ x: 0, y: 0, moved: false });
+  const swipeStart = useRef<{ x: number; moved: boolean }>({ x: 0, moved: false });
 
-  function showToast(kind: Toast['kind'], message: string) {
-    const id = ++toastIdRef.current;
-    setToasts((current) => [...current, { id, kind, message }]);
-    window.setTimeout(() => {
-      setToasts((current) => current.filter((toast) => toast.id !== id));
-    }, 4000);
-  }
+  const toast = useCallback((msg: string) => {
+    window.clearTimeout(toastTimer.current);
+    dispatch({ toastMsg: msg, toastVisible: true });
+    toastTimer.current = window.setTimeout(() => dispatch({ toastVisible: false }), 1800);
+  }, []);
 
-  const studyCards = useMemo(() => {
-    const ordered = [...sectionCards].sort((a, b) => a.createdAt - b.createdAt);
-    if (!shuffle) return ordered;
-    const cardsById = new Map(ordered.map((card) => [card.id, card]));
-    const fixedCards = shuffleCardIds.flatMap((id) => {
-      const card = cardsById.get(id);
-      if (!card) return [];
-      cardsById.delete(id);
-      return [card];
+  const commitSelection = useCallback(() => {
+    dispatch((st) => {
+      const sel = st.sel;
+      if (!sel) return {};
+      const lo = Math.min(sel.start, sel.end);
+      const hi = Math.max(sel.start, sel.end);
+      const apply = (tokens: Token[]): Token[] => {
+        if (lo === hi && sel.wasHidden) {
+          const g = tokens[lo].gid;
+          return tokens.map((t) => (t.gid === g && g !== 0 ? { ...t, hidden: false, gid: 0 } : t));
+        }
+        const g = (Date.now() % 1000000) + lo;
+        return tokens.map((t, i) => (!t.nl && i >= lo && i <= hi ? { ...t, hidden: true, gid: g } : t));
+      };
+      if (sel.ri === -100) return { editTokens: apply(st.editTokens), sel: null };
+      if (sel.ri === -200) return { typeTokens: apply(st.typeTokens), sel: null };
+      return {
+        sheetRows: st.sheetRows.map((r, ri) => (ri === sel.ri && r.kind === 'tokens' ? { ...r, tokens: apply(r.tokens) } : r)),
+        sel: null,
+      };
     });
-    return [...fixedCards, ...cardsById.values()];
-  }, [sectionCards, shuffle, shuffleCardIds]);
+  }, []);
 
+  // ---- subscriptions
   useEffect(() => {
     if (!repository) return;
     setDecksState('loading');
-    const clearPrefetch = () => {
-      prefetchTimersRef.current.forEach((timer) => window.clearTimeout(timer));
-      prefetchTimersRef.current.clear();
-      prefetchUnsubscribersRef.current.forEach((unsubscribers) => {
-        unsubscribers.forEach((unsubscribe) => unsubscribe());
-      });
-      prefetchUnsubscribersRef.current.clear();
-    };
-    prefetchingDeckIdsRef.current.clear();
-    clearPrefetch();
-    let reportedError = false;
-    const unsubscribeDecks = repository.subscribeDecks((nextDecks) => {
-      reportedError = false;
-      setDecksState('ready');
-      const pendingRenames = pendingDeckRenamesRef.current;
-      setDecks(
-        nextDecks.map((deck) => {
-          const pendingName = pendingRenames[deck.id];
-          return pendingName ? { ...deck, name: pendingName } : deck;
-        }),
-      );
-    }, (error) => {
-      let shouldToast = false;
-      setDecksState((current) => {
-        shouldToast = current === 'ready';
-        return current === 'ready' ? current : 'error';
-      });
-      if (shouldToast && !reportedError) {
-        reportedError = true;
-        showToast('error', error.message || '서버에 연결할 수 없습니다.');
-      }
-    });
-    return () => {
-      unsubscribeDecks();
-      clearPrefetch();
-    };
-  }, [repository, retryNonce]);
+    repository.ensureDefaultDeck().catch(() => {});
+    const unsub = repository.subscribeDecks(
+      (next) => { setDecksState('ready'); setDecks(next); },
+      (error) => { setDecksState('error'); toast(error.message || '서버에 연결할 수 없습니다.'); },
+    );
+    return unsub;
+  }, [repository, toast]);
 
+  const deckIdsKey = decks.map((d) => d.id).join(',');
   useEffect(() => {
-    if (decks.length === 0) {
-      if (selectedDeckId) setSelectedDeckId('');
-      setSelectedSectionId('');
-      if (view !== 'home') setView('home');
-      return;
-    }
-    const savedDeck = localStorage.getItem(LAST_DECK_KEY);
-    const nextDeck =
-      decks.find((deck) => deck.id === selectedDeckId) ??
-      decks.find((deck) => deck.id === savedDeck) ??
-      decks[0];
-    if (nextDeck.id !== selectedDeckId) setSelectedDeckId(nextDeck.id);
-  }, [decks, selectedDeckId, view]);
-
-  useEffect(() => {
-    if (!repository || !selectedDeck) return;
-    localStorage.setItem(LAST_DECK_KEY, selectedDeck.id);
-    const deckId = selectedDeck.id;
-    let reportedError = false;
-    const unsubscribeCards = repository.subscribeCards(deckId, (nextCards) => {
-      reportedError = false;
-      setDeckDataById((current) => ({
-        ...current,
-        [deckId]: {
-          cards: nextCards,
-          sections: current[deckId]?.sections ?? [],
-          cardsLoaded: true,
-          sectionsLoaded: current[deckId]?.sectionsLoaded ?? false,
-          cardsError: false,
-          sectionsError: current[deckId]?.sectionsError ?? false,
-        },
+    if (!repository) return;
+    const unsubs: Array<() => void> = [];
+    for (const deck of decks) {
+      const deckId = deck.id;
+      unsubs.push(repository.subscribeCards(deckId, (cards) => {
+        setDeckDataById((cur) => ({ ...cur, [deckId]: { ...(cur[deckId] ?? emptyDeckCache()), cards, cardsLoaded: true } }));
       }));
-    }, (error) => {
-      setDeckDataById((current) => {
-        const previous = current[deckId] ?? emptyDeckCache();
-        return {
-          ...current,
-          [deckId]: { ...previous, cardsError: true },
-        };
-      });
-      if (!reportedError) {
-        reportedError = true;
-        showToast('error', error.message || '문제를 불러오지 못했습니다.');
-      }
-    });
-    const unsubscribeSections = repository.subscribeSections(deckId, (nextSections) => {
-      reportedError = false;
-      const pendingRenames = pendingSectionRenamesRef.current;
-      setDeckDataById((current) => ({
-        ...current,
-        [deckId]: {
-          cards: current[deckId]?.cards ?? [],
-          sections: nextSections.map((section) => {
-            const pendingName = pendingRenames[`${deckId}:${section.id}`];
-            return pendingName ? { ...section, name: pendingName } : section;
-          }),
-          cardsLoaded: current[deckId]?.cardsLoaded ?? false,
-          sectionsLoaded: true,
-          cardsError: current[deckId]?.cardsError ?? false,
-          sectionsError: false,
-        },
-      }));
-    }, (error) => {
-      setDeckDataById((current) => {
-        const previous = current[deckId] ?? emptyDeckCache();
-        return {
-          ...current,
-          [deckId]: { ...previous, sectionsError: true },
-        };
-      });
-      if (!reportedError) {
-        reportedError = true;
-        showToast('error', error.message || '세부 암기장을 불러오지 못했습니다.');
-      }
-    });
-    return () => {
-      unsubscribeCards();
-      unsubscribeSections();
-    };
-  }, [repository, selectedDeck, retryNonce]);
-
-  useEffect(() => {
-    if (!repository || decks.length === 0) return;
-    const deckIdsToPrefetch = decks
-      .map((deck) => deck.id)
-      .filter((deckId) => deckId !== selectedDeck?.id)
-      .filter((deckId) => {
-        if (prefetchingDeckIdsRef.current.has(deckId)) return false;
-        const cached = deckDataById[deckId];
-        return !cached?.sectionsLoaded || !cached?.cardsLoaded;
-      });
-
-    deckIdsToPrefetch.forEach((deckId, index) => {
-      prefetchingDeckIdsRef.current.add(deckId);
-      const timer = window.setTimeout(() => {
-        prefetchTimersRef.current.delete(deckId);
-
-        const unsubscribeSections = repository.subscribeSections(deckId, (nextSections) => {
-          const pendingRenames = pendingSectionRenamesRef.current;
-          setDeckDataById((current) => {
-            const previous = current[deckId] ?? emptyDeckCache();
-            return {
-              ...current,
-              [deckId]: {
-                ...previous,
-                sections: nextSections.map((section) => {
-                  const pendingName = pendingRenames[`${deckId}:${section.id}`];
-                  return pendingName ? { ...section, name: pendingName } : section;
-                }),
-                sectionsLoaded: true,
-                sectionsError: false,
-              },
-            };
-          });
-        }, () => {
-          setDeckDataById((current) => {
-            const previous = current[deckId] ?? emptyDeckCache();
-            return {
-              ...current,
-              [deckId]: { ...previous, sectionsError: true },
-            };
-          });
-        });
-
-        const unsubscribeCards = repository.subscribeCards(deckId, (nextCards) => {
-          setDeckDataById((current) => {
-            const previous = current[deckId] ?? emptyDeckCache();
-            return {
-              ...current,
-              [deckId]: {
-                ...previous,
-                cards: nextCards,
-                cardsLoaded: true,
-                cardsError: false,
-              },
-            };
-          });
-        }, () => {
-          setDeckDataById((current) => {
-            const previous = current[deckId] ?? emptyDeckCache();
-            return {
-              ...current,
-              [deckId]: { ...previous, cardsError: true },
-            };
-          });
-        });
-
-        prefetchUnsubscribersRef.current.set(deckId, [unsubscribeSections, unsubscribeCards]);
-      }, index * 250);
-      prefetchTimersRef.current.set(deckId, timer);
-    });
-  }, [repository, decks, selectedDeck?.id, retryNonce]);
-
-  useEffect(() => {
-    if (!selectedDeck || !deckSectionsReady) return;
-    if (visibleSections.length === 0) {
-      if (selectedSectionId) setSelectedSectionId('');
-      if (view !== 'home') setView('home');
-      return;
-    }
-    const savedSection = localStorage.getItem(`${LAST_SECTION_PREFIX}:${selectedDeck.id}`);
-    const nextSection =
-      visibleSections.find((section) => section.id === selectedSectionId) ??
-      visibleSections.find((section) => section.id === savedSection) ??
-      visibleSections[0];
-    if (nextSection.id !== selectedSectionId) setSelectedSectionId(nextSection.id);
-  }, [deckSectionsReady, visibleSections, selectedDeck, selectedSectionId, view]);
-
-  useEffect(() => {
-    if (!selectedDeck || !selectedSection) return;
-    localStorage.setItem(`${LAST_SECTION_PREFIX}:${selectedDeck.id}`, selectedSection.id);
-    editBaselineRef.current = savedSourceText;
-    setEditText(savedSourceText);
-    setConflictText(null);
-  }, [selectedDeck?.id, selectedSection?.id]);
-
-  useEffect(() => {
-    if (!selectedSection) return;
-    if (savedSourceText === editBaselineRef.current) return;
-    if (editText === editBaselineRef.current) {
-      editBaselineRef.current = savedSourceText;
-      setEditText(savedSourceText);
-      setConflictText(null);
-    } else {
-      setConflictText(savedSourceText);
-    }
-  }, [savedSourceText, editText, selectedSection?.id]);
-
-  useEffect(() => {
-    setShuffle(false);
-    setShuffleCardIds([]);
-  }, [selectedSectionId]);
-
-  async function enterRoom(event: FormEvent) {
-    event.preventDefault();
-    const code = normalizeRoomCode(roomInput);
-    if (code.length < 4) return;
-    localStorage.setItem(ROOM_KEY, code);
-    setRoomCode(code);
-    setRoomInput(code);
-    setView('home');
-  }
-
-  function leaveRoom() {
-    localStorage.removeItem(ROOM_KEY);
-    setRoomCode('');
-    setRoomInput('');
-    setDecks([]);
-    setDeckDataById({});
-    setView('home');
-  }
-
-  function openNameDialog(dialog: NameDialog) {
-    setNameDialog(dialog);
-    setNameDialogValue(dialog.defaultValue);
-    setNameDialogError('');
-  }
-
-  function closeNameDialog() {
-    if (nameDialogBusy) return;
-    setNameDialog(null);
-    setNameDialogValue('');
-    setNameDialogError('');
-  }
-
-  async function submitNameDialog() {
-    if (!repository || !nameDialog) return;
-    const name = nameDialogValue.trim();
-    if (!name) {
-      setNameDialogError('이름을 입력하세요.');
-      return;
-    }
-    setNameDialogBusy(true);
-    setNameDialogError('');
-    try {
-      if (nameDialog.type === 'deck') {
-        setEditText('');
-        const deckId = await repository.addDeck(name);
-        setDeckDataById((current) => ({
-          ...current,
-          [deckId]: { cards: [], sections: [], cardsLoaded: true, sectionsLoaded: true },
+      unsubs.push(repository.subscribeSections(deckId, (sections) => {
+        const pending = pendingSectionRenamesRef.current;
+        setDeckDataById((cur) => ({
+          ...cur,
+          [deckId]: {
+            ...(cur[deckId] ?? emptyDeckCache()),
+            sections: sections.map((s) => (pending[`${deckId}:${s.id}`] ? { ...s, name: pending[`${deckId}:${s.id}`] } : s)),
+            sectionsLoaded: true,
+          },
         }));
-        setSelectedDeckId(deckId);
-        setSelectedSectionId('');
-        setView('home');
-      } else {
-        const deckId = nameDialog.deckId;
-        const sectionId = await repository.addSection(deckId, name);
-        const now = Date.now();
-        setDeckDataById((current) => {
-          const previous = current[deckId] ?? { cards: [], sections: [], cardsLoaded: false, sectionsLoaded: false };
-          const nextSection = { id: sectionId, name, sourceText: '', createdAt: now, updatedAt: now };
-          return {
-            ...current,
-            [deckId]: {
-              ...previous,
-              sections: previous.sections.some((section) => section.id === sectionId)
-                ? previous.sections
-                : [...previous.sections, nextSection],
-              sectionsLoaded: true,
-            },
-          };
+      }));
+    }
+    return () => unsubs.forEach((u) => u());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repository, deckIdsKey]);
+
+  // ---- window pointer up (commit selections / cancel drags)
+  useEffect(() => {
+    const up = () => {
+      commitSelection();
+      window.clearTimeout(lpTimer.current);
+      dispatch((st) => ({
+        ...(st.reorder ? { reorder: null } : {}),
+        ...(st.rowSelDragging ? { rowSelDragging: false } : {}),
+      }));
+    };
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+    return () => {
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+    };
+  }, [commitSelection]);
+
+  // ---- derived lists (subject=Deck, list=Section, card=Card)
+  const lists = useMemo<ProtoList[]>(() => {
+    const out: ProtoList[] = [];
+    for (const deck of decks) {
+      const data = deckDataById[deck.id];
+      const sections = data?.sections ?? [];
+      const cards = data?.cards ?? [];
+      const seen = new Set<string>();
+      const toProto = (c: Card): ProtoCard => {
+        const { q, a } = deriveQA(c);
+        return { id: c.id, q, a, memorized: !!c.mastered, isGroup: c.type === 'group', source: c };
+      };
+      for (const section of sections) {
+        seen.add(section.id);
+        out.push({
+          id: section.id, deckId: deck.id, subject: deck.name || '암기장', color: colorForDeck(deck.id),
+          name: section.name || '세부 암기장', synthetic: false,
+          cards: cards.filter((c) => (c.sectionId ?? 'default') === section.id).map(toProto),
         });
-        setEditText('');
-        setSelectedDeckId(deckId);
-        setSelectedSectionId(sectionId);
-        setView('edit');
       }
-      setNameDialog(null);
-      setNameDialogValue('');
-    } catch (error) {
-      setNameDialogError(error instanceof Error ? error.message : '저장에 실패했습니다.');
-    } finally {
-      setNameDialogBusy(false);
+      // orphan cards whose section no longer exists
+      const orphans = cards.filter((c) => !seen.has(c.sectionId ?? 'default'));
+      if (orphans.length > 0) {
+        const byBucket = new Map<string, Card[]>();
+        for (const c of orphans) {
+          const key = c.sectionId ?? 'default';
+          (byBucket.get(key) ?? byBucket.set(key, []).get(key)!).push(c);
+        }
+        for (const [key, bucket] of byBucket) {
+          out.push({
+            id: key, deckId: deck.id, subject: deck.name || '암기장', color: colorForDeck(deck.id),
+            name: '기본', synthetic: true, cards: bucket.map(toProto),
+          });
+        }
+      }
     }
-  }
+    return out;
+  }, [decks, deckDataById]);
 
-  function addDeck() {
+  const activeList = lists.find((l) => l.id === state.activeSectionId);
+  const weakFirst = useCallback((cards: ProtoCard[]) => [...cards].sort((x, y) => (state.again[y.id] || 0) - (state.again[x.id] || 0)), [state.again]);
+
+  const storedCardsOf = useCallback((deckId: string, sectionId: string): Card[] => {
+    const cards = deckDataById[deckId]?.cards ?? [];
+    return cards.filter((c) => (c.sectionId ?? 'default') === sectionId);
+  }, [deckDataById]);
+
+  // ---- mutations
+  const commitSection = useCallback((deckId: string, sectionId: string, newCards: OptimisticNewCard[]) => {
     if (!repository) return;
-    openNameDialog({
-      type: 'deck',
-      title: '새 암기장',
-      label: '암기장 이름',
-      defaultValue: `암기장 ${decks.length + 1}`,
+    const payload: NewCard[] = newCards.map(({ optimisticId: _ignored, ...card }) => card);
+    const sourceText = payload.map((c) => c.rawText).join('\n');
+    const now = Date.now();
+    setDeckDataById((cur) => {
+      const prev = cur[deckId] ?? emptyDeckCache();
+      const others = prev.cards.filter((c) => (c.sectionId ?? 'default') !== sectionId);
+      const optimistic = newCards.map((c, i) => {
+        const { optimisticId, ...card } = c;
+        return { ...card, id: optimisticId ?? `tmp_${now}_${i}`, sectionId, createdAt: now, updatedAt: now } as Card;
+      });
+      return { ...cur, [deckId]: { ...prev, cards: [...others, ...optimistic], cardsLoaded: true } };
     });
-  }
+    repository.setSectionContent(deckId, sectionId, sourceText, payload).catch(() => toast('저장에 실패했어요'));
+  }, [repository, toast]);
 
-  async function renameDeck(deckId: string, name: string) {
+  const toggleMemorized = useCallback((deckId: string, cardId: string, mastered: boolean) => {
     if (!repository) return;
-    const previousDecks = decks;
-    pendingDeckRenamesRef.current = { ...pendingDeckRenamesRef.current, [deckId]: name };
-    setDecks((current) => current.map((deck) => (deck.id === deckId ? { ...deck, name } : deck)));
-    try {
-      await repository.renameDeck(deckId, name);
-      window.setTimeout(() => {
-        if (pendingDeckRenamesRef.current[deckId] !== name) return;
-        const { [deckId]: _discard, ...rest } = pendingDeckRenamesRef.current;
-        pendingDeckRenamesRef.current = rest;
-      }, 3000);
-    } catch (error) {
-      const { [deckId]: _discard, ...rest } = pendingDeckRenamesRef.current;
-      pendingDeckRenamesRef.current = rest;
-      setDecks(previousDecks);
-      throw error;
-    }
-  }
+    setDeckDataById((cur) => {
+      const prev = cur[deckId];
+      if (!prev) return cur;
+      return { ...cur, [deckId]: { ...prev, cards: prev.cards.map((c) => (c.id === cardId ? { ...c, mastered } : c)) } };
+    });
+    repository.toggleCardMastered(deckId, cardId, mastered).catch(() => {});
+  }, [repository]);
 
-  async function deleteDeck(deck: Deck) {
+  const renameSection = useCallback((deckId: string, sectionId: string, name: string) => {
     if (!repository) return;
-    if (!window.confirm(`"${displayDeckName(deck)}" 암기장을 삭제할까요?`)) return;
-    try {
-      await repository.deleteDeck(deck.id);
-    } catch (error) {
-      showToast('error', error instanceof Error ? error.message : '삭제에 실패했습니다.');
-      return;
-    }
-    setDeckDataById((current) => {
-      const { [deck.id]: _discard, ...rest } = current;
-      return rest;
+    pendingSectionRenamesRef.current[`${deckId}:${sectionId}`] = name;
+    setDeckDataById((cur) => {
+      const prev = cur[deckId];
+      if (!prev) return cur;
+      return { ...cur, [deckId]: { ...prev, sections: prev.sections.map((s) => (s.id === sectionId ? { ...s, name } : s)) } };
     });
-    if (selectedDeckId === deck.id) {
-      setSelectedDeckId('');
-      setSelectedSectionId('');
-    }
-    setView('home');
-  }
+    repository.renameSection(deckId, sectionId, name)
+      .then(() => { delete pendingSectionRenamesRef.current[`${deckId}:${sectionId}`]; })
+      .catch(() => toast('이름 저장에 실패했어요'));
+  }, [repository, toast]);
 
-  function addSection(deckId = selectedDeck?.id) {
-    if (!repository || !deckId) return;
-    const sectionCount = selectedDeck?.id === deckId ? visibleSections.length : 0;
-    openNameDialog({
-      type: 'section',
-      deckId,
-      title: '새 세부 암기장',
-      label: '세부 암기장 이름',
-      defaultValue: `세부 암기장 ${sectionCount + 1}`,
-    });
-  }
-
-  async function renameSection(deckId: string, sectionId: string, name: string) {
+  const newList = useCallback(async () => {
     if (!repository) return;
-    const previousDeckData = deckDataById;
-    const pendingKey = `${deckId}:${sectionId}`;
-    pendingSectionRenamesRef.current = { ...pendingSectionRenamesRef.current, [pendingKey]: name };
-    setDeckDataById((current) => {
-      const deckData = current[deckId];
-      if (!deckData) return current;
-      return {
-        ...current,
-        [deckId]: {
-          ...deckData,
-          sections: deckData.sections.map((section) => (section.id === sectionId ? { ...section, name } : section)),
-        },
-      };
-    });
     try {
-      await repository.renameSection(deckId, sectionId, name);
-      window.setTimeout(() => {
-        if (pendingSectionRenamesRef.current[pendingKey] !== name) return;
-        const { [pendingKey]: _discard, ...rest } = pendingSectionRenamesRef.current;
-        pendingSectionRenamesRef.current = rest;
-      }, 3000);
-    } catch (error) {
-      const { [pendingKey]: _discard, ...rest } = pendingSectionRenamesRef.current;
-      pendingSectionRenamesRef.current = rest;
-      setDeckDataById(previousDeckData);
-      throw error;
+      let deckId = decks.find((d) => d.name === '일반')?.id;
+      if (!deckId) deckId = await repository.addDeck('일반');
+      const sectionId = await repository.addSection(deckId, '새 목록');
+      dispatch({
+        view: 'deck', activeSectionId: sectionId, sheetOpen: true, addTab: 'type',
+        typeMode: 'cloze', typeQ: '', typeA: '', typeText: '', typeTokens: [], typeAdded: 0, pasteText: '', sheetRows: [],
+      });
+    } catch {
+      toast('목록을 만들지 못했어요');
     }
-  }
+  }, [repository, decks, toast]);
 
-  async function deleteSection(section: Section) {
-    if (!repository || !selectedDeck) return;
-    if (!window.confirm(`"${displaySectionName(section)}" 세부 암기장을 삭제할까요?`)) return;
+  const moveCard = useCallback((draggedId: string, targetId: string) => {
+    if (!activeList) return;
+    const stored = storedCardsOf(activeList.deckId, activeList.id);
+    const from = stored.findIndex((c) => c.id === draggedId);
+    const to = stored.findIndex((c) => c.id === targetId);
+    if (from < 0 || to < 0) return;
+    const arr = [...stored];
+    const [d] = arr.splice(from, 1);
+    arr.splice(to, 0, d);
+    commitSection(activeList.deckId, activeList.id, arr.map((c) => keepCard(c)));
+  }, [activeList, storedCardsOf, commitSection]);
+
+  const deleteList = useCallback(async () => {
+    if (!repository || !activeList || activeList.synthetic) return;
+    const label = activeList.cards.length > 0 ? `카드 ${activeList.cards.length}장이 함께 삭제돼요.` : '';
+    if (!window.confirm(`"${activeList.name}" 목록을 삭제할까요? ${label}`)) return;
+    const remaining = (deckDataById[activeList.deckId]?.sections ?? []).filter((s) => s.id !== activeList.id);
+    dispatch({ view: 'home', activeSectionId: null, openRowId: null });
     try {
-      await repository.deleteSection(selectedDeck.id, section.id);
-    } catch (error) {
-      showToast('error', error instanceof Error ? error.message : '삭제에 실패했습니다.');
-      return;
+      await repository.deleteSection(activeList.deckId, activeList.id);
+      if (remaining.length === 0) await repository.deleteDeck(activeList.deckId);
+      toast('목록을 삭제했어요');
+    } catch {
+      toast('삭제에 실패했어요');
     }
-    setDeckDataById((current) => {
-      const deckData = current[selectedDeck.id];
-      if (!deckData) return current;
-      return {
-        ...current,
-        [selectedDeck.id]: {
-          ...deckData,
-          sections: deckData.sections.filter((item) => item.id !== section.id),
-          cards: deckData.cards.filter((card) => sectionKey(card) !== section.id),
-        },
-      };
-    });
-    if (selectedSectionId === section.id) setSelectedSectionId('');
-    setView('home');
-  }
+  }, [repository, activeList, deckDataById, toast]);
 
-  function openSection(deckId: string, sectionId: string) {
-    setSelectedDeckId(deckId);
-    setSelectedSectionId(sectionId);
-    setView('study');
-  }
-
-  async function saveContent() {
-    if (!repository || !selectedDeck || !selectedSection) return;
-    setBusy(true);
-    const previousBaseline = editBaselineRef.current;
-    const previousConflictText = conflictText;
-    try {
-      const sourceText = editText;
-      const nextCards = preserveStars(toCards(parsedLines), sectionCards);
-      editBaselineRef.current = sourceText;
-      setConflictText(null);
-      await repository.setSectionContent(selectedDeck.id, selectedSection.id, sourceText, nextCards);
-      showToast('success', '저장되었습니다.');
-      setShuffle(false);
-      setShuffleCardIds([]);
-      setView('study');
-    } catch (error) {
-      editBaselineRef.current = previousBaseline;
-      setConflictText(previousConflictText);
-      showToast('error', error instanceof Error ? error.message : '저장에 실패했습니다. 네트워크를 확인하세요.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function acceptRemoteEdit() {
-    if (conflictText === null) return;
-    editBaselineRef.current = conflictText;
-    setEditText(conflictText);
-    setConflictText(null);
-  }
-
-  function keepLocalEdit() {
-    if (conflictText === null) return;
-    editBaselineRef.current = conflictText;
-    setConflictText(null);
-  }
-
-  function setCachedCardStatus(deckId: string, cardId: string, status: Pick<Card, 'starred' | 'mastered'>) {
-    setDeckDataById((current) => {
-      const deckData = current[deckId];
-      if (!deckData) return current;
-      return {
-        ...current,
-        [deckId]: {
-          ...deckData,
-          cards: deckData.cards.map((item) => (item.id === cardId ? { ...item, ...status } : item)),
-        },
-      };
-    });
-  }
-
-  function statusKey(deckId: string, cardId: string) {
-    return `${deckId}:${cardId}`;
-  }
-
-  function setStatusPending(key: string, pending: boolean) {
-    const next = new Set(pendingStatusIdsRef.current);
-    if (pending) {
-      next.add(key);
+  const openEditFor = useCallback((c: ProtoCard) => {
+    if (!activeList) return;
+    const idx = activeList.cards.findIndex((cc) => cc.id === c.id);
+    if (idx < 0) return;
+    if (c.isGroup) toast('묶음 카드는 저장하면 일반 카드로 바뀌어요');
+    if (c.q.includes('___') || c.isGroup) {
+      const tokens = cardToTokens(c.q, c.a);
+      dispatch({ editSheetOpen: true, editIdx: idx, editMode: 'tokens', editTokens: tokens, editText: tokensToText(tokens) });
     } else {
-      next.delete(key);
+      dispatch({ editSheetOpen: true, editIdx: idx, editMode: 'qa', editQ: c.q, editA: c.a.join(', ') });
     }
-    pendingStatusIdsRef.current = next;
-    setPendingStatusIds(next);
-  }
+  }, [activeList, toast]);
 
-  async function toggleStar(card: Card) {
-    if (!repository || !selectedDeck) return;
-    const deckId = selectedDeck.id;
-    const pendingKey = statusKey(deckId, card.id);
-    if (pendingStatusIdsRef.current.has(pendingKey)) return;
-    const previous = { starred: Boolean(card.starred), mastered: Boolean(card.mastered) };
-    const next = { starred: !card.starred, mastered: !card.starred ? false : Boolean(card.mastered) };
-    setCachedCardStatus(deckId, card.id, next);
-    setStatusPending(pendingKey, true);
-    try {
-      await repository.toggleCardStar(deckId, card.id, next.starred);
-    } catch (error) {
-      setCachedCardStatus(deckId, card.id, previous);
-      showToast('error', error instanceof Error ? error.message : '변경을 저장하지 못했습니다.');
-    } finally {
-      setStatusPending(pendingKey, false);
+  const saveEditFrom = useCallback((st: UIState, close: boolean) => {
+    if (!activeList || st.editIdx === null) return true;
+    let q: string;
+    let a: string[];
+    if (st.editMode === 'qa') {
+      q = st.editQ.trim();
+      a = st.editA.split(',').map((x) => x.trim()).filter(Boolean);
+      if (!q) { if (close) toast('질문을 입력하세요'); return false; }
+    } else {
+      if (!st.editTokens.some((t) => t.hidden)) { if (close) toast('가릴 단어를 선택하세요'); return false; }
+      const r = tokensToCard(st.editTokens);
+      q = r.q; a = r.a;
     }
-  }
+    const stored = storedCardsOf(activeList.deckId, activeList.id);
+    if (st.editIdx >= stored.length) return true;
+    const rebuilt = stored.map((c, i) =>
+      i === st.editIdx ? { ...qaToNewCard(q, a, !!c.mastered), optimisticId: c.id } : keepCard(c),
+    );
+    commitSection(activeList.deckId, activeList.id, rebuilt);
+    return true;
+  }, [activeList, storedCardsOf, commitSection, toast]);
 
-  async function toggleMastered(card: Card) {
-    if (!repository || !selectedDeck) return;
-    const deckId = selectedDeck.id;
-    const pendingKey = statusKey(deckId, card.id);
-    if (pendingStatusIdsRef.current.has(pendingKey)) return;
-    const previous = { starred: Boolean(card.starred), mastered: Boolean(card.mastered) };
-    const next = { mastered: !card.mastered, starred: !card.mastered ? false : Boolean(card.starred) };
-    setCachedCardStatus(deckId, card.id, next);
-    setStatusPending(pendingKey, true);
-    try {
-      await repository.toggleCardMastered(deckId, card.id, next.mastered);
-    } catch (error) {
-      setCachedCardStatus(deckId, card.id, previous);
-      showToast('error', error instanceof Error ? error.message : '변경을 저장하지 못했습니다.');
-    } finally {
-      setStatusPending(pendingKey, false);
+  const startStudy = useCallback((sectionId: string, cardIds?: string[]) => {
+    const list = lists.find((l) => l.id === sectionId);
+    if (!list) return;
+    if (list.cards.length === 0) { dispatch({ view: 'deck', activeSectionId: sectionId }); return; }
+    let ids = cardIds ?? weakFirst(list.cards.filter((c) => !c.memorized)).map((c) => c.id);
+    let review = false;
+    if (ids.length === 0) { ids = list.cards.map((c) => c.id); review = true; }
+    if (state.shuffle) {
+      ids = [...ids];
+      for (let i = ids.length - 1; i > 0; i -= 1) { const j = Math.floor(Math.random() * (i + 1)); [ids[i], ids[j]] = [ids[j], ids[i]]; }
     }
-  }
+    dispatch({ view: 'study', activeSectionId: sectionId, queue: ids, sessionTotal: ids.length, sessionDone: 0, revealedIdx: [], dragX: 0, openRowId: null, review });
+  }, [lists, weakFirst, state.shuffle]);
 
-  function resetReveals() {
-    setRevealResetKey((current) => current + 1);
-  }
+  const doKnown = useCallback(() => {
+    const list = activeList;
+    const cardId = state.queue[0];
+    if (!list || !cardId) return;
+    toggleMemorized(list.deckId, cardId, true);
+    dispatch((st) => ({ queue: st.queue.slice(1), sessionDone: st.sessionDone + 1, revealedIdx: [], dragX: 0, dragging: false, snap: false }));
+  }, [activeList, state.queue, toggleMemorized]);
 
-  function toggleShuffle() {
-    setShuffle((current) => {
-      const next = !current;
-      if (next) {
-        const seed = Date.now();
-        setShuffleCardIds(shuffledStudyCards(sectionCards, seed).map((card) => card.id));
-      } else {
-        setShuffleCardIds([]);
-      }
-      return next;
+  const doAgain = useCallback(() => {
+    const cardId = state.queue[0];
+    if (!cardId) return;
+    const last = state.queue.length === 1;
+    dispatch((st) => {
+      const again = { ...st.again, [cardId]: (st.again[cardId] || 0) + 1 };
+      if (st.queue.length === 1) return { again, revealedIdx: [], dragX: 0, dragging: false, snap: false };
+      return { again, queue: [...st.queue.slice(1), st.queue[0]], revealedIdx: [], dragX: 0, dragging: false, snap: false };
     });
-    resetReveals();
-  }
+    if (last) toast('마지막 카드예요 — 한 번 더!');
+  }, [state.queue, toast]);
 
-  function reshuffle() {
-    if (!shuffle) return;
-    const seed = Date.now();
-    setShuffleCardIds(shuffledStudyCards(sectionCards, seed).map((card) => card.id));
-    resetReveals();
-  }
+  const commitSwipe = useCallback((dir: number) => {
+    dispatch({ dragging: false, dragX: dir * 560 });
+    window.setTimeout(() => {
+      if (dir > 0) doKnown(); else doAgain();
+      dispatch({ snap: true, dragX: 0 });
+      window.setTimeout(() => dispatch({ snap: false }), 60);
+    }, 200);
+  }, [doKnown, doAgain]);
 
-  if (!roomCode) {
-    return <RoomGate roomInput={roomInput} setRoomInput={setRoomInput} enterRoom={enterRoom} />;
-  }
+  // ---- token view descriptors
+  const tokenViews = useCallback((tokens: Token[], ri: number) => {
+    const sel = state.sel;
+    return tokens.map((t, ti) => {
+      if (t.nl) return { brk: true as const, key: ti };
+      const inSel = !!sel && sel.ri === ri && ti >= Math.min(sel.start, sel.end) && ti <= Math.max(sel.start, sel.end);
+      const marked = t.hidden || inSel;
+      return {
+        brk: false as const, key: ti, word: t.word, tail: t.tail,
+        bg: marked ? ACCENT : '#fff', fg: marked ? '#fff' : '#1d1d1f', fw: marked ? 700 : 600, padX: marked ? 8 : 6,
+        bd: marked ? '1px solid transparent' : '1px solid rgba(60,60,67,0.12)',
+        onDown: (e: ReactPointerEvent) => {
+          e.stopPropagation();
+          try { (e.target as Element).releasePointerCapture?.(e.pointerId); } catch { /* noop */ }
+          dispatch({ sel: { ri, start: ti, end: ti, wasHidden: t.hidden } });
+        },
+        onEnter: () => dispatch((st) => (st.sel && st.sel.ri === ri ? { sel: { ...st.sel, end: ti } } : {})),
+      };
+    });
+  }, [state.sel]);
 
+  const renderTokenChips = (tokens: Token[], ri: number, fontSize: number) => tokenViews(tokens, ri).map((tv) =>
+    tv.brk ? (
+      <span key={tv.key} style={{ width: '100%', height: 2 }} />
+    ) : (
+      <span key={tv.key} style={{ display: 'inline-flex', alignItems: 'baseline' }}>
+        <span
+          onPointerDown={tv.onDown}
+          onPointerEnter={tv.onEnter}
+          style={{ display: 'inline-block', padding: `2px ${tv.padX}px`, borderRadius: 8, background: tv.bg, color: tv.fg, border: tv.bd, boxSizing: 'border-box', fontSize, fontWeight: tv.fw, cursor: 'pointer', touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none' }}
+        >
+          {tv.word}
+        </span>
+        <span style={{ fontSize, fontWeight: 600 }}>{tv.tail}</span>
+      </span>
+    ));
+
+  // ============================================================ render
   return (
-    <main className="app-shell">
-      <AppHeader roomCode={roomCode} leaveRoom={leaveRoom} mode={repository?.mode ?? 'cloud'} />
-      {view === 'home' && (
+    <div style={{ height: '100dvh', maxWidth: 480, margin: '0 auto', position: 'relative', background: '#F2F2F7', color: '#000', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      {state.view === 'home' && (
         <HomeView
-          decks={decks}
-          decksState={decksState}
-          sections={visibleSections}
-          sectionsLoaded={Boolean(selectedDeckData?.sectionsLoaded)}
-          sectionsError={Boolean(selectedDeckData?.sectionsError)}
-          cards={visibleCards}
-          selectedDeck={selectedDeck}
-          onRetry={() => setRetryNonce((current) => current + 1)}
-          onSelectDeck={(deckId) => setSelectedDeckId(deckId)}
-          onOpenSection={openSection}
-          onAddDeck={addDeck}
-          onRenameDeck={renameDeck}
-          onDeleteDeck={deleteDeck}
-          onAddSection={addSection}
-          onRenameSection={renameSection}
-          onDeleteSection={deleteSection}
+          lists={lists} decksState={decksState} collapsed={state.collapsed} roomCode={roomCode}
+          weakFirst={weakFirst}
+          onToggleCollapse={(deckId) => dispatch((st) => ({ collapsed: { ...st.collapsed, [deckId]: !st.collapsed[deckId] } }))}
+          onOpenList={(id) => dispatch({ view: 'deck', activeSectionId: id, openRowId: null, filter: 'all' })}
+          onContinue={(id) => startStudy(id)}
+          onNewList={newList}
+          onOpenSettings={() => dispatch({ settingsOpen: true })}
         />
       )}
-      {view === 'study' && (
+
+      {state.view === 'deck' && activeList && (
+        <DeckView
+          list={activeList} state={state} dispatch={dispatch} weakFirst={weakFirst}
+          lpTimer={lpTimer} rowStart={rowStart}
+          onHome={() => dispatch({ view: 'home', openRowId: null })}
+          onRename={(name) => !activeList.synthetic && renameSection(activeList.deckId, activeList.id, name)}
+          onToggleMem={(card) => toggleMemorized(activeList.deckId, card.id, !card.memorized)}
+          onDelete={(card) => {
+            const stored = storedCardsOf(activeList.deckId, activeList.id).filter((c) => c.id !== card.id);
+            commitSection(activeList.deckId, activeList.id, stored.map((c) => keepCard(c)));
+            dispatch({ openRowId: null });
+            toast('카드를 삭제했어요');
+          }}
+          onEdit={openEditFor}
+          onMove={moveCard}
+          onDeleteList={deleteList}
+          onStart={(ids) => startStudy(activeList.id, ids)}
+          onOpenSheet={() => dispatch({ sheetOpen: true, addTab: 'type', pasteText: '', sheetRows: [], typeMode: 'cloze', typeQ: '', typeA: '', typeText: '', typeTokens: [], typeAdded: 0, openRowId: null })}
+          renderTokenChips={renderTokenChips}
+          toast={toast}
+        />
+      )}
+
+      {state.view === 'study' && (
         <StudyView
-          deck={selectedDeck}
-          section={selectedSection}
-          cards={studyCards}
-          cardsLoaded={Boolean(selectedDeckData?.cardsLoaded)}
-          cardsError={Boolean(selectedDeckData?.cardsError)}
-          totalCount={sectionCards.length}
-          shuffle={shuffle}
-          revealResetKey={revealResetKey}
-          onRetry={() => setRetryNonce((current) => current + 1)}
-          onBack={() => setView('home')}
-          onEdit={() => setView('edit')}
-          onToggleShuffle={toggleShuffle}
-          onReshuffle={reshuffle}
-          onToggleStar={toggleStar}
-          onToggleMastered={toggleMastered}
-          isStatusPending={(card) => (selectedDeck ? pendingStatusIds.has(statusKey(selectedDeck.id, card.id)) : false)}
+          list={activeList} state={state} dispatch={dispatch} swipeStart={swipeStart}
+          onCommitSwipe={commitSwipe} onKnown={doKnown} onAgain={doAgain}
+          onDeck={() => dispatch({ view: 'deck', queue: [], revealedIdx: [], dragX: 0, openRowId: null })}
+          onRetryRemaining={() => activeList && startStudy(activeList.id)}
+          onReviewAll={() => activeList && startStudy(activeList.id, activeList.cards.map((c) => c.id))}
         />
       )}
-      {view === 'edit' && (
-        <EditView
-          deck={selectedDeck}
-          section={selectedSection}
-          text={editText}
-          setText={setEditText}
-          parsedLines={parsedLines}
-          validCount={validCount}
-          invalidCount={invalidCount}
-          busy={busy}
-          conflictText={conflictText}
-          onAcceptRemote={acceptRemoteEdit}
-          onKeepMine={keepLocalEdit}
-          onBack={() => setView('study')}
-          onSave={saveContent}
-        />
-      )}
-      {nameDialog && (
-        <NameDialogView
-          dialog={nameDialog}
-          value={nameDialogValue}
-          busy={nameDialogBusy}
-          error={nameDialogError}
-          setValue={setNameDialogValue}
-          onCancel={closeNameDialog}
-          onSubmit={submitNameDialog}
-        />
-      )}
-      <div className="toast-stack" role="status" aria-live="polite">
-        {toasts.map((toast) => (
-          <div className={`toast ${toast.kind}`} key={toast.id}>
-            {toast.message}
-          </div>
-        ))}
-      </div>
-    </main>
-  );
-}
 
-function NameDialogView({
-  dialog,
-  value,
-  busy,
-  error,
-  setValue,
-  onCancel,
-  onSubmit,
-}: {
-  dialog: NameDialog;
-  value: string;
-  busy: boolean;
-  error: string;
-  setValue: (value: string) => void;
-  onCancel: () => void;
-  onSubmit: () => void;
-}) {
-  function handleSubmit(event: FormEvent) {
-    event.preventDefault();
-    void onSubmit();
-  }
+      {/* ---- add sheet ---- */}
+      {state.sheetOpen && activeList && (
+        <AddSheet
+          list={activeList} state={state} dispatch={dispatch} storedCardsOf={storedCardsOf}
+          commitSection={commitSection} renderTokenChips={renderTokenChips} toast={toast} commitSelection={commitSelection}
+        />
+      )}
 
-  return (
-    <div className="dialog-backdrop" role="presentation" onMouseDown={onCancel}>
-      <form className="name-dialog" onSubmit={handleSubmit} onMouseDown={(event) => event.stopPropagation()}>
-        <div>
-          <p className="eyebrow">{dialog.type === 'deck' ? '암기장 목록' : '세부 암기장'}</p>
-          <h3>{dialog.title}</h3>
+      {/* ---- edit sheet ---- */}
+      {state.editSheetOpen && activeList && (
+        <EditSheet
+          list={activeList} state={state} dispatch={dispatch}
+          saveEditFrom={saveEditFrom} renderTokenChips={renderTokenChips}
+          onDelete={() => {
+            if (state.editIdx === null) return;
+            const stored = storedCardsOf(activeList.deckId, activeList.id).filter((_, i) => i !== state.editIdx);
+            commitSection(activeList.deckId, activeList.id, stored.map((c) => keepCard(c)));
+            dispatch({ editSheetOpen: false });
+            toast('카드를 삭제했어요');
+          }}
+          openEditFor={openEditFor}
+        />
+      )}
+
+      {state.settingsOpen && (
+        <SettingsSheet roomCode={roomCode} onClose={() => dispatch({ settingsOpen: false })} onChangeRoom={onChangeRoom} />
+      )}
+
+      {state.toastVisible && (
+        <div style={{ position: 'absolute', left: '50%', bottom: 130, transform: 'translateX(-50%)', padding: '11px 20px', borderRadius: 999, background: 'rgba(29,29,31,0.92)', color: '#fff', fontSize: 14, fontWeight: 600, whiteSpace: 'nowrap', animation: 'popIn 0.25s cubic-bezier(0.3,1.2,0.4,1)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)', zIndex: 20 }}>
+          {state.toastMsg}
         </div>
-        <label>
-          <span>{dialog.label}</span>
-          <input value={value} onChange={(event) => setValue(event.target.value)} autoFocus />
-        </label>
-        {error && <p className="dialog-error">{error}</p>}
-        <div className="dialog-actions">
-          <button className="soft-button" type="button" onClick={onCancel} disabled={busy}>
-            취소
-          </button>
-          <button className="primary-button" type="submit" disabled={busy}>
-            추가
-          </button>
-        </div>
-      </form>
+      )}
     </div>
   );
 }
 
-function RoomGate({
-  roomInput,
-  setRoomInput,
-  enterRoom,
-}: {
-  roomInput: string;
-  setRoomInput: (value: string) => void;
-  enterRoom: (event: FormEvent) => void;
-}) {
-  return (
-    <main className="room-screen">
-      <section className="room-panel">
-        <div className="brand-mark">
-          <BookOpen size={32} />
-        </div>
-        <h1>시험암기</h1>
-        <p>같은 공유코드를 PC와 아이폰에 입력하면 언제나 같은 암기장을 봅니다.</p>
-        <form onSubmit={enterRoom} className="room-form">
-          <label htmlFor="room-code">공유코드</label>
-          <input
-            id="room-code"
-            value={roomInput}
-            onChange={(event) => setRoomInput(event.target.value)}
-            minLength={4}
-            maxLength={48}
-            placeholder="예: my-exam-2026"
-            autoCapitalize="none"
-            autoCorrect="off"
-          />
-          <button type="submit" disabled={normalizeRoomCode(roomInput).length < 4}>
-            암기장 열기
-          </button>
-        </form>
-      </section>
-    </main>
-  );
-}
-
-function AppHeader({ roomCode, leaveRoom }: { roomCode: string; mode: Repository['mode']; leaveRoom: () => void }) {
-  return (
-    <header className="app-header">
-      <div className="code-row">
-        <p className="eyebrow">공유코드</p>
-        <div className="code-line">
-          <strong>{roomCode}</strong>
-          <button className="code-change-button" onClick={leaveRoom}>
-            변경
-          </button>
-        </div>
-      </div>
-    </header>
-  );
-}
-
-function HomeView({
-  decks,
-  decksState,
-  sections,
-  sectionsLoaded,
-  sectionsError,
-  cards,
-  selectedDeck,
-  onRetry,
-  onSelectDeck,
-  onOpenSection,
-  onAddDeck,
-  onRenameDeck,
-  onDeleteDeck,
-  onAddSection,
-  onRenameSection,
-  onDeleteSection,
-}: {
-  decks: Deck[];
-  decksState: DecksState;
-  sections: Section[];
-  sectionsLoaded: boolean;
-  sectionsError: boolean;
-  cards: Card[];
-  selectedDeck?: Deck;
-  onRetry: () => void;
-  onSelectDeck: (deckId: string) => void;
-  onOpenSection: (deckId: string, sectionId: string) => void;
-  onAddDeck: () => void;
-  onRenameDeck: (deckId: string, name: string) => Promise<void>;
-  onDeleteDeck: (deck: Deck) => void;
-  onAddSection: (deckId?: string) => void;
-  onRenameSection: (deckId: string, sectionId: string, name: string) => Promise<void>;
-  onDeleteSection: (section: Section) => void;
-}) {
-  const [editingName, setEditingName] = useState<
-    | { type: 'deck'; deckId: string }
-    | { type: 'section'; deckId: string; sectionId: string }
-    | null
-  >(null);
-  const [editingValue, setEditingValue] = useState('');
-  const [savingName, setSavingName] = useState(false);
-  const [inlineError, setInlineError] = useState('');
-  const submittingNameRef = useRef(false);
-
-  function editingKey() {
-    if (!editingName) return '';
-    return editingName.type === 'deck' ? `deck:${editingName.deckId}` : `section:${editingName.deckId}:${editingName.sectionId}`;
-  }
-
-  function startDeckEdit(deck: Deck) {
-    setEditingName({ type: 'deck', deckId: deck.id });
-    setEditingValue(displayDeckName(deck));
-    setInlineError('');
-  }
-
-  function startSectionEdit(deckId: string, section: Section) {
-    setEditingName({ type: 'section', deckId, sectionId: section.id });
-    setEditingValue(displaySectionName(section));
-    setInlineError('');
-  }
-
-  function cancelNameEdit() {
-    if (savingName) return;
-    setEditingName(null);
-    setEditingValue('');
-    setInlineError('');
-  }
-
-  async function submitNameEdit() {
-    if (!editingName || submittingNameRef.current) return;
-    const nextName = editingValue.trim();
-    if (!nextName) {
-      cancelNameEdit();
-      return;
-    }
-
-    submittingNameRef.current = true;
-    setSavingName(true);
-    setInlineError('');
-    try {
-      if (editingName.type === 'deck') {
-        await onRenameDeck(editingName.deckId, nextName);
-      } else {
-        await onRenameSection(editingName.deckId, editingName.sectionId, nextName);
-      }
-      setEditingName(null);
-      setEditingValue('');
-    } catch (error) {
-      setInlineError(error instanceof Error ? error.message : '저장 실패');
-    } finally {
-      submittingNameRef.current = false;
-      setSavingName(false);
-    }
-  }
-
-  function handleNameKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      void submitNameEdit();
-    }
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      cancelNameEdit();
-    }
-  }
-
-  return (
-    <section className="home-layout">
-      <div className="page-title">
-        <button className="primary-button" onClick={onAddDeck}>
-          <Plus size={18} />
-          새 암기장
-        </button>
-      </div>
-
-      <div className="folder-list">
-        {decksState === 'loading' && (
-          <div className="empty-state">
-            <strong>불러오는 중...</strong>
-            <span>암기장을 확인하고 있습니다.</span>
-          </div>
-        )}
-        {decksState === 'error' && (
-          <div className="empty-state">
-            <strong>서버에 연결할 수 없습니다.</strong>
-            <span>인터넷 연결을 확인한 뒤 다시 시도하세요.</span>
-            <button className="soft-button" type="button" onClick={onRetry}>
-              다시 시도
-            </button>
-          </div>
-        )}
-        {decksState === 'ready' && decks.length === 0 && (
-          <div className="empty-state">
-            <strong>아직 암기장이 없습니다</strong>
-            <span>새 암기장을 만들어 시작하세요.</span>
-          </div>
-        )}
-        {decksState === 'ready' && decks.map((deck) => {
-          const selected = deck.id === selectedDeck?.id;
-          const deckEditing = editingKey() === `deck:${deck.id}`;
-          return (
-            <article className={`folder-row ${selected ? 'open' : ''}`} key={deck.id}>
-              <div className="folder-main">
-                {deckEditing ? (
-                  <div className="folder-title editing-name">
-                    {selected ? <FolderOpen size={22} /> : <Folder size={22} />}
-                    <div className="inline-name-field">
-                      <input
-                        value={editingValue}
-                        onChange={(event) => setEditingValue(event.target.value)}
-                        onKeyDown={handleNameKeyDown}
-                        onBlur={() => void submitNameEdit()}
-                        onFocus={(event) => event.currentTarget.select()}
-                        disabled={savingName}
-                        autoFocus
-                        aria-label="암기장 이름"
-                      />
-                      {inlineError && <small>{inlineError}</small>}
-                    </div>
-                    <ChevronRight className="folder-chevron" size={18} />
-                  </div>
-                ) : (
-                  <button className="folder-title" onClick={() => onSelectDeck(deck.id)}>
-                    {selected ? <FolderOpen size={22} /> : <Folder size={22} />}
-                    <span>{displayDeckName(deck)}</span>
-                    <ChevronRight className="folder-chevron" size={18} />
-                  </button>
-                )}
-                <div className="folder-actions">
-                  <button
-                    className="icon-button"
-                    onClick={() => (deckEditing ? void submitNameEdit() : startDeckEdit(deck))}
-                    disabled={savingName && deckEditing}
-                    aria-label={deckEditing ? '암기장 이름 저장' : '암기장 이름 수정'}
-                  >
-                    {deckEditing ? <Check size={17} /> : <Edit3 size={16} />}
-                  </button>
-                  <button
-                    className="icon-button"
-                    onClick={() => onDeleteDeck(deck)}
-                    disabled={deckEditing}
-                    aria-label="암기장 삭제"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              </div>
-
-              {selected && (
-                <div className="section-tree">
-                  <div className="tree-summary">
-                    <span>{sections.length}개 세부 암기장</span>
-                    <span>{cards.length}개 카드</span>
-                  </div>
-                  {!sectionsLoaded && !sectionsError && (
-                    <div className="empty-state section-empty-state">
-                      <strong>불러오는 중...</strong>
-                      <span>세부 암기장을 확인하고 있습니다.</span>
-                    </div>
-                  )}
-                  {sectionsError && sections.length === 0 && (
-                    <div className="empty-state section-empty-state">
-                      <strong>불러오지 못했습니다</strong>
-                      <span>인터넷 연결을 확인한 뒤 다시 시도하세요.</span>
-                      <button className="soft-button" type="button" onClick={onRetry}>
-                        다시 시도
-                      </button>
-                    </div>
-                  )}
-                  {sectionsLoaded && !sectionsError && sections.length === 0 && (
-                    <div className="empty-state section-empty-state">
-                      <strong>세부 암기장이 없습니다</strong>
-                      <span>세부 암기장을 추가하면 내용을 편집할 수 있습니다.</span>
-                    </div>
-                  )}
-                  {sectionsLoaded && sections.map((section) => {
-                    const count = cards.filter((card) => sectionKey(card) === section.id).length;
-                    const sectionEditing = editingKey() === `section:${deck.id}:${section.id}`;
-                    return (
-                      <div className="section-row" key={section.id}>
-                        {sectionEditing ? (
-                          <div className="section-title editing-name">
-                            <div className="inline-name-field section-name-field">
-                              <input
-                                value={editingValue}
-                                onChange={(event) => setEditingValue(event.target.value)}
-                                onKeyDown={handleNameKeyDown}
-                                onBlur={() => void submitNameEdit()}
-                                onFocus={(event) => event.currentTarget.select()}
-                                disabled={savingName}
-                                autoFocus
-                                aria-label="세부 암기장 이름"
-                              />
-                              {inlineError && <small>{inlineError}</small>}
-                            </div>
-                            <small>{count}문제</small>
-                          </div>
-                        ) : (
-                          <button className="section-title" onClick={() => onOpenSection(deck.id, section.id)}>
-                            <strong>{displaySectionName(section)}</strong>
-                            <small>{count}문제</small>
-                          </button>
-                        )}
-                        <div className="folder-actions">
-                          <button
-                            className="icon-button"
-                            onClick={() => (sectionEditing ? void submitNameEdit() : startSectionEdit(deck.id, section))}
-                            disabled={savingName && sectionEditing}
-                            aria-label={sectionEditing ? '세부 암기장 이름 저장' : '세부 암기장 이름 수정'}
-                          >
-                            {sectionEditing ? <Check size={16} /> : <Edit3 size={15} />}
-                          </button>
-                          <button
-                            className="icon-button"
-                            onClick={() => onDeleteSection(section)}
-                            disabled={sectionEditing}
-                            aria-label="세부 암기장 삭제"
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  <button className="add-section-button" onClick={() => onAddSection(deck.id)}>
-                    <Plus size={16} />
-                    세부 암기장 추가
-                  </button>
-                </div>
-              )}
-            </article>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
-function StudyView({
-  deck,
-  section,
-  cards,
-  cardsLoaded,
-  cardsError,
-  totalCount,
-  shuffle,
-  revealResetKey,
-  onRetry,
-  onBack,
-  onEdit,
-  onToggleShuffle,
-  onReshuffle,
-  onToggleStar,
-  onToggleMastered,
-  isStatusPending,
-}: {
-  deck?: Deck;
-  section?: Section;
-  cards: Card[];
-  cardsLoaded: boolean;
-  cardsError: boolean;
-  totalCount: number;
-  shuffle: boolean;
-  revealResetKey: number;
-  onRetry: () => void;
-  onBack: () => void;
-  onEdit: () => void;
-  onToggleShuffle: () => void;
-  onReshuffle: () => void;
-  onToggleStar: (card: Card) => void;
-  onToggleMastered: (card: Card) => void;
-  isStatusPending: (card: Card) => boolean;
-}) {
-  const [activeCardId, setActiveCardId] = useState('');
-
-  return (
-    <section className="study-layout">
-      <div className="study-top">
-        <button className="back-button" onClick={onBack}>
-          <ChevronLeft size={19} />
-          목록
-        </button>
-        <div className="study-heading">
-          <p className="eyebrow">{displayDeckName(deck)}</p>
-          <h2>{displaySectionName(section)}</h2>
-          <span>{totalCount}문제</span>
-        </div>
-        <button className="soft-button" onClick={onEdit}>
-          <Edit3 size={17} />
-          편집
-        </button>
-      </div>
-
-      <div className="study-controls">
-        <button className={`toggle-button ${shuffle ? 'active' : ''}`} onClick={onToggleShuffle}>
-          <Shuffle size={17} />
-          셔플
-        </button>
-        <button className="soft-button" onClick={onReshuffle} disabled={!shuffle}>
-          다시 섞기
-        </button>
-      </div>
-
-      <div className="memory-list">
-        {!cardsLoaded && !cardsError && cards.length === 0 && (
-          <div className="empty-state">
-            불러오는 중...
-          </div>
-        )}
-        {cardsError && cards.length === 0 && (
-          <div className="empty-state">
-            <strong>문제를 불러오지 못했습니다</strong>
-            <span>인터넷 연결을 확인한 뒤 다시 시도하세요.</span>
-            <button className="soft-button" type="button" onClick={onRetry}>
-              다시 시도
-            </button>
-          </div>
-        )}
-        {cardsLoaded && !cardsError && cards.length === 0 && (
-          <div className="empty-state">
-            아직 문제가 없습니다. 편집을 눌러 A:B, A-&gt;B, [정답], 묶음 제목 아래 목록 형식으로 내용을 추가하세요.
-          </div>
-        )}
-        {cards.map((card, index) => (
-          <MemoryCard
-            key={card.id}
-            index={index + 1}
-            card={card}
-            active={activeCardId === card.id}
-            revealResetKey={revealResetKey}
-            statusPending={isStatusPending(card)}
-            onActivate={() => setActiveCardId(card.id)}
-            onToggleStar={() => onToggleStar(card)}
-            onToggleMastered={() => onToggleMastered(card)}
-          />
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function EditView({
-  deck,
-  section,
-  text,
-  setText,
-  parsedLines,
-  validCount,
-  invalidCount,
-  busy,
-  conflictText,
-  onAcceptRemote,
-  onKeepMine,
-  onBack,
-  onSave,
-}: {
-  deck?: Deck;
-  section?: Section;
-  text: string;
-  setText: (value: string) => void;
-  parsedLines: ParsedLine[];
-  validCount: number;
-  invalidCount: number;
-  busy: boolean;
-  conflictText: string | null;
-  onAcceptRemote: () => void;
-  onKeepMine: () => void;
-  onBack: () => void;
-  onSave: () => void;
-}) {
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const [undoStack, setUndoStack] = useState<string[]>([]);
-  const [redoStack, setRedoStack] = useState<string[]>([]);
-
-  function restoreEditorScroll(textarea: HTMLTextAreaElement | null, textareaScrollTop: number, windowScroll: { x: number; y: number }) {
-    window.requestAnimationFrame(() => {
-      textarea?.focus({ preventScroll: true });
-      if (textarea) textarea.scrollTop = textareaScrollTop;
-      window.scrollTo(windowScroll.x, windowScroll.y);
-    });
-  }
-
-  function applyEditorTransform(nextText: string, nextCursor: number) {
-    const textarea = textareaRef.current;
-    if (nextText === text) return;
-    const textareaScrollTop = textarea?.scrollTop ?? 0;
-    const windowScroll = { x: window.scrollX, y: window.scrollY };
-    setUndoStack((current) => [...current, text]);
-    setRedoStack([]);
-    setText(nextText);
-    window.requestAnimationFrame(() => {
-      textarea?.focus({ preventScroll: true });
-      textarea?.setSelectionRange(nextCursor, nextCursor);
-      if (textarea) textarea.scrollTop = textareaScrollTop;
-      window.scrollTo(windowScroll.x, windowScroll.y);
-    });
-  }
-
-  function undoEditorTransform() {
-    const previous = undoStack.at(-1);
-    if (previous === undefined) return;
-    const textarea = textareaRef.current;
-    const textareaScrollTop = textarea?.scrollTop ?? 0;
-    const windowScroll = { x: window.scrollX, y: window.scrollY };
-    setUndoStack((current) => current.slice(0, -1));
-    setRedoStack((current) => [...current, text]);
-    setText(previous);
-    restoreEditorScroll(textarea, textareaScrollTop, windowScroll);
-  }
-
-  function redoEditorTransform() {
-    const next = redoStack.at(-1);
-    if (next === undefined) return;
-    const textarea = textareaRef.current;
-    const textareaScrollTop = textarea?.scrollTop ?? 0;
-    const windowScroll = { x: window.scrollX, y: window.scrollY };
-    setRedoStack((current) => current.slice(0, -1));
-    setUndoStack((current) => [...current, text]);
-    setText(next);
-    restoreEditorScroll(textarea, textareaScrollTop, windowScroll);
-  }
-
-  function handleManualTextChange(value: string) {
-    setUndoStack([]);
-    setRedoStack([]);
-    setText(value);
-  }
-
-  function maskCurrentLineAnswerItems() {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-    const cursor = textarea.selectionStart ?? text.length;
-    const lineStart = text.lastIndexOf('\n', Math.max(0, cursor - 1)) + 1;
-    const nextLineBreak = text.indexOf('\n', cursor);
-    const lineEnd = nextLineBreak >= 0 ? nextLineBreak : text.length;
-    const currentLine = text.slice(lineStart, lineEnd);
-    const nextLine = maskAnswerItems(currentLine);
-    if (nextLine === currentLine) return;
-    const nextText = `${text.slice(0, lineStart)}${nextLine}${text.slice(lineEnd)}`;
-    const nextCursor = lineStart + nextLine.length;
-    applyEditorTransform(nextText, nextCursor);
-  }
-
-  function handleTextareaKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key !== '[') return;
-    if (event.altKey || event.ctrlKey || event.metaKey) return;
-    const textarea = event.currentTarget;
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    event.preventDefault();
-    const selected = text.slice(start, end);
-    const nextText = `${text.slice(0, start)}[${selected}]${text.slice(end)}`;
-    const nextStart = selected ? start + selected.length + 2 : start + 1;
-    applyEditorTransform(nextText, nextStart);
-  }
-
-  return (
-    <section className="edit-layout">
-      <div className="study-top">
-        <button className="back-button" onClick={onBack}>
-          <ChevronLeft size={19} />
-          암기
-        </button>
-        <div className="study-heading">
-          <p className="eyebrow">{displayDeckName(deck)}</p>
-          <h2>{displaySectionName(section)} 편집</h2>
-          <span>
-            {validCount}문제 변환 {invalidCount > 0 ? `· ${invalidCount}줄 확인 필요` : ''}
-          </span>
-        </div>
-        <button className="primary-button" onClick={onSave} disabled={busy}>
-          <Save size={17} />
-          저장
-        </button>
-      </div>
-
-      {conflictText !== null && (
-        <div className="conflict-banner" role="alert">
-          <div>
-            <strong>다른 기기에서 이 세부 암기장이 수정되었습니다.</strong>
-            <p>원격 내용을 불러오면 현재 편집 내용은 사라집니다.</p>
-          </div>
-          <div className="conflict-actions">
-            <button className="soft-button" type="button" onClick={onAcceptRemote}>
-              원격 내용 불러오기
-            </button>
-            <button className="soft-button" type="button" onClick={onKeepMine}>
-              내 편집 유지
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div className="editor-grid">
-        <section className="editor-pane">
-          <div className="editor-toolbar">
-            <button className="tool-button mask-tool-button" type="button" onClick={maskCurrentLineAnswerItems}>
-              답 항목 가리기
-            </button>
-            <button
-              className="tool-icon-button"
-              type="button"
-              onClick={undoEditorTransform}
-              disabled={undoStack.length === 0}
-              aria-label="되돌리기"
-              title="되돌리기"
-            >
-              <Undo2 size={17} />
-            </button>
-            <button
-              className="tool-icon-button"
-              type="button"
-              onClick={redoEditorTransform}
-              disabled={redoStack.length === 0}
-              aria-label="앞으로"
-              title="앞으로"
-            >
-              <Redo2 size={17} />
-            </button>
-          </div>
-          <textarea
-            ref={textareaRef}
-            value={text}
-            onChange={(event) => handleManualTextChange(event.target.value)}
-            onKeyDown={handleTextareaKeyDown}
-            placeholder={'수도:서울\n대한민국->서울\n대한민국의 수도는 [서울]이다\n\n커피의 3가지 분류:\n- 아메리카노: 아주 [오래된] 커피\n1. [카페라떼]: 아주 [맛있는] 커피'}
-          />
-        </section>
-        <section className="preview-pane">
-          <h3>미리보기</h3>
-          <div className="preview-list">
-            {parsedLines.length === 0 && <div className="empty-state">입력한 원문이 여기에 카드로 변환되어 보입니다.</div>}
-            {parsedLines.map((line) =>
-              line.valid ? (
-                <PreviewCard line={line} key={`${line.lineNumber}-${line.rawText}`} />
-              ) : (
-                <div className="preview-row invalid" key={`${line.lineNumber}-${line.rawText}`}>
-                  <span>{line.lineNumber}</span>
-                  <div>
-                    <strong>{line.rawText}</strong>
-                    <p>{line.reason}</p>
-                  </div>
-                </div>
-              ),
-            )}
-          </div>
-        </section>
-      </div>
-    </section>
-  );
-}
-
-function PreviewCard({ line }: { line: Extract<ParsedLine, { valid: true }> }) {
-  if (line.card.type === 'group') {
-    return (
-      <div className="preview-row group-preview">
-        <span>{line.lineNumber}</span>
-        <div>
-          <em>묶음 카드</em>
-          <strong>{line.card.prompt}</strong>
-          <ul>
-            {(line.card.groupItems ?? []).map((item, index) => (
-              <li key={`${item.marker}:${index}`}>
-                <b>{item.marker}</b> {maskCloze(item.text)}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="preview-row">
-      <span>{line.lineNumber}</span>
-      <div>
-        <strong>{line.card.type === 'pair' ? line.card.prompt : maskCloze(line.card.rawText)}</strong>
-        <p>{line.card.answers.join(', ')}</p>
-      </div>
-    </div>
-  );
-}
-
-function MemoryCard({
-  index,
-  card,
-  active,
-  revealResetKey,
-  statusPending,
-  onActivate,
-  onToggleStar,
-  onToggleMastered,
-}: {
-  index: number;
-  card: Card;
-  active: boolean;
-  revealResetKey: number;
-  statusPending: boolean;
-  onActivate: () => void;
-  onToggleStar: () => void;
-  onToggleMastered: () => void;
-}) {
-  const [revealed, setRevealed] = useState<Record<string, boolean>>({});
-  const [hinted, setHinted] = useState<Record<string, boolean>>({});
-  const revealKeys = useMemo(() => revealKeysForCard(card), [card]);
-
-  useEffect(() => {
-    setRevealed({});
-    setHinted({});
-  }, [card.id, revealResetKey]);
-
-  useEffect(() => {
-    if (active) return;
-    setRevealed({});
-    setHinted({});
-  }, [active]);
-
-  function toggleReveal(key: string) {
-    onActivate();
-    setRevealed((current) => {
-      if (current[key]) {
-        setHinted((hintCurrent) => {
-          const nextHints = { ...hintCurrent };
-          delete nextHints[key];
-          return nextHints;
-        });
-        const nextRevealed = { ...current };
-        delete nextRevealed[key];
-        return nextRevealed;
-      }
-      return { ...current, [key]: true };
-    });
-  }
-
-  function showNextHint() {
-    if (revealKeys.length === 0) return;
-    onActivate();
-    const nextKey = revealKeys.find((key) => !revealed[key] && !hinted[key]);
-    if (nextKey) {
-      setHinted((current) => ({ ...current, [nextKey]: true }));
-      return;
-    }
-    const nextRevealKey = revealKeys.find((key) => !revealed[key]);
-    if (!nextRevealKey) return;
-    setRevealed((current) => ({ ...current, [nextRevealKey]: true }));
-  }
-
-  const hintExhausted = revealKeys.length === 0 || revealKeys.every((key) => revealed[key]);
-  const handlers = { revealed, hinted, toggleReveal };
-
-  return (
-    <article className={`memory-card ${card.type === 'group' ? 'group-card' : ''} ${card.type === 'pair' ? 'pair-card' : ''}`}>
-      <div className="memory-index">{index}</div>
-      <div className="memory-body">
-        <MemoryCardBody card={card} handlers={handlers} />
-      </div>
-      <div className="memory-actions">
-        <button className="hint-button" onClick={showNextHint} disabled={hintExhausted} aria-label="힌트 보기">
-          <Lightbulb size={17} />
-        </button>
-        <button
-          className={`star-button ${card.starred ? 'active' : ''}`}
-          onClick={onToggleStar}
-          disabled={statusPending}
-          aria-label="중요 표시"
-        >
-          <Star size={18} fill={card.starred ? 'currentColor' : 'none'} />
-        </button>
-        <button
-          className={`mastered-button ${card.mastered ? 'active' : ''}`}
-          onClick={onToggleMastered}
-          disabled={statusPending}
-          aria-label="암기 완료"
-        >
-          <Check size={17} />
-        </button>
-      </div>
-    </article>
-  );
-}
-
-function MemoryCardBody({ card, handlers }: { card: Card; handlers: RevealHandlers }) {
-  if (card.type === 'pair') {
-    return (
-      <>
-        <strong>{card.prompt}</strong>
-        <RevealButton
-          value={card.answers[0] ?? ''}
-          shown={Boolean(handlers.revealed[`${card.id}:0`])}
-          hint={handlers.hinted[`${card.id}:0`] ? answerHint(card.answers[0] ?? '') : ''}
-          onToggle={() => handlers.toggleReveal(`${card.id}:0`)}
-        />
-      </>
-    );
-  }
-
-  if (card.type === 'group') {
-    return (
-      <div className="group-body">
-        <strong className="group-title">{card.prompt}</strong>
-        <ul className="group-list">
-          {(card.groupItems ?? []).map((item, itemIndex) => (
-            <li key={`${item.marker}:${itemIndex}`}>
-              <span className="group-marker">{item.marker}</span>
-              <span className="group-item-text">
-                <ClozeText rawText={item.text} keyPrefix={`${card.id}:group:${itemIndex}`} handlers={handlers} />
-              </span>
-            </li>
-          ))}
-        </ul>
-      </div>
-    );
-  }
-
-  return (
-    <p className="cloze-line">
-      <ClozeText rawText={card.rawText} keyPrefix={`${card.id}:cloze`} handlers={handlers} />
-    </p>
-  );
-}
-
-function ClozeText({ rawText, keyPrefix, handlers }: { rawText: string; keyPrefix: string; handlers: RevealHandlers }) {
-  return (
-    <>
-      {splitCloze(rawText).map((piece, pieceIndex) =>
-        piece.kind === 'text' ? (
-          <span key={`${keyPrefix}:text:${pieceIndex}`}>{piece.value}</span>
-        ) : (
-          <RevealButton
-            key={`${keyPrefix}:blank:${piece.index}`}
-            value={piece.value}
-            inline
-            shown={Boolean(handlers.revealed[`${keyPrefix}:${piece.index}`])}
-            hint={handlers.hinted[`${keyPrefix}:${piece.index}`] ? answerHint(piece.value) : ''}
-            onToggle={() => handlers.toggleReveal(`${keyPrefix}:${piece.index}`)}
-          />
-        ),
-      )}
-    </>
-  );
-}
-
-function RevealButton({
-  value,
-  shown,
-  hint,
-  inline = false,
-  onToggle,
-}: {
-  value: string;
-  shown: boolean;
-  hint?: string;
-  inline?: boolean;
-  onToggle: () => void;
-}) {
+function EmptyStateAction(props: { label: string; onClick: () => void }) {
   return (
     <button
       type="button"
-      className={`reveal-button ${inline ? 'inline' : ''} ${shown ? 'shown' : ''} ${hint ? 'hinted' : ''}`}
-      onClick={onToggle}
-      onContextMenu={(event) => event.preventDefault()}
-      aria-pressed={shown}
-      aria-label={shown ? undefined : '정답 보기'}
+      className="primary-action-button"
+      onClick={props.onClick}
+      aria-label={props.label}
+      title={props.label}
     >
-      <span className="answer-measure">{value}</span>
-      <span className={`answer-mask ${hint ? 'hinted' : ''}`} aria-hidden="true">
-        {hint && <span className="hint-text">{hint}</span>}
-      </span>
-      <span className="answer-text">{value}</span>
+      {props.label}
     </button>
   );
 }
 
-function maskCloze(rawText: string) {
-  return rawText.replace(/\[[^\[\]]+\]/g, '____');
+// ================================================================ HOME
+function HomeView(props: {
+  lists: ProtoList[]; decksState: 'loading' | 'ready' | 'error'; collapsed: Record<string, boolean>; roomCode: string;
+  weakFirst: (cards: ProtoCard[]) => ProtoCard[];
+  onToggleCollapse: (deckId: string) => void; onOpenList: (id: string) => void; onContinue: (id: string) => void;
+  onNewList: () => void; onOpenSettings: () => void;
+}) {
+  const { lists, decksState } = props;
+  const contList = lists.find((l) => l.cards.some((c) => !c.memorized));
+  const contRemain = contList ? contList.cards.filter((c) => !c.memorized).length : 0;
+
+  type Group = { deckId: string; subject: string; color: string; lists: ProtoList[] };
+  const groupOrder: string[] = [];
+  const groupMap: Record<string, Group> = {};
+  for (const l of lists) {
+    if (!groupMap[l.deckId]) { groupMap[l.deckId] = { deckId: l.deckId, subject: l.subject, color: l.color, lists: [] }; groupOrder.push(l.deckId); }
+    groupMap[l.deckId].lists.push(l);
+  }
+  // A single "일반"-style group is just noise for a first-timer — show the lists
+  // flat and only reveal subject headers once there's more than one subject.
+  const showHeaders = groupOrder.length > 1;
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, paddingTop: 'env(safe-area-inset-top)' }}>
+      <div style={{ padding: '16px 20px 12px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+        <div style={{ fontSize: 34, fontWeight: 800, letterSpacing: '-0.02em' }}>내 암기장</div>
+        <div onClick={props.onOpenSettings} role="button" aria-label="설정" title="설정" style={{ width: 38, height: 38, borderRadius: 999, background: 'rgba(120,120,128,0.12)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(60,60,67,0.7)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
+        </div>
+      </div>
+
+      <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px 120px', minHeight: 0 }}>
+        {decksState === 'loading' && lists.length === 0 && (
+          <div style={{ padding: '44px 20px', textAlign: 'center', color: 'rgba(60,60,67,0.45)', fontSize: 15 }}>불러오는 중…</div>
+        )}
+        {decksState === 'ready' && lists.length === 0 && (
+          <div style={{ padding: '38px 20px', textAlign: 'center', color: 'rgba(60,60,67,0.58)', fontSize: 15, lineHeight: 1.6, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
+            <div>아직 암기장이 없어요.<br />첫 목록을 만들고 바로 카드를 넣어보세요.</div>
+            <EmptyStateAction label="첫 암기장 만들기" onClick={props.onNewList} />
+            <div style={{ fontSize: 12.5, color: 'rgba(60,60,67,0.5)' }}>새 목록은 언제든 오른쪽 아래 +로 만들 수 있어요</div>
+          </div>
+        )}
+
+        {contList && (
+          <div onClick={() => props.onContinue(contList.id)} style={{ marginBottom: 14, padding: 18, borderRadius: 22, background: ACCENT, color: '#fff', display: 'flex', alignItems: 'center', gap: 14, boxShadow: '0 12px 28px rgba(0,0,0,0.18)', cursor: 'pointer' }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, opacity: 0.75 }}>이어서 암기</div>
+              <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-0.01em' }}>{showHeaders ? `${contList.subject} · ${contList.name}` : contList.name}</div>
+              <div style={{ fontSize: 13, opacity: 0.75 }}>{contRemain}문제 남음</div>
+            </div>
+            <div style={{ width: 44, height: 44, borderRadius: 999, background: 'rgba(255,255,255,0.22)', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+              <svg width="16" height="18" viewBox="0 0 16 18"><path d="M2 1.5v15l13-7.5z" fill="#fff" /></svg>
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {groupOrder.map((deckId) => {
+            const g = groupMap[deckId];
+            const allCards = g.lists.reduce((n, l) => n + l.cards.length, 0);
+            const doneCards = g.lists.reduce((n, l) => n + l.cards.filter((c) => c.memorized).length, 0);
+            const isCollapsed = showHeaders && !!props.collapsed[deckId];
+            return (
+              <div key={deckId} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {showHeaders && (
+                  <div onClick={() => props.onToggleCollapse(deckId)} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '2px 6px', cursor: 'pointer' }}>
+                    <span style={{ width: 10, height: 10, borderRadius: 999, background: g.color, flexShrink: 0 }} />
+                    <span style={{ fontSize: 16, fontWeight: 800, letterSpacing: '-0.01em' }}>{g.subject}</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: 'rgba(60,60,67,0.45)' }}>{g.lists.length}개 · {doneCards}/{allCards} 외움</span>
+                    <div style={{ flex: 1 }} />
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(60,60,67,0.4)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" style={{ transform: isCollapsed ? 'rotate(0deg)' : 'rotate(180deg)', transition: 'transform 0.2s' }}><path d="m6 9 6 6 6-6" /></svg>
+                  </div>
+                )}
+                {!isCollapsed && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {g.lists.map((l) => {
+                      const remain = l.cards.filter((c) => !c.memorized).length;
+                      const allDone = l.cards.length > 0 && remain === 0;
+                      return (
+                        <div key={l.id} onClick={() => props.onOpenList(l.id)} style={{ padding: '15px 18px', borderRadius: 20, background: '#fff', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
+                          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
+                            <div style={{ fontSize: 17, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name}</div>
+                            <div style={{ fontSize: 13, color: 'rgba(60,60,67,0.6)' }}>{l.cards.length === 0 ? '비어 있음' : `${l.cards.length}문제 · ${l.cards.length - remain} 외움`}</div>
+                          </div>
+                          {allDone && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#1e9e46', flexShrink: 0 }}>
+                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1e9e46" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+                              <span style={{ fontSize: 13, fontWeight: 700 }}>전부 외움</span>
+                            </div>
+                          )}
+                          <svg width="8" height="14" viewBox="0 0 8 14" style={{ flexShrink: 0 }}><path d="M1 1l6 6-6 6" stroke="rgba(60,60,67,0.3)" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div onClick={props.onNewList} role="button" aria-label="새 목록 만들기" title="새 목록 만들기" style={{ position: 'absolute', right: 20, bottom: 44, width: 58, height: 58, borderRadius: 999, background: ACCENT, display: 'grid', placeItems: 'center', boxShadow: '0 10px 24px rgba(0,0,0,0.25)', cursor: 'pointer' }}>
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
+      </div>
+    </div>
+  );
 }
 
+// ================================================================ DECK
+function DeckView(props: {
+  list: ProtoList; state: UIState; dispatch: (p: Patch) => void; weakFirst: (cards: ProtoCard[]) => ProtoCard[];
+  lpTimer: React.MutableRefObject<number | undefined>; rowStart: React.MutableRefObject<{ x: number; y: number; moved: boolean }>;
+  onHome: () => void; onRename: (name: string) => void; onToggleMem: (card: ProtoCard) => void;
+  onDelete: (card: ProtoCard) => void; onEdit: (card: ProtoCard) => void; onMove: (draggedId: string, targetId: string) => void;
+  onDeleteList: () => void;
+  onStart: (ids: string[]) => void; onOpenSheet: () => void;
+  renderTokenChips: (tokens: Token[], ri: number, fontSize: number) => React.ReactNode; toast: (msg: string) => void;
+}) {
+  const { list, state, dispatch, weakFirst, lpTimer, rowStart } = props;
+  const [nameDraft, setNameDraft] = useState(list.name);
+  const nameTimer = useRef<number | undefined>(undefined);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { setNameDraft(list.name); }, [list.id]);
+  const cardsAll = list.cards;
+  const filterFn = (c: ProtoCard) => (state.filter === 'done' ? c.memorized : state.filter === 'unknown' ? !c.memorized : true);
+  const visible = cardsAll.filter(filterFn);
+  const learningCards = weakFirst(visible.filter((c) => !c.memorized));
+  const doneCards = visible.filter((c) => c.memorized);
+  const studyCards = visible.filter((c) => !c.memorized);
+  const deckRemain = cardsAll.filter((c) => !c.memorized).length;
+  const deckTotal = cardsAll.length;
+  const deckPct = deckTotal ? Math.round(((deckTotal - deckRemain) / deckTotal) * 100) : 0;
+  const cntUnknown = cardsAll.filter((c) => !c.memorized).length;
+  const cntDone = cardsAll.filter((c) => c.memorized).length;
+
+  const cardGroup = (c: ProtoCard) => (c.memorized ? 'done' : 'learning');
+
+  const segsFor = (c: ProtoCard) => {
+    const parts = c.q.split('___');
+    const segs: Array<{ text: string; chip: boolean; chipText: string }> = [];
+    if (parts.length > 1) {
+      parts.forEach((t, i) => {
+        segs.push({ text: t, chip: false, chipText: '' });
+        if (i < parts.length - 1) segs.push({ text: '', chip: true, chipText: c.a[i] || '' });
+      });
+    } else {
+      segs.push({ text: `${c.q}  `, chip: false, chipText: '' });
+      segs.push({ text: '', chip: true, chipText: c.a.join(', ') });
+    }
+    return segs;
+  };
+
+  const rowPointerDown = (c: ProtoCard, isOpen: boolean) => (e: ReactPointerEvent) => {
+    rowStart.current = { x: e.clientX, y: e.clientY, moved: false };
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ }
+    window.clearTimeout(lpTimer.current);
+    lpTimer.current = window.setTimeout(() => {
+      if (!rowStart.current.moved) dispatch({ rowDrag: null, reorder: { id: c.id, dy: 0 } });
+    }, 350);
+    dispatch({ rowDrag: { id: c.id, x: isOpen ? -82 : 0, base: isOpen ? -82 : 0 } });
+  };
+
+  const rowPointerMove = (c: ProtoCard) => (e: ReactPointerEvent) => {
+    dispatch((st) => {
+      const re = st.reorder;
+      if (re && re.id === c.id) {
+        let overId: string | null = null;
+        const els = Array.from(document.querySelectorAll('[data-cid]'));
+        for (const r of els) {
+          const el = r as HTMLElement;
+          if (el.dataset.cid === c.id) continue;
+          const b = el.getBoundingClientRect();
+          if (e.clientY > b.top && e.clientY < b.bottom) { overId = el.dataset.cid ?? null; break; }
+        }
+        return { reorder: { ...re, dy: e.clientY - rowStart.current.y, overId } };
+      }
+      const rd = st.rowDrag;
+      if (!rd || rd.id !== c.id) return {};
+      const d = e.clientX - rowStart.current.x;
+      if (Math.abs(d) > 8 || Math.abs(e.clientY - rowStart.current.y) > 8) rowStart.current.moved = true;
+      return { rowDrag: { ...rd, x: Math.max(-110, Math.min(8, rd.base + d)) } };
+    });
+  };
+
+  const rowPointerUp = (c: ProtoCard, isOpen: boolean) => () => {
+    window.clearTimeout(lpTimer.current);
+    const re = state.reorder;
+    if (re && re.id === c.id) {
+      const overId = re.overId;
+      dispatch({ reorder: null });
+      if (overId) {
+        const target = list.cards.find((cc) => cc.id === overId);
+        if (target && cardGroup(target) === cardGroup(c)) window.setTimeout(() => props.onMove(c.id, target.id), 0);
+        else if (target) props.toast('같은 그룹 안에서만 이동할 수 있어요');
+      }
+      return;
+    }
+    dispatch((st) => {
+      const rd = st.rowDrag;
+      if (!rd || rd.id !== c.id) return {};
+      if (!rowStart.current.moved) {
+        if (!isOpen) props.onEdit(c);
+        return { rowDrag: null, openRowId: null };
+      }
+      return { rowDrag: null, openRowId: rd.x < -45 ? c.id : null };
+    });
+  };
+
+  const rows: Array<{ header: true; label: string; dot: string } | { header: false; card: ProtoCard }> = [];
+  if (learningCards.length > 0) {
+    rows.push({ header: true, label: `외우는 중 ${learningCards.length}`, dot: 'rgba(120,120,128,0.5)' });
+    learningCards.forEach((c) => rows.push({ header: false, card: c }));
+  }
+  if (doneCards.length > 0) {
+    rows.push({ header: true, label: `외웠어요 ${doneCards.length}`, dot: '#34c759' });
+    doneCards.forEach((c) => rows.push({ header: false, card: c }));
+  }
+
+  const startEnabled = deckTotal > 0 && visible.length > 0;
+  const startLabel = deckTotal === 0 ? '카드를 먼저 추가하세요'
+    : studyCards.length > 0 ? (state.filter === 'unknown' ? `모르는 것 (${studyCards.length})` : `암기 시작 (${studyCards.length})`)
+    : visible.length > 0 ? '복습하기' : '카드 없음';
+
+  const chips: Array<{ key: 'all' | 'unknown' | 'done'; label: string }> = [
+    { key: 'all', label: `전체 ${cardsAll.length}` },
+    { key: 'unknown', label: `외우는 중 ${cntUnknown}` },
+    { key: 'done', label: `외웠어요 ${cntDone}` },
+  ];
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, paddingTop: 'env(safe-area-inset-top)' }}>
+      <div style={{ padding: '8px 20px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div onClick={props.onHome} style={{ display: 'flex', alignItems: 'center', gap: 2, cursor: 'pointer', marginLeft: -6 }}>
+          <svg width="12" height="20" viewBox="0 0 12 20" fill="none"><path d="M10 2L2 10l8 8" stroke={ACCENT} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          <span style={{ fontSize: 17, color: ACCENT }}>홈</span>
+        </div>
+        <input
+          value={nameDraft}
+          onChange={(e) => {
+            const v = e.target.value;
+            setNameDraft(v);
+            window.clearTimeout(nameTimer.current);
+            nameTimer.current = window.setTimeout(() => props.onRename(v), 600);
+          }}
+          onBlur={() => {
+            window.clearTimeout(nameTimer.current);
+            if (nameDraft !== list.name) props.onRename(nameDraft);
+          }}
+          style={{ width: 150, textAlign: 'center', fontSize: 17, fontWeight: 800, border: 'none', background: 'transparent', color: '#000', padding: '4px 0', borderRadius: 8 }}
+        />
+        <div style={{ display: 'flex', alignItems: 'center', marginRight: -6 }}>
+          <div
+            onClick={() => {
+              const next = !state.shuffle;
+              dispatch({ shuffle: next });
+              props.toast(next ? '섞기 켬 — 순서를 무작위로' : '섞기 끔 — 헷갈린 카드부터');
+            }}
+            role="button" aria-label="섞기" aria-pressed={state.shuffle} title="섞기"
+            style={{ width: 40, height: 40, borderRadius: 12, background: state.shuffle ? 'rgba(0,122,255,0.14)' : 'transparent', display: 'grid', placeItems: 'center', cursor: 'pointer' }}
+          >
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke={state.shuffle ? ACCENT : 'rgba(60,60,67,0.5)'} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.7-1.1 2-1.7 3.3-1.7H22" /><path d="m18 2 4 4-4 4" /><path d="M2 6h1.9c1.5 0 2.9.9 3.6 2.2" /><path d="M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8" /><path d="m18 14 4 4-4 4" /></svg>
+          </div>
+          {!list.synthetic && (
+            <div onClick={props.onDeleteList} role="button" aria-label="목록 삭제" title="목록 삭제" style={{ width: 40, height: 40, borderRadius: 12, display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(60,60,67,0.5)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div style={{ padding: '0 20px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ flex: 1, height: 5, borderRadius: 3, background: 'rgba(120,120,128,0.16)', overflow: 'hidden' }}>
+          <div style={{ width: `${deckPct}%`, height: '100%', background: '#34c759' }} />
+        </div>
+        <span style={{ fontSize: 13, fontWeight: 600, color: 'rgba(60,60,67,0.6)', whiteSpace: 'nowrap' }}>{deckTotal === 0 ? '0문제' : `${deckTotal - deckRemain}/${deckTotal} 외움`}</span>
+      </div>
+
+      <div style={{ padding: '0 16px 10px', display: 'flex', gap: 8 }}>
+        {chips.map((chip) => (
+          <div key={chip.key} onClick={() => dispatch({ filter: chip.key, openRowId: null })} style={{ padding: '8px 14px', borderRadius: 999, background: state.filter === chip.key ? ACCENT : 'rgba(120,120,128,0.12)', cursor: 'pointer' }}>
+            <span style={{ fontSize: 13.5, fontWeight: 700, color: state.filter === chip.key ? '#fff' : '#48484a' }}>{chip.label}</span>
+          </div>
+        ))}
+      </div>
+
+      {deckTotal > 0 && (
+        <div style={{ padding: '0 20px 8px', color: 'rgba(60,60,67,0.6)', fontSize: 12.5, fontWeight: 600, lineHeight: 1.45 }}>
+          {IS_PC ? '클릭하면 수정 · 왼쪽으로 끌면 삭제 · 길게 누르면 순서 변경' : '탭하면 수정 · 왼쪽으로 밀면 삭제 · 길게 누르면 순서 변경'}
+        </div>
+      )}
+
+      <div style={{ flex: 1, overflowY: 'auto', padding: '2px 16px 150px', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {deckTotal === 0 && (
+          <div style={{ padding: '38px 20px', textAlign: 'center', color: 'rgba(60,60,67,0.58)', fontSize: 15, lineHeight: 1.6, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
+            <div>아직 카드가 없어요.<br />시험에 나올 문장 하나부터 넣어보세요.</div>
+            <EmptyStateAction label="첫 카드 추가" onClick={props.onOpenSheet} />
+          </div>
+        )}
+        {rows.map((row, idx) => {
+          if (row.header) {
+            return (
+              <div key={`h${idx}`} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '10px 6px 2px' }}>
+                <span style={{ width: 8, height: 8, borderRadius: 99, background: row.dot }} />
+                <span style={{ fontSize: 13, fontWeight: 700, color: 'rgba(60,60,67,0.55)' }}>{row.label}</span>
+              </div>
+            );
+          }
+          const c = row.card;
+          const isOpen = state.openRowId === c.id;
+          const isDragging = state.rowDrag && state.rowDrag.id === c.id;
+          const isRe = state.reorder && state.reorder.id === c.id;
+          const x = isDragging ? state.rowDrag!.x : (isOpen ? -82 : 0);
+          const dropActive = !!(state.reorder && state.reorder.id !== c.id && state.reorder.overId === c.id);
+          return (
+            <div key={c.id} data-cid={c.id} style={{ position: 'relative', borderRadius: 18, overflow: 'hidden', flexShrink: 0, transform: isRe ? `translateY(${state.reorder!.dy}px) scale(1.03)` : 'none', transition: isRe ? 'none' : 'transform 0.2s cubic-bezier(0.3,0.9,0.4,1), margin 0.16s ease', zIndex: isRe ? 10 : 'auto', boxShadow: isRe ? '0 16px 36px rgba(0,0,0,0.2)' : 'none', opacity: isRe ? 0.9 : 1, marginTop: dropActive ? 12 : 0 }}>
+              {dropActive && <div style={{ position: 'absolute', top: -7, left: 8, right: 8, height: 3, borderRadius: 2, background: ACCENT, zIndex: 11 }} />}
+              <div onClick={() => props.onDelete(c)} style={{ position: 'absolute', top: 0, bottom: 0, right: 0, width: 82, background: '#ff3b30', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+                <span style={{ color: '#fff', fontSize: 15, fontWeight: 700 }}>삭제</span>
+              </div>
+              <div onPointerDown={rowPointerDown(c, isOpen)} onPointerMove={rowPointerMove(c)} onPointerUp={rowPointerUp(c, isOpen)} style={{ padding: '14px 16px', background: '#fff', display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', transform: `translateX(${x}px)`, transition: isDragging ? 'none' : 'transform 0.25s cubic-bezier(0.3,0.9,0.4,1)', touchAction: 'pan-y' }}>
+                <div style={{ flex: 1, fontSize: 15.5, fontWeight: 600, lineHeight: 1.75, wordBreak: 'keep-all', minWidth: 0, pointerEvents: 'none', opacity: c.memorized ? 0.55 : 1, whiteSpace: 'pre-line' }}>
+                  {segsFor(c).map((seg, i) => (
+                    <span key={i}>
+                      <span>{seg.text}</span>
+                      {seg.chip && <span style={{ display: 'inline-block', padding: '1px 9px', borderRadius: 8, background: ACCENT_SOFT, color: ACCENT_DEEP, fontWeight: 700, margin: '0 2px' }}>{seg.chipText}</span>}
+                    </span>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, paddingTop: 3, pointerEvents: 'none' }}>
+                  <div onClick={(e) => { e.stopPropagation(); props.onToggleMem(c); }} onPointerDown={(e) => e.stopPropagation()} role="button" aria-label={c.memorized ? '외움 취소' : '외웠다고 표시'} title={c.memorized ? '외움 취소' : '외웠다고 표시'} style={{ pointerEvents: 'auto', width: 32, height: 32, margin: '-6px -6px -6px 0', display: 'grid', placeItems: 'center', cursor: 'pointer', borderRadius: 999 }}>
+                    {c.memorized ? (
+                      <div style={{ width: 22, height: 22, borderRadius: 999, background: '#34c759', display: 'grid', placeItems: 'center' }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+                      </div>
+                    ) : (
+                      <div style={{ width: 22, height: 22, borderRadius: 999, border: '2px solid rgba(120,120,128,0.35)', boxSizing: 'border-box' }} />
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '12px 16px 44px', background: 'linear-gradient(180deg,rgba(242,242,247,0) 0%,#F2F2F7 32%)', display: 'flex', gap: 10 }}>
+        <div onClick={props.onOpenSheet} style={{ height: 64, padding: '0 20px', borderRadius: 20, background: '#fff', border: '1px solid rgba(60,60,67,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, cursor: 'pointer', flexShrink: 0 }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1d1d1f" strokeWidth="2.4" strokeLinecap="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
+          <span style={{ fontSize: 16, fontWeight: 700 }}>추가</span>
+        </div>
+        <div
+          onClick={() => {
+            if (studyCards.length > 0) props.onStart(weakFirst(studyCards).map((c) => c.id));
+            else if (visible.length > 0) props.onStart(visible.map((c) => c.id));
+            else props.toast('외울 카드가 없어요');
+          }}
+          style={{ flex: 1, height: 64, borderRadius: 20, background: startEnabled ? ACCENT : 'rgba(120,120,128,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9, boxShadow: startEnabled ? '0 10px 24px rgba(0,0,0,0.2)' : 'none', cursor: 'pointer' }}
+        >
+          <svg width="16" height="18" viewBox="0 0 16 18"><path d="M2 1.5v15l13-7.5z" fill={startEnabled ? '#fff' : 'rgba(60,60,67,0.35)'} /></svg>
+          <span style={{ fontSize: 18, fontWeight: 800, color: startEnabled ? '#fff' : 'rgba(60,60,67,0.35)' }}>{startLabel}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ================================================================ STUDY
+function StudyView(props: {
+  list: ProtoList | undefined; state: UIState; dispatch: (p: Patch) => void;
+  swipeStart: React.MutableRefObject<{ x: number; moved: boolean }>;
+  onCommitSwipe: (dir: number) => void; onKnown: () => void; onAgain: () => void;
+  onDeck: () => void; onRetryRemaining: () => void; onReviewAll: () => void;
+}) {
+  const { list, state, dispatch, swipeStart } = props;
+  const card = list && state.queue.length > 0 ? list.cards.find((c) => c.id === state.queue[0]) : undefined;
+  const qParts = card ? card.q.split('___') : [];
+  const nBlanks = card ? (qParts.length > 1 ? qParts.length - 1 : 1) : 0;
+  const isCloze = !!card && qParts.length > 1;
+  let nextIdx = -1;
+  for (let i = 0; i < nBlanks; i += 1) { if (!state.revealedIdx.includes(i)) { nextIdx = i; break; } }
+  const allRevealed = !!card && nextIdx === -1;
+  const dx = state.dragX;
+
+  const revealNext = () => { if (nextIdx >= 0) dispatch((st) => ({ revealedIdx: [...st.revealedIdx, nextIdx] })); };
+
+  // PC keyboard: Space/Enter reveal (then judge as known), arrows judge, Escape closes.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (document.activeElement?.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea') return;
+      if (e.key === 'Escape') { props.onDeck(); return; }
+      if (!card) return;
+      if (e.key === ' ' || e.key === 'Enter') {
+        e.preventDefault();
+        if (nextIdx >= 0) revealNext();
+        else props.onCommitSwipe(1);
+        return;
+      }
+      if (e.key === 'ArrowRight') { e.preventDefault(); props.onCommitSwipe(1); }
+      if (e.key === 'ArrowLeft') { e.preventDefault(); props.onCommitSwipe(-1); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
+  if (!card) {
+    const deckRemain = list ? list.cards.filter((c) => !c.memorized).length : 0;
+    const deckTotal = list ? list.cards.length : 0;
+    const allMemorized = !!list && deckRemain === 0 && deckTotal > 0;
+    return (
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, paddingTop: 'env(safe-area-inset-top)', background: '#fff' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 18, padding: '0 32px 100px' }}>
+          <div style={{ width: 88, height: 88, borderRadius: 999, background: 'rgba(52,199,89,0.14)', display: 'grid', placeItems: 'center', animation: 'popIn 0.4s cubic-bezier(0.3,1.4,0.4,1)' }}>
+            <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#1e9e46" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+            <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.01em' }}>{state.review ? '복습 끝!' : '오늘 목표 달성!'}</div>
+            <div style={{ fontSize: 15, color: 'rgba(60,60,67,0.6)', textAlign: 'center', lineHeight: 1.5 }}>
+              {list ? (deckRemain === 0 ? `"${list.name}" 전부 외웠어요` : `${state.sessionTotal}장 확인 완료 · 안 외운 카드 ${deckRemain}장 남음`) : ''}
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%', marginTop: 10 }}>
+            {deckRemain > 0 && (
+              <div onClick={props.onRetryRemaining} style={{ height: 56, borderRadius: 18, background: ACCENT, display: 'grid', placeItems: 'center', cursor: 'pointer', boxShadow: '0 10px 24px rgba(0,0,0,0.18)' }}>
+                <span style={{ fontSize: 17, fontWeight: 700, color: '#fff' }}>안 외운 {deckRemain}장 다시</span>
+              </div>
+            )}
+            {allMemorized && (
+              <div onClick={props.onReviewAll} style={{ height: 56, borderRadius: 18, background: 'rgba(120,120,128,0.16)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+                <span style={{ fontSize: 17, fontWeight: 700, color: '#48484a' }}>처음부터 복습</span>
+              </div>
+            )}
+            <div onClick={props.onDeck} style={{ height: 56, borderRadius: 18, display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+              <span style={{ fontSize: 17, fontWeight: 600, color: 'rgba(60,60,67,0.6)' }}>목록으로</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const cardSegs: Array<{ text: string; kind: 'text' | 'next' | 'waiting' | 'revealed'; answer: string }> = [];
+  if (isCloze) {
+    qParts.forEach((t, i) => {
+      cardSegs.push({ text: t, kind: 'text', answer: '' });
+      if (i < qParts.length - 1) {
+        const kind = state.revealedIdx.includes(i) ? 'revealed' : i === nextIdx ? 'next' : 'waiting';
+        cardSegs.push({ text: '', kind, answer: card.a[i] || '' });
+      }
+    });
+  }
+
+  const progressPct = state.sessionTotal ? Math.round((state.sessionDone / state.sessionTotal) * 100) : 0;
+  const cardBadge = isCloze ? (nBlanks > 1 ? `빈칸 ${nBlanks}개` : '빈칸') : '문답';
+  const tapHint = isCloze && nBlanks > 1
+    ? `카드를 탭하면 빈칸이 하나씩 열려요 (${Math.min(state.revealedIdx.length + 1, nBlanks)}/${nBlanks})`
+    : '카드를 탭하면 답이 보여요';
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, paddingTop: 'env(safe-area-inset-top)', background: '#fff' }}>
+      <div style={{ padding: '14px 20px 0', display: 'flex', alignItems: 'center', gap: 14 }}>
+        <div onClick={props.onDeck} role="button" aria-label="닫기" title="닫기" style={{ width: 32, height: 32, marginLeft: -8, borderRadius: 999, display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="rgba(60,60,67,0.6)" strokeWidth="2.4" strokeLinecap="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+        </div>
+        <div style={{ flex: 1, height: 5, borderRadius: 3, background: 'rgba(120,120,128,0.16)', overflow: 'hidden' }}>
+          <div style={{ width: `${progressPct}%`, height: '100%', borderRadius: 3, background: ACCENT, transition: 'width 0.35s cubic-bezier(0.3,0.9,0.4,1)' }} />
+        </div>
+        <span style={{ fontSize: 14, fontWeight: 700, color: 'rgba(60,60,67,0.6)', fontVariantNumeric: 'tabular-nums' }}>{Math.min(state.sessionDone + 1, state.sessionTotal)}/{state.sessionTotal}</span>
+      </div>
+
+      <div style={{ position: 'absolute', top: 120, left: 24, padding: '9px 16px', borderRadius: 14, background: 'rgba(255,149,0,0.92)', color: '#fff', fontSize: 15, fontWeight: 800, transform: 'rotate(-8deg)', opacity: Math.min(Math.max(-dx / 110, 0), 1), transition: 'opacity 0.1s', zIndex: 5, pointerEvents: 'none' }}>다시 볼래요</div>
+      <div style={{ position: 'absolute', top: 120, right: 24, padding: '9px 16px', borderRadius: 14, background: '#34c759', color: '#fff', fontSize: 15, fontWeight: 800, transform: 'rotate(8deg)', opacity: Math.min(Math.max(dx / 110, 0), 1), transition: 'opacity 0.1s', zIndex: 5, pointerEvents: 'none' }}>외웠어요 ✓</div>
+
+      <div
+        key={`${card.id}-${state.sessionDone}-${state.queue.length}`}
+        onPointerDown={(e) => { swipeStart.current = { x: e.clientX, moved: false }; try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ } dispatch({ dragging: true }); }}
+        onPointerMove={(e) => { if (!state.dragging) return; const d = e.clientX - swipeStart.current.x; if (Math.abs(d) > 8) swipeStart.current.moved = true; dispatch({ dragX: d }); }}
+        onPointerUp={() => {
+          if (!state.dragging) return;
+          const d = state.dragX;
+          if (!swipeStart.current.moved) { dispatch({ dragging: false, dragX: 0 }); revealNext(); return; }
+          if (d > 90) props.onCommitSwipe(1);
+          else if (d < -90) props.onCommitSwipe(-1);
+          else dispatch({ dragging: false, dragX: 0 });
+        }}
+        style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, animation: 'cardIn 0.3s cubic-bezier(0.3,0.9,0.4,1)', transform: `translateX(${dx}px) rotate(${(dx * 0.035).toFixed(2)}deg)`, transition: state.dragging || state.snap ? 'none' : 'transform 0.25s cubic-bezier(0.3,0.9,0.4,1)', touchAction: 'pan-y', cursor: 'pointer' }}
+      >
+        <div style={{ padding: '18px 24px 0', display: 'flex', alignItems: 'center' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'rgba(60,60,67,0.45)', letterSpacing: '0.04em' }}>{cardBadge}</div>
+        </div>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 28, padding: '0 28px 150px', minHeight: 0, overflowY: 'auto' }}>
+          {!isCloze ? (
+            <>
+              <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-0.015em', lineHeight: 1.4, wordBreak: 'keep-all', whiteSpace: 'pre-line' }}>{card.q}</div>
+              {!allRevealed ? (
+                <div style={{ minHeight: 74, borderRadius: 20, background: ACCENT_SOFT, border: `2px dashed ${ACCENT_DASHED}`, display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'pulseB 1.8s ease-in-out infinite' }}>
+                  <span style={{ display: 'flex', gap: 6 }}>{[0, 1, 2].map((k) => <span key={k} style={{ width: 7, height: 7, borderRadius: 99, background: ACCENT, opacity: 0.5 }} />)}</span>
+                </div>
+              ) : (
+                <div style={{ minHeight: 74, borderRadius: 20, background: 'rgba(52,199,89,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px 20px', animation: 'popIn 0.22s cubic-bezier(0.3,1.2,0.4,1)' }}>
+                  <span style={{ fontSize: 26, fontWeight: 800, color: '#1e9e46', wordBreak: 'keep-all', textAlign: 'center', lineHeight: 1.4, whiteSpace: 'pre-line' }}>{card.a.join(', ')}</span>
+                </div>
+              )}
+            </>
+          ) : (
+            <div style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.01em', lineHeight: 2, wordBreak: 'keep-all', whiteSpace: 'pre-line' }}>
+              {cardSegs.map((seg, i) => (
+                <span key={i}>
+                  <span>{seg.text}</span>
+                  {seg.kind === 'next' && (
+                    <span style={{ display: 'inline-grid', placeItems: 'center', minWidth: 76, height: 46, padding: '0 14px', borderRadius: 13, background: ACCENT_SOFT, border: `2px dashed ${ACCENT_DASHED}`, verticalAlign: 'middle', margin: '0 3px', animation: 'pulseB 1.8s ease-in-out infinite' }}>
+                      <span style={{ display: 'flex', gap: 5 }}>{[0, 1, 2].map((k) => <span key={k} style={{ width: 6, height: 6, borderRadius: 99, background: ACCENT, opacity: 0.5 }} />)}</span>
+                    </span>
+                  )}
+                  {seg.kind === 'waiting' && (
+                    <span style={{ display: 'inline-grid', placeItems: 'center', minWidth: 76, height: 46, padding: '0 14px', borderRadius: 13, background: 'rgba(120,120,128,0.1)', verticalAlign: 'middle', margin: '0 3px' }}>
+                      <span style={{ display: 'flex', gap: 5 }}>{[0, 1, 2].map((k) => <span key={k} style={{ width: 6, height: 6, borderRadius: 99, background: 'rgba(120,120,128,0.4)' }} />)}</span>
+                    </span>
+                  )}
+                  {seg.kind === 'revealed' && (
+                    <span style={{ display: 'inline-grid', placeItems: 'center', minWidth: 76, height: 46, padding: '0 16px', borderRadius: 13, background: 'rgba(52,199,89,0.12)', color: '#1e9e46', fontWeight: 800, verticalAlign: 'middle', margin: '0 3px', animation: 'popIn 0.22s cubic-bezier(0.3,1.2,0.4,1)' }}>{seg.answer}</span>
+                  )}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '16px 20px 44px', background: 'linear-gradient(180deg,rgba(255,255,255,0) 0%,#fff 30%)', pointerEvents: 'none' }}>
+        {!allRevealed ? (
+          <div style={{ textAlign: 'center', fontSize: 13.5, color: 'rgba(60,60,67,0.55)', fontWeight: 600, lineHeight: 1.6 }}>
+            {IS_PC ? '스페이스를 누르면 답이 보여요' : tapHint}
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+            <div style={{ textAlign: 'center', fontSize: 14, color: 'rgba(60,60,67,0.62)', fontWeight: 700 }}>{IS_PC ? '← → 키 또는 아래 버튼으로 분류하세요' : '카드를 옆으로 밀거나 아래 버튼을 누르세요'}</div>
+            <div style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'center', gap: 10, pointerEvents: 'auto' }}>
+              <button type="button" className="study-judge-button" onClick={props.onAgain} aria-label="다시 볼래요" title="다시 볼래요" style={{ minWidth: 132, height: 48, padding: '0 16px', borderRadius: 999, border: 'none', background: 'rgba(255,149,0,0.14)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit' }}>
+                <span style={{ fontSize: 14, fontWeight: 700, color: '#a85b00' }}>← 다시 볼래요</span>
+              </button>
+              <button type="button" className="study-judge-button" onClick={props.onKnown} aria-label="외웠어요" title="외웠어요" style={{ minWidth: 132, height: 48, padding: '0 16px', borderRadius: 999, border: 'none', background: 'rgba(52,199,89,0.16)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit' }}>
+                <span style={{ fontSize: 14, fontWeight: 800, color: '#147b35' }}>외웠어요 →</span>
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ================================================================ ADD SHEET
+function AddSheet(props: {
+  list: ProtoList; state: UIState; dispatch: (p: Patch) => void;
+  storedCardsOf: (deckId: string, sectionId: string) => Card[];
+  commitSection: (deckId: string, sectionId: string, cards: OptimisticNewCard[]) => void;
+  renderTokenChips: (tokens: Token[], ri: number, fontSize: number) => React.ReactNode;
+  toast: (msg: string) => void; commitSelection: () => void;
+}) {
+  const { list, state, dispatch } = props;
+
+  const setTypeCloze = () => {
+    if (state.typeMode === 'cloze') return;
+    const patch: Partial<UIState> = { typeMode: 'cloze' };
+    if (state.typeQ.trim() || state.typeA.trim()) {
+      const text = (state.typeQ.trim() + (state.typeA.trim() ? ' ' + state.typeA.trim() : '')).trim();
+      let toks = tokenizeText(text);
+      if (state.typeA.trim()) {
+        const aWords = new Set(state.typeA.split(/[,\s]+/).map((w) => w.trim()).filter(Boolean));
+        let g = 8000;
+        toks = toks.map((t) => (!t.nl && aWords.has(t.word) ? { ...t, hidden: true, gid: g++ } : t));
+      }
+      patch.typeText = text; patch.typeTokens = toks;
+    }
+    dispatch(patch);
+  };
+  const setTypeQA = () => {
+    if (state.typeMode === 'qa') return;
+    const patch: Partial<UIState> = { typeMode: 'qa' };
+    if (state.typeText.trim()) {
+      const ans = state.typeTokens.filter((t) => t.hidden).map((t) => t.word);
+      const vis = tokensToText(state.typeTokens.filter((t) => !t.hidden || t.nl));
+      patch.typeQ = vis || state.typeText.trim();
+      if (ans.length) patch.typeA = ans.join(', ');
+    }
+    dispatch(patch);
+  };
+  const onTypeText = (e: ChangeEvent<HTMLTextAreaElement>) => {
+    const text = e.target.value;
+    const hiddenWords = new Set(state.typeTokens.filter((t) => t.hidden).map((t) => t.word));
+    let g = 7000;
+    const tokens = tokenizeText(text).map((t) => (!t.nl && hiddenWords.has(t.word) ? { ...t, hidden: true, gid: g++ } : t));
+    dispatch({ typeText: text, typeTokens: tokens });
+  };
+  const typeCanAdd = state.typeMode === 'qa' ? !!(state.typeQ.trim() && state.typeA.trim()) : state.typeTokens.some((t) => t.hidden);
+  const typeAdd = () => {
+    let q: string; let a: string[];
+    if (state.typeMode === 'qa') {
+      q = state.typeQ.trim(); a = state.typeA.split(',').map((x) => x.trim()).filter(Boolean);
+      if (!q || a.length === 0) { props.toast('질문과 답을 입력하세요'); return; }
+    } else {
+      if (!state.typeTokens.some((t) => t.hidden)) { props.toast('가릴 단어를 탭하세요'); return; }
+      const r = tokensToCard(state.typeTokens); q = r.q; a = r.a;
+    }
+    const stored = props.storedCardsOf(list.deckId, list.id);
+    props.commitSection(list.deckId, list.id, [...stored.map((c) => keepCard(c)), qaToNewCard(q, a, false)]);
+    dispatch((st) => ({ typeAdded: st.typeAdded + 1, typeQ: '', typeA: '', typeText: '', typeTokens: [] }));
+    props.toast('추가했어요');
+  };
+
+  const onPaste = (e: ChangeEvent<HTMLTextAreaElement>) => dispatch({ pasteText: e.target.value, sheetRows: parsePaste(e.target.value, state.pasteMode), rowSel: null });
+
+  const rs = state.rowSel;
+  const rsLo = rs ? Math.min(rs.a, rs.b) : -1;
+  const rsHi = rs ? Math.max(rs.a, rs.b) : -1;
+  const rowSelCount = rs ? rsHi - rsLo + 1 : 0;
+  const validRows = state.sheetRows.filter((r) => r.kind === 'qa' || r.tokens.some((t) => t.hidden));
+  const incompleteRows = state.sheetRows.filter((r) => r.kind === 'tokens' && !r.tokens.some((t) => t.hidden)).length;
+
+  const mergeRowSel = () => {
+    if (rowSelCount <= 1) return;
+    dispatch((st) => {
+      const rows = [...st.sheetRows];
+      if (rsLo < 0 || rsHi >= rows.length || rsLo >= rsHi) return { rowSel: null };
+      const toToks = (r: Row, g: number): Token[] => (r.kind === 'tokens' ? r.tokens : [
+        ...tokenizeText(r.q),
+        { word: ':', tail: '', hidden: false, gid: 0 },
+        ...tokenizeText(r.a).map((t) => (t.nl ? t : { ...t, hidden: true, gid: g })),
+      ]);
+      const tokens: Token[] = [];
+      for (let i = rsLo; i <= rsHi; i += 1) {
+        if (i > rsLo) tokens.push({ nl: true, word: '', tail: '', hidden: false, gid: 0 });
+        tokens.push(...toToks(rows[i], 9000 + i * 3));
+      }
+      rows.splice(rsLo, rsHi - rsLo + 1, { kind: 'tokens', tokens });
+      return { sheetRows: rows, rowSel: null };
+    });
+    props.toast(`${rowSelCount}줄을 한 문제로 묶었어요`);
+  };
+
+  const addParsed = () => {
+    if (validRows.length === 0) return;
+    const newCards = validRows.map((r) => {
+      if (r.kind === 'qa') return qaToNewCard(r.q, [r.a], false);
+      const { q, a } = tokensToCard(r.tokens);
+      return qaToNewCard(q, a, false);
+    });
+    const stored = props.storedCardsOf(list.deckId, list.id);
+    props.commitSection(list.deckId, list.id, [...stored.map((c) => keepCard(c)), ...newCards]);
+    dispatch({ sheetOpen: false, pasteText: '', sheetRows: [] });
+    props.toast(`${newCards.length}문제를 추가했어요`);
+  };
+
+  const seg = (active: boolean) => ({ background: active ? '#fff' : 'transparent', color: active ? '#1d1d1f' : 'rgba(60,60,67,0.5)' });
+  const chip = (active: boolean) => ({ background: active ? ACCENT : 'rgba(120,120,128,0.12)', color: active ? '#fff' : '#48484a' });
+
+  return (
+    <>
+      <div onClick={() => dispatch({ sheetOpen: false })} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.28)', zIndex: 15 }} />
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, borderRadius: '28px 28px 0 0', background: '#fff', padding: '18px 20px 42px', display: 'flex', flexDirection: 'column', gap: 12, boxShadow: '0 -12px 40px rgba(0,0,0,0.16)', animation: 'sheetUp 0.32s cubic-bezier(0.3,0.9,0.4,1)', maxHeight: '82%', zIndex: 16 }}>
+        <div style={{ width: 40, height: 5, borderRadius: 3, background: 'rgba(120,120,128,0.25)', alignSelf: 'center', flexShrink: 0 }} />
+        <div onClick={() => dispatch({ sheetOpen: false })} style={{ position: 'absolute', top: 12, right: 14, padding: '8px 12px', borderRadius: 12, cursor: 'pointer', zIndex: 1 }}>
+          <span style={{ fontSize: 16, fontWeight: 700, color: ACCENT }}>완료</span>
+        </div>
+        <div style={{ display: 'flex', gap: 5, padding: 4, borderRadius: 14, background: 'rgba(120,120,128,0.1)', flexShrink: 0 }}>
+          <div onClick={() => dispatch({ addTab: 'type' })} style={{ flex: 1, height: 40, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'background 0.15s', ...seg(state.addTab === 'type') }}><span style={{ fontSize: 15, fontWeight: 700 }}>직접 쓰기</span></div>
+          <div onClick={() => dispatch({ addTab: 'paste' })} style={{ flex: 1, height: 40, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'background 0.15s', ...seg(state.addTab === 'paste') }}><span style={{ fontSize: 15, fontWeight: 700 }}>붙여넣기</span></div>
+        </div>
+
+        {state.addTab === 'type' ? (
+          <>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0, overflowY: 'auto' }}>
+              <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                <div onClick={setTypeCloze} style={{ padding: '7px 14px', borderRadius: 999, cursor: 'pointer', ...chip(state.typeMode === 'cloze') }}><span style={{ fontSize: 13.5, fontWeight: 700 }}>빈칸형</span></div>
+                <div onClick={setTypeQA} style={{ padding: '7px 14px', borderRadius: 999, cursor: 'pointer', ...chip(state.typeMode === 'qa') }}><span style={{ fontSize: 13.5, fontWeight: 700 }}>문답형</span></div>
+              </div>
+              <div style={{ fontSize: 12.5, color: 'rgba(60,60,67,0.55)', fontWeight: 600, flexShrink: 0, marginTop: -4 }}>
+                {state.typeMode === 'cloze' ? '문장을 쓰고, 시험에서 가릴 단어만 탭하면 돼요' : '질문을 보고 답을 떠올리는 카드예요'}
+              </div>
+              {state.typeMode === 'qa' ? (
+                <div style={{ padding: '14px 16px', borderRadius: 16, background: '#F7F7F9', display: 'flex', flexDirection: 'column', gap: 9 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <span style={{ fontSize: 11.5, fontWeight: 700, color: 'rgba(60,60,67,0.45)', letterSpacing: '0.03em' }}>질문</span>
+                    <textarea rows={2} value={state.typeQ} onChange={(e) => dispatch({ typeQ: e.target.value })} placeholder="예: 대통령 임기" style={{ fontSize: 17, fontWeight: 600, border: 'none', background: 'transparent', color: '#000', padding: '2px 0', resize: 'none', lineHeight: 1.5 }} />
+                  </div>
+                  <div style={{ height: 0.5, background: 'rgba(60,60,67,0.12)' }} />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <span style={{ fontSize: 11.5, fontWeight: 700, color: ACCENT, opacity: 0.75, letterSpacing: '0.03em' }}>답 (가려짐)</span>
+                    <input value={state.typeA} onChange={(e) => dispatch({ typeA: e.target.value })} placeholder="예: 5년" style={{ fontSize: 17, fontWeight: 600, border: 'none', background: 'transparent', color: ACCENT_DEEP, padding: '2px 0' }} />
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div style={{ padding: '14px 16px', borderRadius: 16, background: '#F7F7F9', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <span style={{ fontSize: 11.5, fontWeight: 700, color: 'rgba(60,60,67,0.45)', letterSpacing: '0.03em' }}>문장 (여러 줄도 한 카드)</span>
+                    <textarea rows={3} value={state.typeText} onChange={onTypeText} placeholder={'예: 커피의 종류\n1. 아메리카노 : 맛이 아주 쓰다'} style={{ fontSize: 16.5, fontWeight: 600, border: 'none', background: 'transparent', color: '#000', padding: '2px 0', resize: 'none', lineHeight: 1.5 }} />
+                  </div>
+                  {state.typeTokens.length > 0 && (
+                    <div style={{ padding: '12px 14px', borderRadius: 13, background: 'rgba(120,120,128,0.08)', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '3px 2px', lineHeight: 1.9 }}>
+                      {props.renderTokenChips(state.typeTokens, -200, 15)}
+                      {state.typeTokens.some((t) => t.hidden) ? (
+                        <span style={{ width: '100%', fontSize: 12.5, color: '#1e9e46', fontWeight: 700, marginTop: 4 }}>
+                          시험 화면: {tokensToCard(state.typeTokens).q.replace(/\n/g, ' / ')}
+                        </span>
+                      ) : (
+                        <span style={{ width: '100%', fontSize: 12.5, color: ACCENT_DEEP, fontWeight: 700, marginTop: 2 }}>가릴 단어를 탭하세요 · 누른 채 끌면 여러 단어가 한 빈칸이 돼요</span>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+            <div style={{ textAlign: 'center', fontSize: 12.5, color: 'rgba(60,60,67,0.45)', fontWeight: 600, flexShrink: 0 }}>{state.typeAdded > 0 ? `이 목록에 ${state.typeAdded}개 추가됨 — 다 쓰셨으면 오른쪽 위 '완료'` : '입력하면 목록에 한 장씩 쌓여요'}</div>
+            <div onClick={typeAdd} style={{ height: 54, borderRadius: 16, background: typeCanAdd ? ACCENT : 'rgba(120,120,128,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, cursor: 'pointer', flexShrink: 0, transition: 'background 0.2s' }}>
+              {typeCanAdd && <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>}
+              <span style={{ fontSize: 17, fontWeight: 700, color: typeCanAdd ? '#fff' : 'rgba(60,60,67,0.4)' }}>
+                {typeCanAdd ? '추가하고 계속'
+                  : state.typeMode === 'cloze' && state.typeText.trim() ? '위에서 가릴 단어를 탭하세요'
+                  : state.typeMode === 'cloze' ? '문장을 입력하세요'
+                  : '질문과 답을 입력하세요'}
+              </span>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ fontSize: 13.5, color: 'rgba(60,60,67,0.6)', lineHeight: 1.5, flexShrink: 0 }}>붙여넣으면 줄마다 한 문제. <strong style={{ color: '#1d1d1f' }}>가릴 단어는 탭</strong>(끌면 여러 단어), <strong style={{ color: '#1d1d1f' }}>줄을 세로로 쓸면</strong> 여러 줄을 한 문제로 묶어요</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+              <span style={{ fontSize: 12.5, fontWeight: 700, color: 'rgba(60,60,67,0.45)' }}>나누기</span>
+              <div onClick={() => dispatch((st) => ({ pasteMode: 'auto', sheetRows: parsePaste(st.pasteText, 'auto'), rowSel: null }))} style={{ padding: '7px 13px', borderRadius: 999, cursor: 'pointer', ...chip(state.pasteMode === 'auto') }}><span style={{ fontSize: 13, fontWeight: 700 }}>자동 (줄·빈 줄)</span></div>
+              <div onClick={() => dispatch((st) => ({ pasteMode: 'one', sheetRows: parsePaste(st.pasteText, 'one'), rowSel: null }))} style={{ padding: '7px 13px', borderRadius: 999, cursor: 'pointer', ...chip(state.pasteMode === 'one') }}><span style={{ fontSize: 13, fontWeight: 700 }}>전체를 한 문제로</span></div>
+            </div>
+            <textarea rows={4} value={state.pasteText} onChange={onPaste} placeholder={'예시)\n헌법 개정 의결: 국회 재적 2/3 찬성'} style={{ border: '1.5px solid rgba(60,60,67,0.15)', borderRadius: 14, padding: '12px 14px', fontSize: 15.5, lineHeight: 1.6, resize: 'none', background: '#F7F7F9', color: '#000', flexShrink: 0 }} />
+            {state.sheetRows.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 7, overflowY: 'auto', minHeight: 0 }}>
+                {state.sheetRows.map((r, ri) => {
+                  const inRowSel = !!rs && ri >= rsLo && ri <= rsHi;
+                  const common = {
+                    background: inRowSel ? 'rgba(0,122,255,0.1)' : 'rgba(120,120,128,0.08)',
+                    border: inRowSel ? `2px solid ${ACCENT}` : '2px solid transparent',
+                  };
+                  const onRowDown = () => {
+                    if (state.rowSel && !state.rowSelDragging) {
+                      const lo = Math.min(state.rowSel.a, state.rowSel.b), hi = Math.max(state.rowSel.a, state.rowSel.b);
+                      if (ri >= lo && ri <= hi) { dispatch({ rowSel: null }); return; }
+                    }
+                    dispatch({ rowSelDragging: true, rowSel: { a: ri, b: ri } });
+                  };
+                  const onRowEnter = () => dispatch((st) => (st.rowSelDragging ? { rowSel: { a: st.rowSel!.a, b: ri } } : {}));
+                  if (r.kind === 'qa') {
+                    return (
+                      <div key={ri} onPointerDown={onRowDown} onPointerEnter={onRowEnter} style={{ padding: '9px 12px', borderRadius: 13, ...common, display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, touchAction: 'pan-y', transition: 'background 0.12s' }}>
+                        <span style={{ flex: 1, fontSize: 14.5, fontWeight: 600, lineHeight: 1.45, wordBreak: 'keep-all', pointerEvents: 'none' }}>{r.q}</span>
+                        <span style={{ fontSize: 14.5, fontWeight: 700, color: ACCENT_DEEP, flexShrink: 0, pointerEvents: 'none' }}>{r.a}</span>
+                      </div>
+                    );
+                  }
+                  const needsTap = !r.tokens.some((t) => t.hidden) && !(state.sel && state.sel.ri === ri) && !rs;
+                  return (
+                    <div key={ri} onPointerDown={onRowDown} onPointerEnter={onRowEnter} style={{ padding: '9px 12px', borderRadius: 13, ...common, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '3px 2px', flexShrink: 0, lineHeight: 1.9, touchAction: 'pan-y', transition: 'background 0.12s' }}>
+                      {props.renderTokenChips(r.tokens, ri, 14.5)}
+                      {needsTap && <span style={{ width: '100%', fontSize: 12.5, color: ACCENT_DEEP, fontWeight: 700, marginTop: 2 }}>가릴 단어를 탭하세요 · 누른 채 끌면 여러 단어가 한 빈칸이 돼요</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {rowSelCount > 1 && (
+              <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 14, background: ACCENT_SOFT }}>
+                <span style={{ flex: 1, fontSize: 13.5, fontWeight: 700, color: ACCENT_DEEP }}>{rowSelCount}줄 선택됨 · 다시 누르면 해제</span>
+                <div onClick={mergeRowSel} style={{ height: 38, padding: '0 16px', borderRadius: 11, background: ACCENT, display: 'flex', alignItems: 'center', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>한 문제로 묶기</div>
+              </div>
+            )}
+            {incompleteRows > 0 && (
+              <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 13, background: 'rgba(255,149,0,0.12)' }}>
+                <TriangleAlert size={17} strokeWidth={2.2} color="#a85b00" aria-hidden="true" />
+                <span style={{ flex: 1, fontSize: 12.5, fontWeight: 700, color: '#c26a00', lineHeight: 1.4 }}>{incompleteRows}줄은 가릴 단어를 안 정해서 빠져요 — 위에서 단어를 탭하세요</span>
+              </div>
+            )}
+            {state.sheetRows.length > 0 && (
+              <div style={{ flexShrink: 0, textAlign: 'center', fontSize: 12.5, fontWeight: 700, color: validRows.length > 0 ? 'rgba(60,60,67,0.66)' : 'rgba(60,60,67,0.5)' }}>
+                {validRows.length > 0
+                  ? incompleteRows > 0
+                    ? `${validRows.length}문제 추가 예정 · ${incompleteRows}줄 제외`
+                    : `${validRows.length}문제 추가 예정`
+                  : '가릴 단어를 정하면 추가할 수 있어요'}
+              </div>
+            )}
+            <div onClick={addParsed} style={{ height: 54, borderRadius: 16, background: validRows.length > 0 ? ACCENT : 'rgba(120,120,128,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, transition: 'background 0.2s' }}>
+              <span style={{ fontSize: 17, fontWeight: 700, color: validRows.length > 0 ? '#fff' : 'rgba(60,60,67,0.4)' }}>{validRows.length > 0 ? `${validRows.length}문제 추가` : state.sheetRows.length > 0 ? '가릴 단어를 탭하면 문제가 돼요' : '내용을 쓰면 문제를 찾아드려요'}</span>
+            </div>
+          </>
+        )}
+      </div>
+    </>
+  );
+}
+
+// ================================================================ EDIT SHEET
+function EditSheet(props: {
+  list: ProtoList; state: UIState; dispatch: (p: Patch) => void;
+  saveEditFrom: (st: UIState, close: boolean) => boolean;
+  renderTokenChips: (tokens: Token[], ri: number, fontSize: number) => React.ReactNode;
+  onDelete: () => void; openEditFor: (card: ProtoCard) => void;
+}) {
+  const { list, state, dispatch } = props;
+  const cardsAll = list.cards;
+  const idx = state.editIdx ?? -1;
+
+  const onEditText = (e: ChangeEvent<HTMLTextAreaElement>) => {
+    const text = e.target.value;
+    const hiddenWords = new Set(state.editTokens.filter((t) => t.hidden).map((t) => t.word));
+    let g = 5000;
+    const tokens = tokenizeText(text).map((t) => (!t.nl && hiddenWords.has(t.word) ? { ...t, hidden: true, gid: g++ } : t));
+    dispatch({ editText: text, editTokens: tokens });
+  };
+  const setQA = () => {
+    if (state.editMode === 'qa') return;
+    const ans = state.editTokens.filter((t) => t.hidden).map((t) => t.word);
+    const vis = tokensToText(state.editTokens.filter((t) => !t.hidden || t.nl));
+    dispatch({ editMode: 'qa', editQ: vis || state.editText.trim(), editA: ans.join(', ') });
+  };
+  const setCloze = () => {
+    if (state.editMode === 'tokens') return;
+    const text = (state.editQ.trim() + (state.editA.trim() ? ' ' + state.editA.trim() : '')).trim();
+    let toks = tokenizeText(text);
+    if (state.editA.trim()) {
+      const aWords = new Set(state.editA.split(/[,\s]+/).map((w) => w.trim()).filter(Boolean));
+      let g = 8100;
+      toks = toks.map((t) => (!t.nl && aWords.has(t.word) ? { ...t, hidden: true, gid: g++ } : t));
+    }
+    dispatch({ editMode: 'tokens', editText: text, editTokens: toks });
+  };
+  const goPrev = () => { if (idx > 0) { props.saveEditFrom(state, false); props.openEditFor(cardsAll[idx - 1]); } };
+  const goNext = () => { if (idx >= 0 && idx < cardsAll.length - 1) { props.saveEditFrom(state, false); props.openEditFor(cardsAll[idx + 1]); } };
+  const save = () => { if (props.saveEditFrom(state, true)) dispatch({ editSheetOpen: false }); };
+
+  const chip = (active: boolean) => ({ background: active ? ACCENT : 'rgba(120,120,128,0.12)', color: active ? '#fff' : '#48484a' });
+
+  return (
+    <>
+      <div onClick={() => dispatch({ editSheetOpen: false })} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.28)', zIndex: 15 }} />
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, borderRadius: '28px 28px 0 0', background: '#fff', padding: '18px 20px 42px', display: 'flex', flexDirection: 'column', gap: 13, boxShadow: '0 -12px 40px rgba(0,0,0,0.16)', animation: 'sheetUp 0.32s cubic-bezier(0.3,0.9,0.4,1)', maxHeight: '82%', zIndex: 16 }}>
+        <div style={{ width: 40, height: 5, borderRadius: 3, background: 'rgba(120,120,128,0.25)', alignSelf: 'center', flexShrink: 0 }} />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+          <div onClick={goPrev} style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(120,120,128,0.1)', display: 'grid', placeItems: 'center', cursor: 'pointer', opacity: idx > 0 ? 1 : 0.25 }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1d1d1f" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <div onClick={setQA} style={{ padding: '8px 14px', borderRadius: 999, cursor: 'pointer', ...chip(state.editMode === 'qa') }}><span style={{ fontSize: 13.5, fontWeight: 700 }}>문답형</span></div>
+            <div onClick={setCloze} style={{ padding: '8px 14px', borderRadius: 999, cursor: 'pointer', ...chip(state.editMode === 'tokens') }}><span style={{ fontSize: 13.5, fontWeight: 700 }}>빈칸형</span></div>
+          </div>
+          <div onClick={goNext} style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(120,120,128,0.1)', display: 'grid', placeItems: 'center', cursor: 'pointer', opacity: idx >= 0 && idx < cardsAll.length - 1 ? 1 : 0.25 }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1d1d1f" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6" /></svg>
+          </div>
+        </div>
+
+        {state.editMode === 'qa' ? (
+          <>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <span style={{ fontSize: 11.5, fontWeight: 700, color: 'rgba(60,60,67,0.45)', letterSpacing: '0.03em' }}>질문</span>
+              <textarea rows={2} value={state.editQ} onChange={(e) => dispatch({ editQ: e.target.value })} placeholder="질문" style={{ fontSize: 17, fontWeight: 600, border: 'none', background: 'transparent', color: '#000', padding: '2px 0', resize: 'none', lineHeight: 1.5 }} />
+            </div>
+            <div style={{ height: 0.5, background: 'rgba(60,60,67,0.12)' }} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <span style={{ fontSize: 11.5, fontWeight: 700, color: ACCENT, opacity: 0.75, letterSpacing: '0.03em' }}>답 (가려짐)</span>
+              <input value={state.editA} onChange={(e) => dispatch({ editA: e.target.value })} placeholder="답" style={{ fontSize: 17, fontWeight: 600, border: 'none', background: 'transparent', color: ACCENT_DEEP, padding: '2px 0' }} />
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0 }}>
+              <span style={{ fontSize: 11.5, fontWeight: 700, color: 'rgba(60,60,67,0.45)', letterSpacing: '0.03em' }}>문장 (여러 줄도 한 카드)</span>
+              <textarea rows={3} value={state.editText} onChange={onEditText} placeholder="문장 전체를 쓰세요" style={{ fontSize: 16.5, fontWeight: 600, border: 'none', background: 'transparent', color: '#000', padding: '2px 0', resize: 'none', lineHeight: 1.5 }} />
+            </div>
+            <div style={{ padding: '12px 14px', borderRadius: 13, background: 'rgba(120,120,128,0.08)', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '3px 2px', lineHeight: 1.9, overflowY: 'auto', minHeight: 0 }}>
+              {props.renderTokenChips(state.editTokens, -100, 15)}
+              <span style={{ width: '100%', fontSize: 12.5, color: ACCENT_DEEP, fontWeight: 700, marginTop: 2 }}>가릴 단어를 탭하세요 · 누른 채 끌면 여러 단어가 한 빈칸이 돼요</span>
+            </div>
+          </>
+        )}
+
+        <div style={{ display: 'flex', gap: 10, marginTop: 4, flexShrink: 0 }}>
+          <div onClick={props.onDelete} style={{ height: 54, padding: '0 20px', borderRadius: 16, background: 'rgba(255,59,48,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+            <span style={{ fontSize: 16, fontWeight: 700, color: '#ff3b30' }}>삭제</span>
+          </div>
+          <div onClick={save} style={{ flex: 1, height: 54, borderRadius: 16, background: ACCENT, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 8px 20px rgba(0,0,0,0.18)' }}>
+            <span style={{ fontSize: 17, fontWeight: 700, color: '#fff' }}>저장</span>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ================================================================ SETTINGS
+function SettingsSheet(props: { roomCode: string; onClose: () => void; onChangeRoom: (code: string) => void }) {
+  const [value, setValue] = useState(props.roomCode);
+  const [copied, setCopied] = useState(false);
+  const changed = normalizeRoomCode(value) && normalizeRoomCode(value) !== props.roomCode;
+  const copy = () => {
+    try { navigator.clipboard?.writeText(props.roomCode); } catch { /* clipboard blocked (e.g. sandbox) */ }
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <>
+      <div onClick={props.onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.28)', zIndex: 15 }} />
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, borderRadius: '28px 28px 0 0', background: '#fff', padding: '18px 20px 42px', display: 'flex', flexDirection: 'column', gap: 14, boxShadow: '0 -12px 40px rgba(0,0,0,0.16)', animation: 'sheetUp 0.32s cubic-bezier(0.3,0.9,0.4,1)', zIndex: 16 }}>
+        <div style={{ width: 40, height: 5, borderRadius: 3, background: 'rgba(120,120,128,0.25)', alignSelf: 'center' }} />
+        <div style={{ fontSize: 20, fontWeight: 800 }}>내 아이디</div>
+        <div style={{ fontSize: 13.5, color: 'rgba(60,60,67,0.6)', lineHeight: 1.5 }}>다른 기기(PC·아이폰)에서 <strong style={{ color: '#1d1d1f' }}>같은 아이디</strong>로 접속하면 같은 암기장을 봐요. 아이디를 잊지 않게 적어두거나 복사해 두세요.</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, height: 56, borderRadius: 14, background: '#F7F7F9', padding: '0 8px 0 16px' }}>
+          <span style={{ flex: 1, fontSize: 18, fontWeight: 800, color: '#1d1d1f', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{props.roomCode}</span>
+          <div onClick={copy} style={{ height: 40, padding: '0 16px', borderRadius: 11, background: copied ? 'rgba(52,199,89,0.15)' : ACCENT, display: 'grid', placeItems: 'center', cursor: 'pointer', flexShrink: 0 }}>
+            <span style={{ fontSize: 14.5, fontWeight: 700, color: copied ? '#1e9e46' : '#fff' }}>{copied ? '복사됨 ✓' : '복사'}</span>
+          </div>
+        </div>
+        <div style={{ height: 0.5, background: 'rgba(60,60,67,0.1)', margin: '2px 0' }} />
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'rgba(60,60,67,0.45)' }}>다른 아이디로 바꾸기</div>
+        <input value={value} onChange={(e) => setValue(e.target.value)} style={{ height: 52, borderRadius: 14, border: '1.5px solid rgba(60,60,67,0.15)', background: '#fff', padding: '0 14px', fontSize: 16, fontWeight: 600, color: '#000' }} />
+        <div style={{ display: 'flex', gap: 10 }}>
+          <div onClick={props.onClose} style={{ flex: 1, height: 52, borderRadius: 14, background: 'rgba(120,120,128,0.12)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}><span style={{ fontSize: 16, fontWeight: 700, color: '#48484a' }}>닫기</span></div>
+          <div onClick={() => { if (changed) props.onChangeRoom(normalizeRoomCode(value)); }} style={{ flex: 1, height: 52, borderRadius: 14, background: changed ? ACCENT : 'rgba(120,120,128,0.12)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}><span style={{ fontSize: 16, fontWeight: 700, color: changed ? '#fff' : 'rgba(60,60,67,0.4)' }}>바꾸기</span></div>
+        </div>
+      </div>
+    </>
+  );
+}

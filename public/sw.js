@@ -1,4 +1,4 @@
-const CACHE_NAME = 'exam-memorizer-v2';
+const CACHE_NAME = 'exam-memorizer-v3';
 const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', (event) => {

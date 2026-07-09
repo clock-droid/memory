@@ -3,9 +3,12 @@
   "configurations": [
     {
       "name": "exam-memorizer",
-      "runtimeExecutable": "node",
-      "runtimeArgs": ["scripts/serve.mjs"],
-      "port": 5173
+      "runtimeExecutable": "/opt/homebrew/bin/node",
+      "runtimeArgs": [
+        "scripts/serve.mjs"
+      ],
+      "port": 5173,
+      "autoPort": true
     }
   ]
 }
