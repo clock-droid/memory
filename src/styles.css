@@ -36,6 +36,25 @@ textarea {
   font-family: inherit;
 }
 
+.ui-button,
+.token-button {
+  appearance: none;
+  margin: 0;
+  border: 0;
+  font-family: inherit;
+  text-align: inherit;
+}
+
+.ui-button:focus-visible,
+.token-button:focus-visible {
+  outline: 3px solid rgba(0, 122, 255, 0.28);
+  outline-offset: 2px;
+}
+
+.ui-button:disabled {
+  cursor: default;
+}
+
 input:focus,
 textarea:focus {
   outline: none;
