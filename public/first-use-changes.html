@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f2f2f7" />
+    <title>시험암기 · 첫 사용 흐름 변경 비교</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #17171b;
+        --muted: #64646c;
+        --line: #dedee5;
+        --page: #f2f2f7;
+        --panel: #ffffff;
+        --blue: #007aff;
+        --blue-soft: #e8f2ff;
+        --green: #1d9b50;
+        --green-soft: #eaf8ef;
+        --old: #73737b;
+        --old-soft: #f1f1f4;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        background: var(--page);
+        color: var(--ink);
+        font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard Variable", "Segoe UI", sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .shell { width: min(100% - 32px, 1040px); margin: 0 auto; padding: 56px 0 80px; }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 24px;
+        align-items: end;
+        padding: 34px;
+        border-radius: 28px;
+        background: linear-gradient(135deg, #ffffff 0%, #f5f9ff 100%);
+        border: 1px solid #e5edf8;
+        box-shadow: 0 18px 45px rgba(31, 77, 135, 0.08);
+      }
+
+      .eyebrow { margin: 0 0 10px; color: var(--blue); font-size: 13px; font-weight: 800; letter-spacing: 0.04em; }
+      h1 { max-width: 720px; margin: 0; font-size: clamp(30px, 4vw, 46px); line-height: 1.15; letter-spacing: -0.045em; }
+      .lead { max-width: 670px; margin: 18px 0 0; color: var(--muted); font-size: 17px; line-height: 1.65; }
+
+      .hero-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+      .link-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 46px;
+        padding: 0 18px;
+        border-radius: 12px;
+        color: #fff;
+        background: var(--blue);
+        text-decoration: none;
+        font-size: 14px;
+        font-weight: 800;
+      }
+
+      .caption { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
+
+      .flow {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: 8px;
+        margin: 24px 0 36px;
+      }
+
+      .flow-step {
+        min-height: 76px;
+        padding: 13px 12px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--panel);
+      }
+
+      .flow-step b { display: block; margin-bottom: 6px; color: var(--blue); font-size: 12px; }
+      .flow-step span { font-size: 13px; font-weight: 750; line-height: 1.35; }
+
+      .section-title { margin: 0 0 8px; font-size: 23px; letter-spacing: -0.03em; }
+      .section-copy { margin: 0 0 20px; color: var(--muted); font-size: 15px; line-height: 1.55; }
+
+      .changes { display: grid; gap: 16px; }
+      .change {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        background: var(--panel);
+      }
+
+      .change-head { display: flex; align-items: baseline; gap: 10px; padding: 20px 22px 0; }
+      .change-no { color: var(--blue); font-size: 13px; font-weight: 900; }
+      .change h3 { margin: 0; font-size: 18px; letter-spacing: -0.02em; }
+      .change-purpose { margin: 7px 22px 18px; color: var(--muted); font-size: 14px; line-height: 1.5; }
+
+      .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); }
+      .state { min-height: 218px; padding: 20px 22px 22px; background: #fff; }
+      .state.before { background: #fcfcfd; }
+      .state.after { background: #fbfdff; }
+
+      .state-label { display: inline-flex; align-items: center; min-height: 25px; padding: 0 9px; border-radius: 999px; font-size: 12px; font-weight: 800; }
+      .before .state-label { color: var(--old); background: var(--old-soft); }
+      .after .state-label { color: #075db6; background: var(--blue-soft); }
+      .state h4 { margin: 13px 0 8px; font-size: 16px; letter-spacing: -0.02em; }
+      .state p { margin: 0; color: var(--muted); font-size: 13.5px; line-height: 1.55; }
+
+      .mini { margin-top: 16px; padding: 14px; border: 1px solid #e8e8ed; border-radius: 14px; background: #fff; font-size: 13px; line-height: 1.45; }
+      .before .mini { border-color: #e7e7ec; background: #f9f9fb; }
+      .mini-title { display: block; margin-bottom: 7px; color: var(--ink); font-size: 13px; font-weight: 800; }
+      .muted-line { color: #777780; }
+      .tiny { color: #71717b; font-size: 11.5px; }
+
+      .steps { display: flex; gap: 5px; margin-top: 10px; }
+      .step-chip { flex: 1; padding: 8px 5px; border-radius: 9px; background: #f0f0f3; color: #585860; text-align: center; font-size: 11px; font-weight: 800; }
+      .step-chip.active { background: var(--blue-soft); color: #075db6; }
+
+      .token-line { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; font-size: 14px; font-weight: 650; }
+      .token { padding: 3px 7px; border: 1px solid #e1e1e7; border-radius: 7px; background: #fff; }
+      .token.marked { border-color: var(--blue); background: var(--blue); color: #fff; }
+      .token.kbd { border-color: #b9d8ff; background: var(--blue-soft); color: #075db6; }
+
+      .actions { display: flex; gap: 8px; margin-top: 12px; }
+      .action { flex: 1; min-height: 36px; padding: 8px; border-radius: 9px; background: #ededf1; color: #707078; text-align: center; font-size: 12px; font-weight: 800; }
+      .action.primary { background: var(--blue); color: #fff; }
+      .action.success { background: var(--green-soft); color: #16763d; }
+
+      .effect { margin: 0 22px 20px; padding: 12px 14px; border-radius: 12px; background: var(--green-soft); color: #176a38; font-size: 13.5px; font-weight: 700; line-height: 1.45; }
+      .effect b { color: #075db6; }
+
+      .verification {
+        display: grid;
+        grid-template-columns: 1.2fr 1fr;
+        gap: 18px;
+        margin-top: 28px;
+        padding: 22px;
+        border-radius: 20px;
+        background: #1d1d1f;
+        color: #fff;
+      }
+
+      .verification h2 { margin: 0 0 8px; font-size: 19px; }
+      .verification p { margin: 0; color: #c9c9d0; font-size: 14px; line-height: 1.55; }
+      .checks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+      .check { padding: 11px; border-radius: 11px; background: #303035; color: #e9e9ee; font-size: 12.5px; font-weight: 700; line-height: 1.35; }
+      .check::before { content: "✓ "; color: #6fe39a; }
+
+      footer { margin-top: 18px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+
+      @media (max-width: 760px) {
+        .shell { width: min(100% - 24px, 1040px); padding-top: 24px; }
+        .hero { grid-template-columns: 1fr; padding: 24px; border-radius: 22px; }
+        .flow { grid-template-columns: repeat(3, 1fr); }
+        .compare, .verification { grid-template-columns: 1fr; }
+        .state { min-height: 0; }
+        .checks { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero" aria-labelledby="page-title">
+        <div>
+          <p class="eyebrow">시험암기 · 첫 사용 흐름 변경 비교</p>
+          <h1 id="page-title">사용법을 추측하던 시작 화면을, 순서대로 따라가는 흐름으로 바꿨습니다.</h1>
+          <p class="lead">이 페이지는 앱에 추가한 첫 사용 UX 개선을 검토하기 위한 비교 보고서입니다. 실제 암기 기능과 데이터 구조는 건드리지 않고, 사용자가 처음부터 끝까지 망설이는 지점을 정리했습니다.</p>
+        </div>
+        <div>
+          <div class="hero-actions"><a class="link-button" href="/">수정된 앱 열기</a></div>
+          <p class="caption">검토용 페이지 · 앱 내 메뉴에는 노출하지 않음</p>
+        </div>
+      </section>
+
+      <section class="flow" aria-label="개선된 첫 사용 순서">
+        <div class="flow-step"><b>01</b><span>동기화 코드 이해</span></div>
+        <div class="flow-step"><b>02</b><span>첫 목록 만들기</span></div>
+        <div class="flow-step"><b>03</b><span>암기할 내용 입력</span></div>
+        <div class="flow-step"><b>04</b><span>가릴 부분 선택</span></div>
+        <div class="flow-step"><b>05</b><span>항목 추가</span></div>
+        <div class="flow-step"><b>06</b><span>하나씩 확인</span></div>
+      </section>
+
+      <section aria-labelledby="changes-title">
+        <h2 class="section-title" id="changes-title">무엇이 달라졌나</h2>
+        <p class="section-copy">변경 전에는 사용자가 의미와 다음 행동을 유추해야 했습니다. 변경 후에는 문구, 상태, 조작 대상이 같은 언어로 이어집니다.</p>
+
+        <div class="changes">
+          <article class="change">
+            <div class="change-head"><span class="change-no">01</span><h3>첫 화면이 기능 설명보다 아이디 입력을 앞세우던 문제</h3></div>
+            <p class="change-purpose">처음 보는 사람도 “이 앱으로 무엇을 하는지”를 먼저 이해하게 합니다.</p>
+            <div class="compare">
+              <section class="state before"><span class="state-label">이전</span><h4>아이디부터 요구</h4><p>암기 방식은 보이지 않고, 새 아이디와 기존 아이디 중 무엇을 선택해야 하는지부터 판단해야 했습니다.</p><div class="mini"><span class="mini-title">시험암기</span><span class="muted-line">처음이면 아이디를 새로 정하세요.</span><div class="actions"><div class="action">아이디 자동 만들기</div><div class="action">시작하기</div></div></div></section>
+              <section class="state after"><span class="state-label">변경 후</span><h4>사용 순서와 동기화 목적을 먼저 설명</h4><p>내용 입력, 가릴 부분 선택, 순차 확인의 핵심 흐름을 보여 준 뒤 동기화 코드를 안내합니다.</p><div class="mini"><span class="mini-title">시험암기</span><span class="muted-line">원하는 부분을 여러 곳 가린 뒤 하나씩 확인하며 외워요.</span><div class="steps"><span class="step-chip">1 내용 입력</span><span class="step-chip active">2 가릴 부분</span><span class="step-chip">3 확인</span></div><div class="tiny" style="margin-top:10px">동기화 코드 · 다른 기기에서는 같은 코드를 입력</div></div></section>
+            </div>
+            <p class="effect"><b>사용상 차이:</b> “왜 아이디부터?”가 아니라 “아, 문장을 가려 외우는 앱이구나”를 먼저 이해합니다.</p>
+          </article>
+
+          <article class="change">
+            <div class="change-head"><span class="change-no">02</span><h3>암기장·목록·카드·문제가 섞이던 용어</h3></div>
+            <p class="change-purpose">사용자가 지금 만들고 있는 대상과 다음 행동을 같은 언어로 이해하게 합니다.</p>
+            <div class="compare">
+              <section class="state before"><span class="state-label">이전</span><h4>대상 이름이 화면마다 달라짐</h4><p>빈 상태는 암기장, 추가는 카드, 개수는 문제, 학습은 빈칸으로 표현되어 구조를 다시 해석해야 했습니다.</p><div class="mini"><div class="actions"><div class="action">첫 암기장 만들기</div><div class="action">카드 추가</div></div><div class="tiny" style="margin-top:12px">전체 3문제 · 빈칸 2개</div></div></section>
+              <section class="state after"><span class="state-label">변경 후</span><h4>암기 목록 → 암기 항목 → 가림으로 통일</h4><p>목록 안에 항목을 추가하고, 항목의 가림막을 하나씩 확인한다는 구조가 일관되게 이어집니다.</p><div class="mini"><div class="actions"><div class="action primary">첫 목록 만들기</div><div class="action primary">항목 추가</div></div><div class="tiny" style="margin-top:12px">전체 3개 · 가림 2곳</div></div></section>
+            </div>
+            <p class="effect"><b>사용상 차이:</b> 플래시카드 앱의 내부 용어가 아니라, 사용자가 하는 행동 기준으로 읽힙니다.</p>
+          </article>
+
+          <article class="change">
+            <div class="change-head"><span class="change-no">03</span><h3>저장 뒤에도 남던 입력창과 중복된 추가 버튼</h3></div>
+            <p class="change-purpose">“완료된 건가?”라는 의문 없이 곧바로 암기를 시작하게 합니다.</p>
+            <div class="compare">
+              <section class="state before"><span class="state-label">이전</span><h4>완료와 추가가 동시에 남음</h4><p>카드를 저장해도 입력기가 열려 있고, 안쪽의 완료와 하단의 추가가 함께 보여 다음 행동이 겹쳤습니다.</p><div class="mini"><span class="mini-title">내용 입력기</span><div class="actions"><div class="action primary">완료</div><div class="action">+ 추가</div></div><div class="tiny" style="margin-top:10px">저장 후에도 입력기가 남아 있음</div></div></section>
+              <section class="state after"><span class="state-label">변경 후</span><h4>저장하면 입력기를 닫고 진입점은 하나</h4><p>명확한 “항목 추가”를 누르면 입력기가 닫히고, 하단의 단일 추가 버튼과 암기 시작 버튼만 남습니다.</p><div class="mini"><span class="mini-title">암기할 내용</span><div class="actions"><div class="action primary">항목 추가</div></div><div class="actions"><div class="action">항목 추가</div><div class="action primary">암기 시작 (1)</div></div></div></section>
+            </div>
+            <p class="effect"><b>사용상 차이:</b> 저장 여부와 다음 행동이 분리되어, 만든 항목을 바로 학습할 수 있습니다.</p>
+          </article>
+
+          <article class="change">
+            <div class="change-head"><span class="change-no">04</span><h3>여러 부분을 가리는 핵심 기능의 조작 상태</h3></div>
+            <p class="change-purpose">선택한 부분이 몇 개인지, 어떻게 해제하는지, 키보드로도 가능한지를 분명히 합니다.</p>
+            <div class="compare">
+              <section class="state before"><span class="state-label">이전</span><h4>보이는 단어를 탭하는 방식만 암시</h4><p>선택 자체는 가능하지만 보조기술에는 버튼으로 읽히지 않아 키보드 사용자가 핵심 기능에 접근하기 어려웠습니다.</p><div class="mini"><div class="token-line">대한민국의 수도는 <span class="token marked">서울이며</span> 제2의 도시는 <span class="token marked">부산이다</span></div><div class="tiny" style="margin-top:10px">빈칸 2</div></div></section>
+              <section class="state after"><span class="state-label">변경 후</span><h4>가리기·해제 버튼과 선택 상태 제공</h4><p>각 단어가 버튼으로 읽히고 Enter·Space로도 가리기와 해제가 가능하며, 선택 수는 “가림 2곳”으로 표시됩니다.</p><div class="mini"><div class="token-line">대한민국의 수도는 <span class="token marked">서울이며</span> 제2의 도시는 <span class="token kbd">부산이다 · 가림 해제</span></div><div class="tiny" style="margin-top:10px">가림 2곳 · 여러 곳 선택 가능</div></div></section>
+            </div>
+            <p class="effect"><b>사용상 차이:</b> 앱의 차별점인 “여러 곳을 별개로 가리기”가 시각·키보드 양쪽에서 명확해집니다.</p>
+          </article>
+
+          <article class="change">
+            <div class="change-head"><span class="change-no">05</span><h3>학습 중 어느 가림막을 보고 있는지 알기 어려운 문제</h3></div>
+            <p class="change-purpose">하나씩 외운다는 방식이 학습 화면에서도 계속 보이게 합니다.</p>
+            <div class="compare">
+              <section class="state before"><span class="state-label">이전</span><h4>답 공개 동작만 안내</h4><p>가림막이 여러 개인 경우 현재 몇 번째를 공개하는지 빠르게 파악하기 어려웠습니다.</p><div class="mini"><span class="mini-title">빈칸 2개 · 새 목록</span><div class="token-line">대한민국의 수도는 <span class="token">&nbsp;&nbsp;&nbsp;</span> 제2의 도시는 <span class="token">&nbsp;&nbsp;&nbsp;</span></div><div class="tiny" style="margin-top:10px">스페이스를 누르면 답이 보여요</div></div></section>
+              <section class="state after"><span class="state-label">변경 후</span><h4>가림막 순서를 진행 상태로 노출</h4><p>“가림막이 하나씩 열린다”는 문구와 1/2, 2/2 진행 상태로 다음 공개 대상이 분명합니다.</p><div class="mini"><span class="mini-title">가림 2곳 · 새 목록</span><div class="token-line">대한민국의 수도는 <span class="token marked">서울이며</span> 제2의 도시는 <span class="token">&nbsp;&nbsp;&nbsp;</span></div><div class="tiny" style="margin-top:10px">스페이스를 누르면 가림막이 하나씩 열려요 (2/2)</div></div></section>
+            </div>
+            <p class="effect"><b>사용상 차이:</b> 한 문장 속 여러 가림막이 개별 암기 단위라는 점을 학습 중에도 놓치지 않습니다.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="verification" aria-labelledby="verification-title">
+        <div><h2 id="verification-title">검증한 범위</h2><p>새 사용자 상태에서 동기화 코드 입력부터 첫 목록 생성, 두 곳 가림, 항목 저장, 순차 공개, 외움 완료까지 확인했습니다.</p></div>
+        <div class="checks"><div class="check">타입 검사·번들 빌드 통과</div><div class="check">입력기 저장 후 닫힘</div><div class="check">추가 진입점 하나만 표시</div><div class="check">Enter·Space 가림 선택</div><div class="check">가림막 1/2·2/2 공개</div><div class="check">브라우저 오류 없음</div></div>
+      </section>
+
+      <footer>이 페이지는 첫 사용 UX 개선을 검토하기 위한 정적 보고서입니다. 실제 앱은 상단의 “수정된 앱 열기”에서 확인할 수 있습니다.</footer>
+    </main>
+  </body>
+</html>
