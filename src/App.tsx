@@ -11,7 +11,6 @@ const ROOM_KEY = 'exam-memorizer-room-code';
 const ACCENT = '#007aff';
 const ACCENT_DEEP = '#0a5dc2';
 const ACCENT_SOFT = 'rgba(0,122,255,0.08)';
-const ACCENT_DASHED = 'rgba(0,122,255,0.4)';
 const SUBJECT_COLORS = ['#007aff', '#af52de', '#ff9500', '#34c759', '#ff2d55', '#5856d6', '#00c7be', '#ff3b30'];
 // PC (mouse) users can't discover swipe — surface the keyboard shortcuts to them.
 const IS_PC = typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(pointer: fine)').matches;
@@ -329,37 +328,37 @@ function IdGate({ onSubmit }: { onSubmit: (code: string) => void }) {
     onSubmit(normalized);
   };
   return (
-    <div style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 28px', gap: 22 }}>
+    <div style={{ minHeight: '100dvh', width: '100%', maxWidth: 480, margin: '0 auto', display: 'flex', flexDirection: 'column', padding: 'calc(env(safe-area-inset-top) + 84px) 24px 0', gap: 26 }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <div style={{ fontSize: 34, fontWeight: 800, letterSpacing: '-0.02em' }}>시험암기</div>
-        <div style={{ fontSize: 15, color: 'rgba(60,60,67,0.6)', lineHeight: 1.6 }}>
-          처음이면 아이디를 <strong style={{ color: '#1d1d1f' }}>새로 정하세요</strong>. 다른 기기(PC·아이폰)에서 쓰던 아이디가 있다면 <strong style={{ color: '#1d1d1f' }}>그대로 입력</strong>하면 그 암기장이 열려요.
+        <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em' }}>시험암기</div>
+        <div style={{ fontSize: 14.5, color: 'rgba(60,60,67,0.62)', lineHeight: 1.6 }}>
+          처음이면 아이디를 새로 정하세요. 쓰던 아이디를 입력하면 그 암기장이 열려요.
         </div>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(60,60,67,0.45)', letterSpacing: '0.03em' }}>내 아이디</span>
+        <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(60,60,67,0.5)', letterSpacing: '0.03em' }}>내 아이디</span>
         <input
           autoFocus
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
           placeholder="예: hong-gildong-2026"
-          style={{ height: 54, borderRadius: 16, border: '1.5px solid rgba(60,60,67,0.15)', background: '#fff', padding: '0 16px', fontSize: 17, fontWeight: 600, color: '#000' }}
+          style={{ height: 48, borderRadius: 11, border: '1px solid rgba(60,60,67,0.2)', background: '#fff', padding: '0 14px', fontSize: 16, fontWeight: 600, color: '#000' }}
         />
-        <span style={{ fontSize: 12.5, color: hasInvalid ? '#ff9500' : 'rgba(60,60,67,0.45)', fontWeight: hasInvalid ? 700 : 400, lineHeight: 1.5 }}>
+        <span style={{ fontSize: 12, color: hasInvalid ? '#ff9500' : 'rgba(60,60,67,0.45)', fontWeight: hasInvalid ? 700 : 400, lineHeight: 1.5 }}>
           {hasInvalid
             ? '한글·특수문자는 쓸 수 없어요 — 영문·숫자·- _ 만 남아요'
-            : '영문·숫자·- _ 만 쓸 수 있어요. 남들이 안 쓸 만한 걸로 정하세요(비밀번호는 없어요).'}
+            : '영문·숫자·- _ 만 쓸 수 있어요 · 비밀번호는 없어요'}
         </span>
-        <div onClick={() => setValue(`memo-${Math.random().toString(36).slice(2, 8)}`)} style={{ alignSelf: 'flex-start', padding: '4px 2px', cursor: 'pointer' }}>
-          <span style={{ fontSize: 13.5, fontWeight: 600, color: ACCENT }}>아이디가 안 떠오르면 → 자동으로 만들기</span>
+        <div onClick={() => setValue(`memo-${Math.random().toString(36).slice(2, 8)}`)} style={{ alignSelf: 'flex-start', padding: '6px 2px', cursor: 'pointer' }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: ACCENT }}>아이디 자동으로 만들기</span>
         </div>
       </div>
       <div
         onClick={submit}
-        style={{ height: 56, borderRadius: 18, background: normalized ? ACCENT : 'rgba(120,120,128,0.16)', display: 'grid', placeItems: 'center', cursor: 'pointer', boxShadow: normalized ? '0 10px 24px rgba(0,0,0,0.18)' : 'none' }}
+        style={{ height: 48, borderRadius: 11, background: normalized ? ACCENT : 'rgba(0,122,255,0.28)', display: 'grid', placeItems: 'center', cursor: 'pointer', transition: 'background 0.15s' }}
       >
-        <span style={{ fontSize: 17, fontWeight: 700, color: normalized ? '#fff' : 'rgba(60,60,67,0.4)' }}>시작하기</span>
+        <span style={{ fontSize: 15.5, fontWeight: 700, color: '#fff' }}>시작하기</span>
       </div>
     </div>
   );
@@ -712,7 +711,7 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
 
   // ============================================================ render
   return (
-    <div style={{ height: '100dvh', maxWidth: 480, margin: '0 auto', position: 'relative', background: '#F2F2F7', color: '#000', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div style={{ height: '100dvh', width: '100%', maxWidth: 480, margin: '0 auto', position: 'relative', background: '#F2F2F7', color: '#000', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {state.view === 'home' && (
         <HomeView
           lists={lists} decksState={decksState} collapsed={state.collapsed} roomCode={roomCode}
@@ -787,7 +786,7 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
       )}
 
       {state.toastVisible && (
-        <div style={{ position: 'absolute', left: '50%', bottom: 130, transform: 'translateX(-50%)', padding: '11px 20px', borderRadius: 999, background: 'rgba(29,29,31,0.92)', color: '#fff', fontSize: 14, fontWeight: 600, whiteSpace: 'nowrap', animation: 'popIn 0.25s cubic-bezier(0.3,1.2,0.4,1)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)', zIndex: 20 }}>
+        <div style={{ position: 'absolute', left: '50%', bottom: 130, transform: 'translateX(-50%)', padding: '11px 20px', borderRadius: 10, background: 'rgba(29,29,31,0.92)', color: '#fff', fontSize: 14, fontWeight: 600, whiteSpace: 'nowrap', animation: 'popIn 0.25s cubic-bezier(0.3,1.2,0.4,1)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)', zIndex: 20 }}>
           {state.toastMsg}
         </div>
       )}
@@ -833,14 +832,14 @@ function HomeView(props: {
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, paddingTop: 'env(safe-area-inset-top)' }}>
-      <div style={{ padding: '16px 20px 12px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-        <div style={{ fontSize: 34, fontWeight: 800, letterSpacing: '-0.02em' }}>내 암기장</div>
-        <div onClick={props.onOpenSettings} role="button" aria-label="설정" title="설정" style={{ width: 38, height: 38, borderRadius: 999, background: 'rgba(120,120,128,0.12)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+      <div style={{ padding: '18px 20px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em' }}>내 암기장</div>
+        <div onClick={props.onOpenSettings} role="button" aria-label="설정" title="설정" style={{ width: 38, height: 38, display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(60,60,67,0.7)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
         </div>
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px 120px', minHeight: 0 }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px calc(env(safe-area-inset-bottom) + 32px)', minHeight: 0 }}>
         {decksState === 'loading' && lists.length === 0 && (
           <div style={{ padding: '44px 20px', textAlign: 'center', color: 'rgba(60,60,67,0.45)', fontSize: 15 }}>불러오는 중…</div>
         )}
@@ -848,71 +847,82 @@ function HomeView(props: {
           <div style={{ padding: '38px 20px', textAlign: 'center', color: 'rgba(60,60,67,0.58)', fontSize: 15, lineHeight: 1.6, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
             <div>아직 암기장이 없어요.<br />첫 목록을 만들고 바로 카드를 넣어보세요.</div>
             <EmptyStateAction label="첫 암기장 만들기" onClick={props.onNewList} />
-            <div style={{ fontSize: 12.5, color: 'rgba(60,60,67,0.5)' }}>새 목록은 언제든 오른쪽 아래 +로 만들 수 있어요</div>
           </div>
         )}
 
         {contList && (
-          <div onClick={() => props.onContinue(contList.id)} style={{ marginBottom: 14, padding: 18, borderRadius: 22, background: ACCENT, color: '#fff', display: 'flex', alignItems: 'center', gap: 14, boxShadow: '0 12px 28px rgba(0,0,0,0.18)', cursor: 'pointer' }}>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 3 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, opacity: 0.75 }}>이어서 암기</div>
-              <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-0.01em' }}>{showHeaders ? `${contList.subject} · ${contList.name}` : contList.name}</div>
-              <div style={{ fontSize: 13, opacity: 0.75 }}>{contRemain}문제 남음</div>
+          <div onClick={() => props.onContinue(contList.id)} style={{ marginBottom: 16, padding: '12px 14px', borderRadius: 12, background: ACCENT, color: '#fff', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, opacity: 0.78 }}>이어서 암기 · {contRemain}문제 남음</div>
+              <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{showHeaders ? `${contList.subject} · ${contList.name}` : contList.name}</div>
             </div>
-            <div style={{ width: 44, height: 44, borderRadius: 999, background: 'rgba(255,255,255,0.22)', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-              <svg width="16" height="18" viewBox="0 0 16 18"><path d="M2 1.5v15l13-7.5z" fill="#fff" /></svg>
+            <div style={{ width: 32, height: 32, borderRadius: 999, background: 'rgba(255,255,255,0.24)', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+              <svg width="12" height="14" viewBox="0 0 16 18"><path d="M2 1.5v15l13-7.5z" fill="#fff" /></svg>
             </div>
           </div>
         )}
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {groupOrder.map((deckId) => {
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          {groupOrder.map((deckId, gi) => {
             const g = groupMap[deckId];
             const allCards = g.lists.reduce((n, l) => n + l.cards.length, 0);
             const doneCards = g.lists.reduce((n, l) => n + l.cards.filter((c) => c.memorized).length, 0);
             const isCollapsed = showHeaders && !!props.collapsed[deckId];
+            // single-subject home: the "new list" row lives inside the one group
+            const withAddRow = !showHeaders && gi === groupOrder.length - 1;
             return (
-              <div key={deckId} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div key={deckId} style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                 {showHeaders && (
-                  <div onClick={() => props.onToggleCollapse(deckId)} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '2px 6px', cursor: 'pointer' }}>
-                    <span style={{ width: 10, height: 10, borderRadius: 999, background: g.color, flexShrink: 0 }} />
-                    <span style={{ fontSize: 16, fontWeight: 800, letterSpacing: '-0.01em' }}>{g.subject}</span>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: 'rgba(60,60,67,0.45)' }}>{g.lists.length}개 · {doneCards}/{allCards} 외움</span>
+                  <div onClick={() => props.onToggleCollapse(deckId)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 6px', cursor: 'pointer' }}>
+                    <span style={{ width: 8, height: 8, borderRadius: 999, background: g.color, flexShrink: 0 }} />
+                    <span style={{ fontSize: 14.5, fontWeight: 700, letterSpacing: '-0.01em' }}>{g.subject}</span>
+                    <span style={{ fontSize: 12.5, fontWeight: 600, color: 'rgba(60,60,67,0.45)' }}>{g.lists.length}개 · {doneCards}/{allCards} 외움</span>
                     <div style={{ flex: 1 }} />
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(60,60,67,0.4)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" style={{ transform: isCollapsed ? 'rotate(0deg)' : 'rotate(180deg)', transition: 'transform 0.2s' }}><path d="m6 9 6 6 6-6" /></svg>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(60,60,67,0.4)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" style={{ transform: isCollapsed ? 'rotate(0deg)' : 'rotate(180deg)', transition: 'transform 0.2s' }}><path d="m6 9 6 6 6-6" /></svg>
                   </div>
                 )}
                 {!isCollapsed && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {g.lists.map((l) => {
+                  <div style={{ background: '#fff', borderRadius: 12, overflow: 'hidden' }}>
+                    {g.lists.map((l, li) => {
                       const remain = l.cards.filter((c) => !c.memorized).length;
                       const allDone = l.cards.length > 0 && remain === 0;
+                      const lastRow = li === g.lists.length - 1 && !withAddRow;
                       return (
-                        <div key={l.id} onClick={() => props.onOpenList(l.id)} style={{ padding: '15px 18px', borderRadius: 20, background: '#fff', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
-                          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
-                            <div style={{ fontSize: 17, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name}</div>
-                            <div style={{ fontSize: 13, color: 'rgba(60,60,67,0.6)' }}>{l.cards.length === 0 ? '비어 있음' : `${l.cards.length}문제 · ${l.cards.length - remain} 외움`}</div>
+                        <div key={l.id} onClick={() => props.onOpenList(l.id)} style={{ padding: '11px 14px', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', borderBottom: lastRow ? 'none' : '1px solid rgba(60,60,67,0.08)' }}>
+                          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+                            <div style={{ fontSize: 15, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name}</div>
+                            <div style={{ fontSize: 12.5, color: 'rgba(60,60,67,0.55)' }}>{l.cards.length === 0 ? '비어 있음' : `${l.cards.length}문제 · ${l.cards.length - remain} 외움`}</div>
                           </div>
                           {allDone && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#1e9e46', flexShrink: 0 }}>
-                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1e9e46" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
-                              <span style={{ fontSize: 13, fontWeight: 700 }}>전부 외움</span>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1e9e46" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+                              <span style={{ fontSize: 12.5, fontWeight: 700 }}>전부 외움</span>
                             </div>
                           )}
-                          <svg width="8" height="14" viewBox="0 0 8 14" style={{ flexShrink: 0 }}><path d="M1 1l6 6-6 6" stroke="rgba(60,60,67,0.3)" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                          <svg width="7" height="12" viewBox="0 0 8 14" style={{ flexShrink: 0 }}><path d="M1 1l6 6-6 6" stroke="rgba(60,60,67,0.3)" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
                         </div>
                       );
                     })}
+                    {withAddRow && (
+                      <div onClick={props.onNewList} role="button" aria-label="새 암기장 만들기" style={{ padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={ACCENT} strokeWidth="2.2" strokeLinecap="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
+                        <span style={{ fontSize: 14, fontWeight: 600, color: ACCENT }}>새 암기장</span>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
             );
           })}
+          {showHeaders && (
+            <div style={{ background: '#fff', borderRadius: 12, overflow: 'hidden' }}>
+              <div onClick={props.onNewList} role="button" aria-label="새 암기장 만들기" style={{ padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={ACCENT} strokeWidth="2.2" strokeLinecap="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
+                <span style={{ fontSize: 14, fontWeight: 600, color: ACCENT }}>새 암기장</span>
+              </div>
+            </div>
+          )}
         </div>
-      </div>
-
-      <div onClick={props.onNewList} role="button" aria-label="새 목록 만들기" title="새 목록 만들기" style={{ position: 'absolute', right: 20, bottom: 44, width: 58, height: 58, borderRadius: 999, background: ACCENT, display: 'grid', placeItems: 'center', boxShadow: '0 10px 24px rgba(0,0,0,0.25)', cursor: 'pointer' }}>
-        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
       </div>
     </div>
   );
@@ -931,6 +941,10 @@ function DeckView(props: {
   const { list, state, dispatch, weakFirst, lpTimer, rowStart } = props;
   const [nameDraft, setNameDraft] = useState(list.name);
   const nameTimer = useRef<number | undefined>(undefined);
+  // Row gestures (swipe-delete, long-press reorder) are invisible — explain them
+  // once on the first deck visit, then stay quiet.
+  const [showGuide] = useState(() => !localStorage.getItem('exam-memorizer-hint-seen'));
+  useEffect(() => { try { localStorage.setItem('exam-memorizer-hint-seen', '1'); } catch { /* noop */ } }, []);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { setNameDraft(list.name); }, [list.id]);
   const cardsAll = list.cards;
@@ -1058,7 +1072,7 @@ function DeckView(props: {
             window.clearTimeout(nameTimer.current);
             if (nameDraft !== list.name) props.onRename(nameDraft);
           }}
-          style={{ width: 150, textAlign: 'center', fontSize: 17, fontWeight: 800, border: 'none', background: 'transparent', color: '#000', padding: '4px 0', borderRadius: 8 }}
+          style={{ width: 150, textAlign: 'center', fontSize: 16, fontWeight: 700, border: 'none', background: 'transparent', color: '#000', padding: '4px 0', borderRadius: 8 }}
         />
         <div style={{ display: 'flex', alignItems: 'center', marginRight: -6 }}>
           <div
@@ -1081,27 +1095,30 @@ function DeckView(props: {
       </div>
 
       <div style={{ padding: '0 20px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div style={{ flex: 1, height: 5, borderRadius: 3, background: 'rgba(120,120,128,0.16)', overflow: 'hidden' }}>
+        <div style={{ flex: 1, height: 3, borderRadius: 2, background: 'rgba(120,120,128,0.16)', overflow: 'hidden' }}>
           <div style={{ width: `${deckPct}%`, height: '100%', background: '#34c759' }} />
         </div>
-        <span style={{ fontSize: 13, fontWeight: 600, color: 'rgba(60,60,67,0.6)', whiteSpace: 'nowrap' }}>{deckTotal === 0 ? '0문제' : `${deckTotal - deckRemain}/${deckTotal} 외움`}</span>
+        <span style={{ fontSize: 12, fontWeight: 600, color: 'rgba(60,60,67,0.6)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{deckTotal === 0 ? '0문제' : `${deckTotal - deckRemain}/${deckTotal} 외움`}</span>
       </div>
 
-      <div style={{ padding: '0 16px 10px', display: 'flex', gap: 8 }}>
-        {chips.map((chip) => (
-          <div key={chip.key} onClick={() => dispatch({ filter: chip.key, openRowId: null })} style={{ padding: '8px 14px', borderRadius: 999, background: state.filter === chip.key ? ACCENT : 'rgba(120,120,128,0.12)', cursor: 'pointer' }}>
-            <span style={{ fontSize: 13.5, fontWeight: 700, color: state.filter === chip.key ? '#fff' : '#48484a' }}>{chip.label}</span>
-          </div>
-        ))}
+      <div style={{ margin: '0 16px 4px', display: 'flex', padding: 2, borderRadius: 9, background: 'rgba(120,120,128,0.12)' }}>
+        {chips.map((chip) => {
+          const active = state.filter === chip.key;
+          return (
+            <div key={chip.key} onClick={() => dispatch({ filter: chip.key, openRowId: null })} style={{ flex: 1, height: 30, borderRadius: 7, display: 'grid', placeItems: 'center', background: active ? '#fff' : 'transparent', boxShadow: active ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', cursor: 'pointer', transition: 'background 0.15s' }}>
+              <span style={{ fontSize: 12.5, fontWeight: active ? 700 : 600, color: active ? '#1d1d1f' : 'rgba(60,60,67,0.55)' }}>{chip.label}</span>
+            </div>
+          );
+        })}
       </div>
 
-      {deckTotal > 0 && (
-        <div style={{ padding: '0 20px 8px', color: 'rgba(60,60,67,0.6)', fontSize: 12.5, fontWeight: 600, lineHeight: 1.45 }}>
+      {deckTotal > 0 && showGuide && (
+        <div style={{ padding: '4px 20px 4px', color: 'rgba(60,60,67,0.5)', fontSize: 11.5, fontWeight: 500, lineHeight: 1.45 }}>
           {IS_PC ? '클릭하면 수정 · 왼쪽으로 끌면 삭제 · 길게 누르면 순서 변경' : '탭하면 수정 · 왼쪽으로 밀면 삭제 · 길게 누르면 순서 변경'}
         </div>
       )}
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '2px 16px 150px', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '2px 16px 130px', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         {deckTotal === 0 && (
           <div style={{ padding: '38px 20px', textAlign: 'center', color: 'rgba(60,60,67,0.58)', fontSize: 15, lineHeight: 1.6, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
             <div>아직 카드가 없어요.<br />시험에 나올 문장 하나부터 넣어보세요.</div>
@@ -1111,9 +1128,9 @@ function DeckView(props: {
         {rows.map((row, idx) => {
           if (row.header) {
             return (
-              <div key={`h${idx}`} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '10px 6px 2px' }}>
-                <span style={{ width: 8, height: 8, borderRadius: 99, background: row.dot }} />
-                <span style={{ fontSize: 13, fontWeight: 700, color: 'rgba(60,60,67,0.55)' }}>{row.label}</span>
+              <div key={`h${idx}`} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '14px 6px 6px' }}>
+                <span style={{ width: 6, height: 6, borderRadius: 99, background: row.dot }} />
+                <span style={{ fontSize: 11.5, fontWeight: 700, color: 'rgba(60,60,67,0.55)', letterSpacing: '0.02em' }}>{row.label}</span>
               </div>
             );
           }
@@ -1123,29 +1140,33 @@ function DeckView(props: {
           const isRe = state.reorder && state.reorder.id === c.id;
           const x = isDragging ? state.rowDrag!.x : (isOpen ? -82 : 0);
           const dropActive = !!(state.reorder && state.reorder.id !== c.id && state.reorder.overId === c.id);
+          // grouped list: round only the first/last row of each contiguous run
+          const firstInGroup = idx === 0 || rows[idx - 1].header;
+          const lastInGroup = idx === rows.length - 1 || rows[idx + 1].header;
+          const radius = `${firstInGroup ? 12 : 0}px ${firstInGroup ? 12 : 0}px ${lastInGroup ? 12 : 0}px ${lastInGroup ? 12 : 0}px`;
           return (
-            <div key={c.id} data-cid={c.id} style={{ position: 'relative', borderRadius: 18, overflow: 'hidden', flexShrink: 0, transform: isRe ? `translateY(${state.reorder!.dy}px) scale(1.03)` : 'none', transition: isRe ? 'none' : 'transform 0.2s cubic-bezier(0.3,0.9,0.4,1), margin 0.16s ease', zIndex: isRe ? 10 : 'auto', boxShadow: isRe ? '0 16px 36px rgba(0,0,0,0.2)' : 'none', opacity: isRe ? 0.9 : 1, marginTop: dropActive ? 12 : 0 }}>
+            <div key={c.id} data-cid={c.id} style={{ position: 'relative', borderRadius: radius, overflow: 'hidden', flexShrink: 0, transform: isRe ? `translateY(${state.reorder!.dy}px) scale(1.02)` : 'none', transition: isRe ? 'none' : 'transform 0.2s cubic-bezier(0.3,0.9,0.4,1), margin 0.16s ease', zIndex: isRe ? 10 : 'auto', boxShadow: isRe ? '0 12px 28px rgba(0,0,0,0.18)' : 'none', opacity: isRe ? 0.9 : 1, marginTop: dropActive ? 12 : 0 }}>
               {dropActive && <div style={{ position: 'absolute', top: -7, left: 8, right: 8, height: 3, borderRadius: 2, background: ACCENT, zIndex: 11 }} />}
               <div onClick={() => props.onDelete(c)} style={{ position: 'absolute', top: 0, bottom: 0, right: 0, width: 82, background: '#ff3b30', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
                 <span style={{ color: '#fff', fontSize: 15, fontWeight: 700 }}>삭제</span>
               </div>
-              <div onPointerDown={rowPointerDown(c, isOpen)} onPointerMove={rowPointerMove(c)} onPointerUp={rowPointerUp(c, isOpen)} style={{ padding: '14px 16px', background: '#fff', display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', transform: `translateX(${x}px)`, transition: isDragging ? 'none' : 'transform 0.25s cubic-bezier(0.3,0.9,0.4,1)', touchAction: 'pan-y' }}>
-                <div style={{ flex: 1, fontSize: 15.5, fontWeight: 600, lineHeight: 1.75, wordBreak: 'keep-all', minWidth: 0, pointerEvents: 'none', opacity: c.memorized ? 0.55 : 1, whiteSpace: 'pre-line' }}>
+              <div onPointerDown={rowPointerDown(c, isOpen)} onPointerMove={rowPointerMove(c)} onPointerUp={rowPointerUp(c, isOpen)} style={{ padding: '11px 14px', background: '#fff', display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', transform: `translateX(${x}px)`, transition: isDragging ? 'none' : 'transform 0.25s cubic-bezier(0.3,0.9,0.4,1)', touchAction: 'pan-y', boxShadow: lastInGroup ? 'none' : 'inset 0 -1px 0 rgba(60,60,67,0.08)' }}>
+                <div style={{ flex: 1, fontSize: 15, fontWeight: 600, lineHeight: 1.6, wordBreak: 'keep-all', minWidth: 0, pointerEvents: 'none', opacity: c.memorized ? 0.55 : 1, whiteSpace: 'pre-line' }}>
                   {segsFor(c).map((seg, i) => (
                     <span key={i}>
                       <span>{seg.text}</span>
-                      {seg.chip && <span style={{ display: 'inline-block', padding: '1px 9px', borderRadius: 8, background: ACCENT_SOFT, color: ACCENT_DEEP, fontWeight: 700, margin: '0 2px' }}>{seg.chipText}</span>}
+                      {seg.chip && <span style={{ color: ACCENT_DEEP, fontWeight: 700, margin: '0 2px' }}>{seg.chipText}</span>}
                     </span>
                   ))}
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, paddingTop: 3, pointerEvents: 'none' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, paddingTop: 2, pointerEvents: 'none' }}>
                   <div onClick={(e) => { e.stopPropagation(); props.onToggleMem(c); }} onPointerDown={(e) => e.stopPropagation()} role="button" aria-label={c.memorized ? '외움 취소' : '외웠다고 표시'} title={c.memorized ? '외움 취소' : '외웠다고 표시'} style={{ pointerEvents: 'auto', width: 32, height: 32, margin: '-6px -6px -6px 0', display: 'grid', placeItems: 'center', cursor: 'pointer', borderRadius: 999 }}>
                     {c.memorized ? (
-                      <div style={{ width: 22, height: 22, borderRadius: 999, background: '#34c759', display: 'grid', placeItems: 'center' }}>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+                      <div style={{ width: 20, height: 20, borderRadius: 999, background: '#34c759', display: 'grid', placeItems: 'center' }}>
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
                       </div>
                     ) : (
-                      <div style={{ width: 22, height: 22, borderRadius: 999, border: '2px solid rgba(120,120,128,0.35)', boxSizing: 'border-box' }} />
+                      <div style={{ width: 20, height: 20, borderRadius: 999, border: '1.5px solid rgba(120,120,128,0.35)', boxSizing: 'border-box' }} />
                     )}
                   </div>
                 </div>
@@ -1155,10 +1176,10 @@ function DeckView(props: {
         })}
       </div>
 
-      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '12px 16px 44px', background: 'linear-gradient(180deg,rgba(242,242,247,0) 0%,#F2F2F7 32%)', display: 'flex', gap: 10 }}>
-        <div onClick={props.onOpenSheet} style={{ height: 64, padding: '0 20px', borderRadius: 20, background: '#fff', border: '1px solid rgba(60,60,67,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, cursor: 'pointer', flexShrink: 0 }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1d1d1f" strokeWidth="2.4" strokeLinecap="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
-          <span style={{ fontSize: 16, fontWeight: 700 }}>추가</span>
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '12px 16px calc(env(safe-area-inset-bottom) + 20px)', background: 'linear-gradient(180deg,rgba(242,242,247,0) 0%,#F2F2F7 32%)', display: 'flex', gap: 10 }}>
+        <div onClick={props.onOpenSheet} style={{ height: 50, padding: '0 18px', borderRadius: 12, background: '#fff', border: '1px solid rgba(60,60,67,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer', flexShrink: 0 }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1d1d1f" strokeWidth="2.4" strokeLinecap="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
+          <span style={{ fontSize: 14.5, fontWeight: 700 }}>추가</span>
         </div>
         <div
           onClick={() => {
@@ -1166,10 +1187,10 @@ function DeckView(props: {
             else if (visible.length > 0) props.onStart(visible.map((c) => c.id));
             else props.toast('외울 카드가 없어요');
           }}
-          style={{ flex: 1, height: 64, borderRadius: 20, background: startEnabled ? ACCENT : 'rgba(120,120,128,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9, boxShadow: startEnabled ? '0 10px 24px rgba(0,0,0,0.2)' : 'none', cursor: 'pointer' }}
+          style={{ flex: 1, height: 50, borderRadius: 12, background: startEnabled ? ACCENT : 'rgba(120,120,128,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, cursor: 'pointer' }}
         >
-          <svg width="16" height="18" viewBox="0 0 16 18"><path d="M2 1.5v15l13-7.5z" fill={startEnabled ? '#fff' : 'rgba(60,60,67,0.35)'} /></svg>
-          <span style={{ fontSize: 18, fontWeight: 800, color: startEnabled ? '#fff' : 'rgba(60,60,67,0.35)' }}>{startLabel}</span>
+          <svg width="13" height="15" viewBox="0 0 16 18"><path d="M2 1.5v15l13-7.5z" fill={startEnabled ? '#fff' : 'rgba(60,60,67,0.35)'} /></svg>
+          <span style={{ fontSize: 15.5, fontWeight: 700, color: startEnabled ? '#fff' : 'rgba(60,60,67,0.35)' }}>{startLabel}</span>
         </div>
       </div>
     </div>
@@ -1233,17 +1254,17 @@ function StudyView(props: {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%', marginTop: 10 }}>
             {deckRemain > 0 && (
-              <div onClick={props.onRetryRemaining} style={{ height: 56, borderRadius: 18, background: ACCENT, display: 'grid', placeItems: 'center', cursor: 'pointer', boxShadow: '0 10px 24px rgba(0,0,0,0.18)' }}>
-                <span style={{ fontSize: 17, fontWeight: 700, color: '#fff' }}>안 외운 {deckRemain}장 다시</span>
+              <div onClick={props.onRetryRemaining} style={{ height: 50, borderRadius: 12, background: ACCENT, display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+                <span style={{ fontSize: 15.5, fontWeight: 700, color: '#fff' }}>안 외운 {deckRemain}장 다시</span>
               </div>
             )}
             {allMemorized && (
-              <div onClick={props.onReviewAll} style={{ height: 56, borderRadius: 18, background: 'rgba(120,120,128,0.16)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
-                <span style={{ fontSize: 17, fontWeight: 700, color: '#48484a' }}>처음부터 복습</span>
+              <div onClick={props.onReviewAll} style={{ height: 50, borderRadius: 12, background: 'rgba(120,120,128,0.16)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+                <span style={{ fontSize: 15.5, fontWeight: 700, color: '#48484a' }}>처음부터 복습</span>
               </div>
             )}
-            <div onClick={props.onDeck} style={{ height: 56, borderRadius: 18, display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
-              <span style={{ fontSize: 17, fontWeight: 600, color: 'rgba(60,60,67,0.6)' }}>목록으로</span>
+            <div onClick={props.onDeck} style={{ height: 50, borderRadius: 12, display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+              <span style={{ fontSize: 15.5, fontWeight: 600, color: 'rgba(60,60,67,0.6)' }}>목록으로</span>
             </div>
           </div>
         </div>
@@ -1274,10 +1295,10 @@ function StudyView(props: {
         <div onClick={props.onDeck} role="button" aria-label="닫기" title="닫기" style={{ width: 32, height: 32, marginLeft: -8, borderRadius: 999, display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="rgba(60,60,67,0.6)" strokeWidth="2.4" strokeLinecap="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
         </div>
-        <div style={{ flex: 1, height: 5, borderRadius: 3, background: 'rgba(120,120,128,0.16)', overflow: 'hidden' }}>
-          <div style={{ width: `${progressPct}%`, height: '100%', borderRadius: 3, background: ACCENT, transition: 'width 0.35s cubic-bezier(0.3,0.9,0.4,1)' }} />
+        <div style={{ flex: 1, height: 3, borderRadius: 2, background: 'rgba(120,120,128,0.16)', overflow: 'hidden' }}>
+          <div style={{ width: `${progressPct}%`, height: '100%', borderRadius: 2, background: ACCENT, transition: 'width 0.35s cubic-bezier(0.3,0.9,0.4,1)' }} />
         </div>
-        <span style={{ fontSize: 14, fontWeight: 700, color: 'rgba(60,60,67,0.6)', fontVariantNumeric: 'tabular-nums' }}>{Math.min(state.sessionDone + 1, state.sessionTotal)}/{state.sessionTotal}</span>
+        <span style={{ fontSize: 12.5, fontWeight: 600, color: 'rgba(60,60,67,0.6)', fontVariantNumeric: 'tabular-nums' }}>{Math.min(state.sessionDone + 1, state.sessionTotal)}/{state.sessionTotal}</span>
       </div>
 
       <div style={{ position: 'absolute', top: 120, left: 24, padding: '9px 16px', borderRadius: 14, background: 'rgba(255,149,0,0.92)', color: '#fff', fontSize: 15, fontWeight: 800, transform: 'rotate(-8deg)', opacity: Math.min(Math.max(-dx / 110, 0), 1), transition: 'opacity 0.1s', zIndex: 5, pointerEvents: 'none' }}>다시 볼래요</div>
@@ -1297,40 +1318,34 @@ function StudyView(props: {
         }}
         style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, animation: 'cardIn 0.3s cubic-bezier(0.3,0.9,0.4,1)', transform: `translateX(${dx}px) rotate(${(dx * 0.035).toFixed(2)}deg)`, transition: state.dragging || state.snap ? 'none' : 'transform 0.25s cubic-bezier(0.3,0.9,0.4,1)', touchAction: 'pan-y', cursor: 'pointer' }}
       >
-        <div style={{ padding: '18px 24px 0', display: 'flex', alignItems: 'center' }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: 'rgba(60,60,67,0.45)', letterSpacing: '0.04em' }}>{cardBadge}</div>
+        <div style={{ padding: '26px 24px 0', display: 'flex', alignItems: 'center' }}>
+          <div style={{ fontSize: 11.5, fontWeight: 600, color: 'rgba(60,60,67,0.5)', letterSpacing: '0.03em' }}>{cardBadge}{list ? ` · ${list.name}` : ''}</div>
         </div>
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 28, padding: '0 28px 150px', minHeight: 0, overflowY: 'auto' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 26, padding: '14px 24px 150px', minHeight: 0, overflowY: 'auto' }}>
           {!isCloze ? (
             <>
-              <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-0.015em', lineHeight: 1.4, wordBreak: 'keep-all', whiteSpace: 'pre-line' }}>{card.q}</div>
+              <div style={{ fontSize: 25, fontWeight: 800, letterSpacing: '-0.015em', lineHeight: 1.4, wordBreak: 'keep-all', whiteSpace: 'pre-line' }}>{card.q}</div>
               {!allRevealed ? (
-                <div style={{ minHeight: 74, borderRadius: 20, background: ACCENT_SOFT, border: `2px dashed ${ACCENT_DASHED}`, display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'pulseB 1.8s ease-in-out infinite' }}>
-                  <span style={{ display: 'flex', gap: 6 }}>{[0, 1, 2].map((k) => <span key={k} style={{ width: 7, height: 7, borderRadius: 99, background: ACCENT, opacity: 0.5 }} />)}</span>
-                </div>
+                <div style={{ height: 42, borderRadius: 10, background: 'rgba(0,122,255,0.16)', width: `${Math.max(7, Math.min(card.a.join(', ').length + 1, 18))}em`, maxWidth: '100%', fontSize: 16 }} />
               ) : (
-                <div style={{ minHeight: 74, borderRadius: 20, background: 'rgba(52,199,89,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px 20px', animation: 'popIn 0.22s cubic-bezier(0.3,1.2,0.4,1)' }}>
-                  <span style={{ fontSize: 26, fontWeight: 800, color: '#1e9e46', wordBreak: 'keep-all', textAlign: 'center', lineHeight: 1.4, whiteSpace: 'pre-line' }}>{card.a.join(', ')}</span>
+                <div style={{ borderLeft: `3px solid ${ACCENT}`, padding: '2px 0 2px 14px', animation: 'popIn 0.22s cubic-bezier(0.3,1.2,0.4,1)' }}>
+                  <span style={{ fontSize: 21, fontWeight: 700, color: '#1d1d1f', wordBreak: 'keep-all', lineHeight: 1.45, whiteSpace: 'pre-line' }}>{card.a.join(', ')}</span>
                 </div>
               )}
             </>
           ) : (
-            <div style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.01em', lineHeight: 2, wordBreak: 'keep-all', whiteSpace: 'pre-line' }}>
+            <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.01em', lineHeight: 2, wordBreak: 'keep-all', whiteSpace: 'pre-line' }}>
               {cardSegs.map((seg, i) => (
                 <span key={i}>
                   <span>{seg.text}</span>
                   {seg.kind === 'next' && (
-                    <span style={{ display: 'inline-grid', placeItems: 'center', minWidth: 76, height: 46, padding: '0 14px', borderRadius: 13, background: ACCENT_SOFT, border: `2px dashed ${ACCENT_DASHED}`, verticalAlign: 'middle', margin: '0 3px', animation: 'pulseB 1.8s ease-in-out infinite' }}>
-                      <span style={{ display: 'flex', gap: 5 }}>{[0, 1, 2].map((k) => <span key={k} style={{ width: 6, height: 6, borderRadius: 99, background: ACCENT, opacity: 0.5 }} />)}</span>
-                    </span>
+                    <span style={{ display: 'inline-block', minWidth: 68, height: 36, padding: '0 14px', borderRadius: 8, background: 'rgba(0,122,255,0.16)', verticalAlign: 'middle', margin: '0 3px' }} />
                   )}
                   {seg.kind === 'waiting' && (
-                    <span style={{ display: 'inline-grid', placeItems: 'center', minWidth: 76, height: 46, padding: '0 14px', borderRadius: 13, background: 'rgba(120,120,128,0.1)', verticalAlign: 'middle', margin: '0 3px' }}>
-                      <span style={{ display: 'flex', gap: 5 }}>{[0, 1, 2].map((k) => <span key={k} style={{ width: 6, height: 6, borderRadius: 99, background: 'rgba(120,120,128,0.4)' }} />)}</span>
-                    </span>
+                    <span style={{ display: 'inline-block', minWidth: 68, height: 36, padding: '0 14px', borderRadius: 8, background: 'rgba(120,120,128,0.12)', verticalAlign: 'middle', margin: '0 3px' }} />
                   )}
                   {seg.kind === 'revealed' && (
-                    <span style={{ display: 'inline-grid', placeItems: 'center', minWidth: 76, height: 46, padding: '0 16px', borderRadius: 13, background: 'rgba(52,199,89,0.12)', color: '#1e9e46', fontWeight: 800, verticalAlign: 'middle', margin: '0 3px', animation: 'popIn 0.22s cubic-bezier(0.3,1.2,0.4,1)' }}>{seg.answer}</span>
+                    <span style={{ display: 'inline-block', padding: '0 2px', borderBottom: `2px solid ${ACCENT}`, color: ACCENT_DEEP, fontWeight: 800, margin: '0 3px', animation: 'popIn 0.22s cubic-bezier(0.3,1.2,0.4,1)' }}>{seg.answer}</span>
                   )}
                 </span>
               ))}
@@ -1341,18 +1356,18 @@ function StudyView(props: {
 
       <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '16px 20px 44px', background: 'linear-gradient(180deg,rgba(255,255,255,0) 0%,#fff 30%)', pointerEvents: 'none' }}>
         {!allRevealed ? (
-          <div style={{ textAlign: 'center', fontSize: 13.5, color: 'rgba(60,60,67,0.55)', fontWeight: 600, lineHeight: 1.6 }}>
+          <div style={{ textAlign: 'center', fontSize: 12, color: 'rgba(60,60,67,0.5)', fontWeight: 500, lineHeight: 1.6 }}>
             {IS_PC ? '스페이스를 누르면 답이 보여요' : tapHint}
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-            <div style={{ textAlign: 'center', fontSize: 14, color: 'rgba(60,60,67,0.62)', fontWeight: 700 }}>{IS_PC ? '← → 키 또는 아래 버튼으로 분류하세요' : '카드를 옆으로 밀거나 아래 버튼을 누르세요'}</div>
-            <div style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'center', gap: 10, pointerEvents: 'auto' }}>
-              <button type="button" className="study-judge-button" onClick={props.onAgain} aria-label="다시 볼래요" title="다시 볼래요" style={{ minWidth: 132, height: 48, padding: '0 16px', borderRadius: 999, border: 'none', background: 'rgba(255,149,0,0.14)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit' }}>
-                <span style={{ fontSize: 14, fontWeight: 700, color: '#a85b00' }}>← 다시 볼래요</span>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 9 }}>
+            <div style={{ textAlign: 'center', fontSize: 12, color: 'rgba(60,60,67,0.5)', fontWeight: 500 }}>{IS_PC ? '← 다시 볼래요 · 외웠어요 →' : '옆으로 밀어서 분류할 수도 있어요'}</div>
+            <div style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 10, pointerEvents: 'auto' }}>
+              <button type="button" className="study-judge-button" onClick={props.onAgain} aria-label="다시 볼래요" title="다시 볼래요" style={{ flex: 1, height: 50, padding: '0 16px', borderRadius: 12, border: 'none', background: 'rgba(255,149,0,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit' }}>
+                <span style={{ fontSize: 15, fontWeight: 700, color: '#8a4d00' }}>다시 볼래요</span>
               </button>
-              <button type="button" className="study-judge-button" onClick={props.onKnown} aria-label="외웠어요" title="외웠어요" style={{ minWidth: 132, height: 48, padding: '0 16px', borderRadius: 999, border: 'none', background: 'rgba(52,199,89,0.16)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit' }}>
-                <span style={{ fontSize: 14, fontWeight: 800, color: '#147b35' }}>외웠어요 →</span>
+              <button type="button" className="study-judge-button" onClick={props.onKnown} aria-label="외웠어요" title="외웠어요" style={{ flex: 1, height: 50, padding: '0 16px', borderRadius: 12, border: 'none', background: 'rgba(52,199,89,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit' }}>
+                <span style={{ fontSize: 15, fontWeight: 800, color: '#116b2d' }}>외웠어요</span>
               </button>
             </div>
           </div>
@@ -1470,28 +1485,28 @@ function AddSheet(props: {
   return (
     <>
       <div onClick={() => dispatch({ sheetOpen: false })} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.28)', zIndex: 15 }} />
-      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, borderRadius: '28px 28px 0 0', background: '#fff', padding: '18px 20px 42px', display: 'flex', flexDirection: 'column', gap: 12, boxShadow: '0 -12px 40px rgba(0,0,0,0.16)', animation: 'sheetUp 0.32s cubic-bezier(0.3,0.9,0.4,1)', maxHeight: '82%', zIndex: 16 }}>
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, borderRadius: '20px 20px 0 0', background: '#fff', padding: '18px 20px 42px', display: 'flex', flexDirection: 'column', gap: 12, boxShadow: '0 -12px 40px rgba(0,0,0,0.16)', animation: 'sheetUp 0.32s cubic-bezier(0.3,0.9,0.4,1)', maxHeight: '82%', zIndex: 16 }}>
         <div style={{ width: 40, height: 5, borderRadius: 3, background: 'rgba(120,120,128,0.25)', alignSelf: 'center', flexShrink: 0 }} />
         <div onClick={() => dispatch({ sheetOpen: false })} style={{ position: 'absolute', top: 12, right: 14, padding: '8px 12px', borderRadius: 12, cursor: 'pointer', zIndex: 1 }}>
           <span style={{ fontSize: 16, fontWeight: 700, color: ACCENT }}>완료</span>
         </div>
-        <div style={{ display: 'flex', gap: 5, padding: 4, borderRadius: 14, background: 'rgba(120,120,128,0.1)', flexShrink: 0 }}>
-          <div onClick={() => dispatch({ addTab: 'type' })} style={{ flex: 1, height: 40, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'background 0.15s', ...seg(state.addTab === 'type') }}><span style={{ fontSize: 15, fontWeight: 700 }}>직접 쓰기</span></div>
-          <div onClick={() => dispatch({ addTab: 'paste' })} style={{ flex: 1, height: 40, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'background 0.15s', ...seg(state.addTab === 'paste') }}><span style={{ fontSize: 15, fontWeight: 700 }}>붙여넣기</span></div>
+        <div style={{ display: 'flex', gap: 4, padding: 3, borderRadius: 10, background: 'rgba(120,120,128,0.1)', flexShrink: 0 }}>
+          <div onClick={() => dispatch({ addTab: 'type' })} style={{ flex: 1, height: 36, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'background 0.15s', ...seg(state.addTab === 'type') }}><span style={{ fontSize: 15, fontWeight: 700 }}>직접 쓰기</span></div>
+          <div onClick={() => dispatch({ addTab: 'paste' })} style={{ flex: 1, height: 36, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'background 0.15s', ...seg(state.addTab === 'paste') }}><span style={{ fontSize: 15, fontWeight: 700 }}>붙여넣기</span></div>
         </div>
 
         {state.addTab === 'type' ? (
           <>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0, overflowY: 'auto' }}>
               <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-                <div onClick={setTypeCloze} style={{ padding: '7px 14px', borderRadius: 999, cursor: 'pointer', ...chip(state.typeMode === 'cloze') }}><span style={{ fontSize: 13.5, fontWeight: 700 }}>빈칸형</span></div>
-                <div onClick={setTypeQA} style={{ padding: '7px 14px', borderRadius: 999, cursor: 'pointer', ...chip(state.typeMode === 'qa') }}><span style={{ fontSize: 13.5, fontWeight: 700 }}>문답형</span></div>
+                <div onClick={setTypeCloze} style={{ padding: '7px 14px', borderRadius: 9, cursor: 'pointer', ...chip(state.typeMode === 'cloze') }}><span style={{ fontSize: 13.5, fontWeight: 700 }}>빈칸형</span></div>
+                <div onClick={setTypeQA} style={{ padding: '7px 14px', borderRadius: 9, cursor: 'pointer', ...chip(state.typeMode === 'qa') }}><span style={{ fontSize: 13.5, fontWeight: 700 }}>문답형</span></div>
               </div>
               <div style={{ fontSize: 12.5, color: 'rgba(60,60,67,0.55)', fontWeight: 600, flexShrink: 0, marginTop: -4 }}>
                 {state.typeMode === 'cloze' ? '문장을 쓰고, 시험에서 가릴 단어만 탭하면 돼요' : '질문을 보고 답을 떠올리는 카드예요'}
               </div>
               {state.typeMode === 'qa' ? (
-                <div style={{ padding: '14px 16px', borderRadius: 16, background: '#F7F7F9', display: 'flex', flexDirection: 'column', gap: 9 }}>
+                <div style={{ padding: '14px 16px', borderRadius: 12, background: '#F7F7F9', display: 'flex', flexDirection: 'column', gap: 9 }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                     <span style={{ fontSize: 11.5, fontWeight: 700, color: 'rgba(60,60,67,0.45)', letterSpacing: '0.03em' }}>질문</span>
                     <textarea rows={2} value={state.typeQ} onChange={(e) => dispatch({ typeQ: e.target.value })} placeholder="예: 대통령 임기" style={{ fontSize: 17, fontWeight: 600, border: 'none', background: 'transparent', color: '#000', padding: '2px 0', resize: 'none', lineHeight: 1.5 }} />
@@ -1504,12 +1519,12 @@ function AddSheet(props: {
                 </div>
               ) : (
                 <>
-                  <div style={{ padding: '14px 16px', borderRadius: 16, background: '#F7F7F9', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <div style={{ padding: '14px 16px', borderRadius: 12, background: '#F7F7F9', display: 'flex', flexDirection: 'column', gap: 2 }}>
                     <span style={{ fontSize: 11.5, fontWeight: 700, color: 'rgba(60,60,67,0.45)', letterSpacing: '0.03em' }}>문장 (여러 줄도 한 카드)</span>
                     <textarea rows={3} value={state.typeText} onChange={onTypeText} placeholder={'예: 커피의 종류\n1. 아메리카노 : 맛이 아주 쓰다'} style={{ fontSize: 16.5, fontWeight: 600, border: 'none', background: 'transparent', color: '#000', padding: '2px 0', resize: 'none', lineHeight: 1.5 }} />
                   </div>
                   {state.typeTokens.length > 0 && (
-                    <div style={{ padding: '12px 14px', borderRadius: 13, background: 'rgba(120,120,128,0.08)', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '3px 2px', lineHeight: 1.9 }}>
+                    <div style={{ padding: '12px 14px', borderRadius: 10, background: 'rgba(120,120,128,0.08)', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '3px 2px', lineHeight: 1.9 }}>
                       {props.renderTokenChips(state.typeTokens, -200, 15)}
                       {state.typeTokens.some((t) => t.hidden) ? (
                         <span style={{ width: '100%', fontSize: 12.5, color: '#1e9e46', fontWeight: 700, marginTop: 4 }}>
@@ -1524,7 +1539,7 @@ function AddSheet(props: {
               )}
             </div>
             <div style={{ textAlign: 'center', fontSize: 12.5, color: 'rgba(60,60,67,0.45)', fontWeight: 600, flexShrink: 0 }}>{state.typeAdded > 0 ? `이 목록에 ${state.typeAdded}개 추가됨 — 다 쓰셨으면 오른쪽 위 '완료'` : '입력하면 목록에 한 장씩 쌓여요'}</div>
-            <div onClick={typeAdd} style={{ height: 54, borderRadius: 16, background: typeCanAdd ? ACCENT : 'rgba(120,120,128,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, cursor: 'pointer', flexShrink: 0, transition: 'background 0.2s' }}>
+            <div onClick={typeAdd} style={{ height: 50, borderRadius: 12, background: typeCanAdd ? ACCENT : 'rgba(120,120,128,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, cursor: 'pointer', flexShrink: 0, transition: 'background 0.2s' }}>
               {typeCanAdd && <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>}
               <span style={{ fontSize: 17, fontWeight: 700, color: typeCanAdd ? '#fff' : 'rgba(60,60,67,0.4)' }}>
                 {typeCanAdd ? '추가하고 계속'
@@ -1539,10 +1554,10 @@ function AddSheet(props: {
             <div style={{ fontSize: 13.5, color: 'rgba(60,60,67,0.6)', lineHeight: 1.5, flexShrink: 0 }}>붙여넣으면 줄마다 한 문제. <strong style={{ color: '#1d1d1f' }}>가릴 단어는 탭</strong>(끌면 여러 단어), <strong style={{ color: '#1d1d1f' }}>줄을 세로로 쓸면</strong> 여러 줄을 한 문제로 묶어요</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
               <span style={{ fontSize: 12.5, fontWeight: 700, color: 'rgba(60,60,67,0.45)' }}>나누기</span>
-              <div onClick={() => dispatch((st) => ({ pasteMode: 'auto', sheetRows: parsePaste(st.pasteText, 'auto'), rowSel: null }))} style={{ padding: '7px 13px', borderRadius: 999, cursor: 'pointer', ...chip(state.pasteMode === 'auto') }}><span style={{ fontSize: 13, fontWeight: 700 }}>자동 (줄·빈 줄)</span></div>
-              <div onClick={() => dispatch((st) => ({ pasteMode: 'one', sheetRows: parsePaste(st.pasteText, 'one'), rowSel: null }))} style={{ padding: '7px 13px', borderRadius: 999, cursor: 'pointer', ...chip(state.pasteMode === 'one') }}><span style={{ fontSize: 13, fontWeight: 700 }}>전체를 한 문제로</span></div>
+              <div onClick={() => dispatch((st) => ({ pasteMode: 'auto', sheetRows: parsePaste(st.pasteText, 'auto'), rowSel: null }))} style={{ padding: '7px 13px', borderRadius: 9, cursor: 'pointer', ...chip(state.pasteMode === 'auto') }}><span style={{ fontSize: 13, fontWeight: 700 }}>자동 (줄·빈 줄)</span></div>
+              <div onClick={() => dispatch((st) => ({ pasteMode: 'one', sheetRows: parsePaste(st.pasteText, 'one'), rowSel: null }))} style={{ padding: '7px 13px', borderRadius: 9, cursor: 'pointer', ...chip(state.pasteMode === 'one') }}><span style={{ fontSize: 13, fontWeight: 700 }}>전체를 한 문제로</span></div>
             </div>
-            <textarea rows={4} value={state.pasteText} onChange={onPaste} placeholder={'예시)\n헌법 개정 의결: 국회 재적 2/3 찬성'} style={{ border: '1.5px solid rgba(60,60,67,0.15)', borderRadius: 14, padding: '12px 14px', fontSize: 15.5, lineHeight: 1.6, resize: 'none', background: '#F7F7F9', color: '#000', flexShrink: 0 }} />
+            <textarea rows={4} value={state.pasteText} onChange={onPaste} placeholder={'예시)\n헌법 개정 의결: 국회 재적 2/3 찬성'} style={{ border: '1px solid rgba(60,60,67,0.18)', borderRadius: 11, padding: '12px 14px', fontSize: 15.5, lineHeight: 1.6, resize: 'none', background: '#F7F7F9', color: '#000', flexShrink: 0 }} />
             {state.sheetRows.length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 7, overflowY: 'auto', minHeight: 0 }}>
                 {state.sheetRows.map((r, ri) => {
@@ -1561,7 +1576,7 @@ function AddSheet(props: {
                   const onRowEnter = () => dispatch((st) => (st.rowSelDragging ? { rowSel: { a: st.rowSel!.a, b: ri } } : {}));
                   if (r.kind === 'qa') {
                     return (
-                      <div key={ri} onPointerDown={onRowDown} onPointerEnter={onRowEnter} style={{ padding: '9px 12px', borderRadius: 13, ...common, display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, touchAction: 'pan-y', transition: 'background 0.12s' }}>
+                      <div key={ri} onPointerDown={onRowDown} onPointerEnter={onRowEnter} style={{ padding: '9px 12px', borderRadius: 10, ...common, display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, touchAction: 'pan-y', transition: 'background 0.12s' }}>
                         <span style={{ flex: 1, fontSize: 14.5, fontWeight: 600, lineHeight: 1.45, wordBreak: 'keep-all', pointerEvents: 'none' }}>{r.q}</span>
                         <span style={{ fontSize: 14.5, fontWeight: 700, color: ACCENT_DEEP, flexShrink: 0, pointerEvents: 'none' }}>{r.a}</span>
                       </div>
@@ -1569,7 +1584,7 @@ function AddSheet(props: {
                   }
                   const needsTap = !r.tokens.some((t) => t.hidden) && !(state.sel && state.sel.ri === ri) && !rs;
                   return (
-                    <div key={ri} onPointerDown={onRowDown} onPointerEnter={onRowEnter} style={{ padding: '9px 12px', borderRadius: 13, ...common, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '3px 2px', flexShrink: 0, lineHeight: 1.9, touchAction: 'pan-y', transition: 'background 0.12s' }}>
+                    <div key={ri} onPointerDown={onRowDown} onPointerEnter={onRowEnter} style={{ padding: '9px 12px', borderRadius: 10, ...common, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '3px 2px', flexShrink: 0, lineHeight: 1.9, touchAction: 'pan-y', transition: 'background 0.12s' }}>
                       {props.renderTokenChips(r.tokens, ri, 14.5)}
                       {needsTap && <span style={{ width: '100%', fontSize: 12.5, color: ACCENT_DEEP, fontWeight: 700, marginTop: 2 }}>가릴 단어를 탭하세요 · 누른 채 끌면 여러 단어가 한 빈칸이 돼요</span>}
                     </div>
@@ -1578,13 +1593,13 @@ function AddSheet(props: {
               </div>
             )}
             {rowSelCount > 1 && (
-              <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 14, background: ACCENT_SOFT }}>
+              <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10, background: ACCENT_SOFT }}>
                 <span style={{ flex: 1, fontSize: 13.5, fontWeight: 700, color: ACCENT_DEEP }}>{rowSelCount}줄 선택됨 · 다시 누르면 해제</span>
-                <div onClick={mergeRowSel} style={{ height: 38, padding: '0 16px', borderRadius: 11, background: ACCENT, display: 'flex', alignItems: 'center', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>한 문제로 묶기</div>
+                <div onClick={mergeRowSel} style={{ height: 38, padding: '0 16px', borderRadius: 9, background: ACCENT, display: 'flex', alignItems: 'center', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>한 문제로 묶기</div>
               </div>
             )}
             {incompleteRows > 0 && (
-              <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 13, background: 'rgba(255,149,0,0.12)' }}>
+              <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 10, background: 'rgba(255,149,0,0.12)' }}>
                 <TriangleAlert size={17} strokeWidth={2.2} color="#a85b00" aria-hidden="true" />
                 <span style={{ flex: 1, fontSize: 12.5, fontWeight: 700, color: '#c26a00', lineHeight: 1.4 }}>{incompleteRows}줄은 가릴 단어를 안 정해서 빠져요 — 위에서 단어를 탭하세요</span>
               </div>
@@ -1598,7 +1613,7 @@ function AddSheet(props: {
                   : '가릴 단어를 정하면 추가할 수 있어요'}
               </div>
             )}
-            <div onClick={addParsed} style={{ height: 54, borderRadius: 16, background: validRows.length > 0 ? ACCENT : 'rgba(120,120,128,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, transition: 'background 0.2s' }}>
+            <div onClick={addParsed} style={{ height: 50, borderRadius: 12, background: validRows.length > 0 ? ACCENT : 'rgba(120,120,128,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, transition: 'background 0.2s' }}>
               <span style={{ fontSize: 17, fontWeight: 700, color: validRows.length > 0 ? '#fff' : 'rgba(60,60,67,0.4)' }}>{validRows.length > 0 ? `${validRows.length}문제 추가` : state.sheetRows.length > 0 ? '가릴 단어를 탭하면 문제가 돼요' : '내용을 쓰면 문제를 찾아드려요'}</span>
             </div>
           </>
@@ -1652,15 +1667,15 @@ function EditSheet(props: {
   return (
     <>
       <div onClick={() => dispatch({ editSheetOpen: false })} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.28)', zIndex: 15 }} />
-      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, borderRadius: '28px 28px 0 0', background: '#fff', padding: '18px 20px 42px', display: 'flex', flexDirection: 'column', gap: 13, boxShadow: '0 -12px 40px rgba(0,0,0,0.16)', animation: 'sheetUp 0.32s cubic-bezier(0.3,0.9,0.4,1)', maxHeight: '82%', zIndex: 16 }}>
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, borderRadius: '20px 20px 0 0', background: '#fff', padding: '18px 20px 42px', display: 'flex', flexDirection: 'column', gap: 13, boxShadow: '0 -12px 40px rgba(0,0,0,0.16)', animation: 'sheetUp 0.32s cubic-bezier(0.3,0.9,0.4,1)', maxHeight: '82%', zIndex: 16 }}>
         <div style={{ width: 40, height: 5, borderRadius: 3, background: 'rgba(120,120,128,0.25)', alignSelf: 'center', flexShrink: 0 }} />
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
           <div onClick={goPrev} style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(120,120,128,0.1)', display: 'grid', placeItems: 'center', cursor: 'pointer', opacity: idx > 0 ? 1 : 0.25 }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1d1d1f" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
-            <div onClick={setQA} style={{ padding: '8px 14px', borderRadius: 999, cursor: 'pointer', ...chip(state.editMode === 'qa') }}><span style={{ fontSize: 13.5, fontWeight: 700 }}>문답형</span></div>
-            <div onClick={setCloze} style={{ padding: '8px 14px', borderRadius: 999, cursor: 'pointer', ...chip(state.editMode === 'tokens') }}><span style={{ fontSize: 13.5, fontWeight: 700 }}>빈칸형</span></div>
+            <div onClick={setQA} style={{ padding: '8px 14px', borderRadius: 9, cursor: 'pointer', ...chip(state.editMode === 'qa') }}><span style={{ fontSize: 13.5, fontWeight: 700 }}>문답형</span></div>
+            <div onClick={setCloze} style={{ padding: '8px 14px', borderRadius: 9, cursor: 'pointer', ...chip(state.editMode === 'tokens') }}><span style={{ fontSize: 13.5, fontWeight: 700 }}>빈칸형</span></div>
           </div>
           <div onClick={goNext} style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(120,120,128,0.1)', display: 'grid', placeItems: 'center', cursor: 'pointer', opacity: idx >= 0 && idx < cardsAll.length - 1 ? 1 : 0.25 }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1d1d1f" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6" /></svg>
@@ -1685,7 +1700,7 @@ function EditSheet(props: {
               <span style={{ fontSize: 11.5, fontWeight: 700, color: 'rgba(60,60,67,0.45)', letterSpacing: '0.03em' }}>문장 (여러 줄도 한 카드)</span>
               <textarea rows={3} value={state.editText} onChange={onEditText} placeholder="문장 전체를 쓰세요" style={{ fontSize: 16.5, fontWeight: 600, border: 'none', background: 'transparent', color: '#000', padding: '2px 0', resize: 'none', lineHeight: 1.5 }} />
             </div>
-            <div style={{ padding: '12px 14px', borderRadius: 13, background: 'rgba(120,120,128,0.08)', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '3px 2px', lineHeight: 1.9, overflowY: 'auto', minHeight: 0 }}>
+            <div style={{ padding: '12px 14px', borderRadius: 10, background: 'rgba(120,120,128,0.08)', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '3px 2px', lineHeight: 1.9, overflowY: 'auto', minHeight: 0 }}>
               {props.renderTokenChips(state.editTokens, -100, 15)}
               <span style={{ width: '100%', fontSize: 12.5, color: ACCENT_DEEP, fontWeight: 700, marginTop: 2 }}>가릴 단어를 탭하세요 · 누른 채 끌면 여러 단어가 한 빈칸이 돼요</span>
             </div>
@@ -1693,10 +1708,10 @@ function EditSheet(props: {
         )}
 
         <div style={{ display: 'flex', gap: 10, marginTop: 4, flexShrink: 0 }}>
-          <div onClick={props.onDelete} style={{ height: 54, padding: '0 20px', borderRadius: 16, background: 'rgba(255,59,48,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <div onClick={props.onDelete} style={{ height: 50, padding: '0 20px', borderRadius: 12, background: 'rgba(255,59,48,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
             <span style={{ fontSize: 16, fontWeight: 700, color: '#ff3b30' }}>삭제</span>
           </div>
-          <div onClick={save} style={{ flex: 1, height: 54, borderRadius: 16, background: ACCENT, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 8px 20px rgba(0,0,0,0.18)' }}>
+          <div onClick={save} style={{ flex: 1, height: 50, borderRadius: 12, background: ACCENT, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
             <span style={{ fontSize: 17, fontWeight: 700, color: '#fff' }}>저장</span>
           </div>
         </div>
@@ -1718,22 +1733,22 @@ function SettingsSheet(props: { roomCode: string; onClose: () => void; onChangeR
   return (
     <>
       <div onClick={props.onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.28)', zIndex: 15 }} />
-      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, borderRadius: '28px 28px 0 0', background: '#fff', padding: '18px 20px 42px', display: 'flex', flexDirection: 'column', gap: 14, boxShadow: '0 -12px 40px rgba(0,0,0,0.16)', animation: 'sheetUp 0.32s cubic-bezier(0.3,0.9,0.4,1)', zIndex: 16 }}>
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, borderRadius: '20px 20px 0 0', background: '#fff', padding: '18px 20px 42px', display: 'flex', flexDirection: 'column', gap: 14, boxShadow: '0 -12px 40px rgba(0,0,0,0.16)', animation: 'sheetUp 0.32s cubic-bezier(0.3,0.9,0.4,1)', zIndex: 16 }}>
         <div style={{ width: 40, height: 5, borderRadius: 3, background: 'rgba(120,120,128,0.25)', alignSelf: 'center' }} />
         <div style={{ fontSize: 20, fontWeight: 800 }}>내 아이디</div>
         <div style={{ fontSize: 13.5, color: 'rgba(60,60,67,0.6)', lineHeight: 1.5 }}>다른 기기(PC·아이폰)에서 <strong style={{ color: '#1d1d1f' }}>같은 아이디</strong>로 접속하면 같은 암기장을 봐요. 아이디를 잊지 않게 적어두거나 복사해 두세요.</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, height: 56, borderRadius: 14, background: '#F7F7F9', padding: '0 8px 0 16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, height: 52, borderRadius: 12, background: '#F7F7F9', padding: '0 8px 0 16px' }}>
           <span style={{ flex: 1, fontSize: 18, fontWeight: 800, color: '#1d1d1f', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{props.roomCode}</span>
-          <div onClick={copy} style={{ height: 40, padding: '0 16px', borderRadius: 11, background: copied ? 'rgba(52,199,89,0.15)' : ACCENT, display: 'grid', placeItems: 'center', cursor: 'pointer', flexShrink: 0 }}>
+          <div onClick={copy} style={{ height: 40, padding: '0 16px', borderRadius: 9, background: copied ? 'rgba(52,199,89,0.15)' : ACCENT, display: 'grid', placeItems: 'center', cursor: 'pointer', flexShrink: 0 }}>
             <span style={{ fontSize: 14.5, fontWeight: 700, color: copied ? '#1e9e46' : '#fff' }}>{copied ? '복사됨 ✓' : '복사'}</span>
           </div>
         </div>
         <div style={{ height: 0.5, background: 'rgba(60,60,67,0.1)', margin: '2px 0' }} />
         <div style={{ fontSize: 12.5, fontWeight: 700, color: 'rgba(60,60,67,0.45)' }}>다른 아이디로 바꾸기</div>
-        <input value={value} onChange={(e) => setValue(e.target.value)} style={{ height: 52, borderRadius: 14, border: '1.5px solid rgba(60,60,67,0.15)', background: '#fff', padding: '0 14px', fontSize: 16, fontWeight: 600, color: '#000' }} />
+        <input value={value} onChange={(e) => setValue(e.target.value)} style={{ height: 48, borderRadius: 11, border: '1px solid rgba(60,60,67,0.18)', background: '#fff', padding: '0 14px', fontSize: 16, fontWeight: 600, color: '#000' }} />
         <div style={{ display: 'flex', gap: 10 }}>
-          <div onClick={props.onClose} style={{ flex: 1, height: 52, borderRadius: 14, background: 'rgba(120,120,128,0.12)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}><span style={{ fontSize: 16, fontWeight: 700, color: '#48484a' }}>닫기</span></div>
-          <div onClick={() => { if (changed) props.onChangeRoom(normalizeRoomCode(value)); }} style={{ flex: 1, height: 52, borderRadius: 14, background: changed ? ACCENT : 'rgba(120,120,128,0.12)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}><span style={{ fontSize: 16, fontWeight: 700, color: changed ? '#fff' : 'rgba(60,60,67,0.4)' }}>바꾸기</span></div>
+          <div onClick={props.onClose} style={{ flex: 1, height: 48, borderRadius: 11, background: 'rgba(120,120,128,0.12)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}><span style={{ fontSize: 16, fontWeight: 700, color: '#48484a' }}>닫기</span></div>
+          <div onClick={() => { if (changed) props.onChangeRoom(normalizeRoomCode(value)); }} style={{ flex: 1, height: 48, borderRadius: 11, background: changed ? ACCENT : 'rgba(120,120,128,0.12)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}><span style={{ fontSize: 16, fontWeight: 700, color: changed ? '#fff' : 'rgba(60,60,67,0.4)' }}>바꾸기</span></div>
         </div>
       </div>
     </>
