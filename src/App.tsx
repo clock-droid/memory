@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { ChangeEvent, PointerEvent as ReactPointerEvent } from 'react';
-import { TriangleAlert } from 'lucide-react';
 import { createFirebaseRepository } from './firebase';
 import { createLocalRepository } from './localRepository';
 import { createServerRepository } from './serverRepository';
@@ -271,19 +270,10 @@ type UIState = {
   rowDrag: { id: string; x: number; base: number } | null;
   reorder: { id: string; dy: number; overId?: string | null } | null;
   sel: { ri: number; start: number; end: number; wasHidden: boolean } | null;
-  sheetOpen: boolean;
-  addTab: 'type' | 'paste';
+  slotOpen: boolean;
   pasteText: string;
   pasteMode: 'auto' | 'one';
   sheetRows: Row[];
-  rowSel: { a: number; b: number } | null;
-  rowSelDragging: boolean;
-  typeMode: 'qa' | 'cloze';
-  typeQ: string;
-  typeA: string;
-  typeText: string;
-  typeTokens: Token[];
-  typeAdded: number;
   editSheetOpen: boolean;
   editIdx: number | null;
   editMode: 'qa' | 'tokens';
@@ -301,8 +291,7 @@ const initialUI: UIState = {
   queue: [], sessionTotal: 0, sessionDone: 0, revealedIdx: [], review: false,
   dragX: 0, dragging: false, snap: false,
   openRowId: null, rowDrag: null, reorder: null, sel: null,
-  sheetOpen: false, addTab: 'type', pasteText: '', pasteMode: 'auto', sheetRows: [], rowSel: null, rowSelDragging: false,
-  typeMode: 'cloze', typeQ: '', typeA: '', typeText: '', typeTokens: [], typeAdded: 0,
+  slotOpen: false, pasteText: '', pasteMode: 'auto', sheetRows: [],
   editSheetOpen: false, editIdx: null, editMode: 'qa', editQ: '', editA: '', editText: '', editTokens: [],
   settingsOpen: false, toastMsg: '', toastVisible: false,
 };
@@ -401,7 +390,6 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
         return tokens.map((t, i) => (!t.nl && i >= lo && i <= hi ? { ...t, hidden: true, gid: g } : t));
       };
       if (sel.ri === -100) return { editTokens: apply(st.editTokens), sel: null };
-      if (sel.ri === -200) return { typeTokens: apply(st.typeTokens), sel: null };
       return {
         sheetRows: st.sheetRows.map((r, ri) => (ri === sel.ri && r.kind === 'tokens' ? { ...r, tokens: apply(r.tokens) } : r)),
         sel: null,
@@ -451,10 +439,7 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
     const up = () => {
       commitSelection();
       window.clearTimeout(lpTimer.current);
-      dispatch((st) => ({
-        ...(st.reorder ? { reorder: null } : {}),
-        ...(st.rowSelDragging ? { rowSelDragging: false } : {}),
-      }));
+      dispatch((st) => (st.reorder ? { reorder: null } : {}));
     };
     window.addEventListener('pointerup', up);
     window.addEventListener('pointercancel', up);
@@ -558,10 +543,7 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
       let deckId = decks.find((d) => d.name === '일반')?.id;
       if (!deckId) deckId = await repository.addDeck('일반');
       const sectionId = await repository.addSection(deckId, '새 목록');
-      dispatch({
-        view: 'deck', activeSectionId: sectionId, sheetOpen: true, addTab: 'type',
-        typeMode: 'cloze', typeQ: '', typeA: '', typeText: '', typeTokens: [], typeAdded: 0, pasteText: '', sheetRows: [],
-      });
+      dispatch({ view: 'deck', activeSectionId: sectionId, slotOpen: true, pasteText: '', sheetRows: [] });
     } catch {
       toast('목록을 만들지 못했어요');
     }
@@ -681,8 +663,10 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
       const marked = t.hidden || inSel;
       return {
         brk: false as const, key: ti, word: t.word, tail: t.tail,
-        bg: marked ? ACCENT : '#fff', fg: marked ? '#fff' : '#1d1d1f', fw: marked ? 700 : 600, padX: marked ? 8 : 6,
-        bd: marked ? '1px solid transparent' : '1px solid rgba(60,60,67,0.12)',
+        // plain words, blue cover on the marked ones — reads as "text with parts
+        // painted over", not a pile of buttons
+        bg: marked ? ACCENT : 'transparent', fg: marked ? '#fff' : '#1d1d1f', fw: marked ? 700 : 600, padX: marked ? 8 : 3,
+        bd: '1px solid transparent',
         onDown: (e: ReactPointerEvent) => {
           e.stopPropagation();
           try { (e.target as Element).releasePointerCapture?.(e.pointerId); } catch { /* noop */ }
@@ -741,7 +725,10 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
           onMove={moveCard}
           onDeleteList={deleteList}
           onStart={(ids) => startStudy(activeList.id, ids)}
-          onOpenSheet={() => dispatch({ sheetOpen: true, addTab: 'type', pasteText: '', sheetRows: [], typeMode: 'cloze', typeQ: '', typeA: '', typeText: '', typeTokens: [], typeAdded: 0, openRowId: null })}
+          onAddCards={(cards) => {
+            const stored = storedCardsOf(activeList.deckId, activeList.id);
+            commitSection(activeList.deckId, activeList.id, [...stored.map((c) => keepCard(c)), ...cards]);
+          }}
           renderTokenChips={renderTokenChips}
           toast={toast}
         />
@@ -754,14 +741,6 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
           onDeck={() => dispatch({ view: 'deck', queue: [], revealedIdx: [], dragX: 0, openRowId: null })}
           onRetryRemaining={() => activeList && startStudy(activeList.id)}
           onReviewAll={() => activeList && startStudy(activeList.id, activeList.cards.map((c) => c.id))}
-        />
-      )}
-
-      {/* ---- add sheet ---- */}
-      {state.sheetOpen && activeList && (
-        <AddSheet
-          list={activeList} state={state} dispatch={dispatch} storedCardsOf={storedCardsOf}
-          commitSection={commitSection} renderTokenChips={renderTokenChips} toast={toast} commitSelection={commitSelection}
         />
       )}
 
@@ -935,12 +914,14 @@ function DeckView(props: {
   onHome: () => void; onRename: (name: string) => void; onToggleMem: (card: ProtoCard) => void;
   onDelete: (card: ProtoCard) => void; onEdit: (card: ProtoCard) => void; onMove: (draggedId: string, targetId: string) => void;
   onDeleteList: () => void;
-  onStart: (ids: string[]) => void; onOpenSheet: () => void;
+  onStart: (ids: string[]) => void; onAddCards: (cards: NewCard[]) => void;
   renderTokenChips: (tokens: Token[], ri: number, fontSize: number) => React.ReactNode; toast: (msg: string) => void;
 }) {
   const { list, state, dispatch, weakFirst, lpTimer, rowStart } = props;
   const [nameDraft, setNameDraft] = useState(list.name);
   const nameTimer = useRef<number | undefined>(undefined);
+  const slotRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => { if (state.slotOpen) slotRef.current?.scrollIntoView({ block: 'nearest' }); }, [state.slotOpen]);
   // Row gestures (swipe-delete, long-press reorder) are invisible — explain them
   // once on the first deck visit, then stay quiet.
   const [showGuide] = useState(() => !localStorage.getItem('exam-memorizer-hint-seen'));
@@ -1119,10 +1100,9 @@ function DeckView(props: {
       )}
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '2px 16px 130px', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-        {deckTotal === 0 && (
-          <div style={{ padding: '38px 20px', textAlign: 'center', color: 'rgba(60,60,67,0.58)', fontSize: 15, lineHeight: 1.6, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
-            <div>아직 카드가 없어요.<br />시험에 나올 문장 하나부터 넣어보세요.</div>
-            <EmptyStateAction label="첫 카드 추가" onClick={props.onOpenSheet} />
+        {deckTotal === 0 && !state.slotOpen && (
+          <div style={{ padding: '26px 20px 12px', textAlign: 'center', color: 'rgba(60,60,67,0.58)', fontSize: 14.5, lineHeight: 1.6 }}>
+            아직 카드가 없어요.<br />아래 칸에 시험에 나올 문장 하나부터 넣어보세요.
           </div>
         )}
         {rows.map((row, idx) => {
@@ -1174,10 +1154,22 @@ function DeckView(props: {
             </div>
           );
         })}
+
+        {/* 새 카드는 목록 맨 끝에서 바로 만든다 — 시트 없음 */}
+        <div ref={slotRef} style={{ marginTop: rows.length > 0 ? 10 : 0, flexShrink: 0 }}>
+          {!state.slotOpen ? (
+            <div onClick={() => dispatch({ slotOpen: true, openRowId: null })} role="button" aria-label="새 카드" style={{ background: '#fff', borderRadius: 12, padding: '13px 14px', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={ACCENT} strokeWidth="2.2" strokeLinecap="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
+              <span style={{ fontSize: 14, fontWeight: 600, color: ACCENT }}>새 카드</span>
+            </div>
+          ) : (
+            <NewCardSlot state={state} dispatch={dispatch} renderTokenChips={props.renderTokenChips} onAddCards={props.onAddCards} toast={props.toast} />
+          )}
+        </div>
       </div>
 
       <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '12px 16px calc(env(safe-area-inset-bottom) + 20px)', background: 'linear-gradient(180deg,rgba(242,242,247,0) 0%,#F2F2F7 32%)', display: 'flex', gap: 10 }}>
-        <div onClick={props.onOpenSheet} style={{ height: 50, padding: '0 18px', borderRadius: 12, background: '#fff', border: '1px solid rgba(60,60,67,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer', flexShrink: 0 }}>
+        <div onClick={() => { dispatch({ slotOpen: true, openRowId: null }); slotRef.current?.scrollIntoView({ block: 'nearest' }); }} style={{ height: 50, padding: '0 18px', borderRadius: 12, background: '#fff', border: '1px solid rgba(60,60,67,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer', flexShrink: 0 }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1d1d1f" strokeWidth="2.4" strokeLinecap="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
           <span style={{ fontSize: 14.5, fontWeight: 700 }}>추가</span>
         </div>
@@ -1191,6 +1183,109 @@ function DeckView(props: {
         >
           <svg width="13" height="15" viewBox="0 0 16 18"><path d="M2 1.5v15l13-7.5z" fill={startEnabled ? '#fff' : 'rgba(60,60,67,0.35)'} /></svg>
           <span style={{ fontSize: 15.5, fontWeight: 700, color: startEnabled ? '#fff' : 'rgba(60,60,67,0.35)' }}>{startLabel}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ================================================================ NEW CARD SLOT
+// 카드 추가는 목록 맨 끝의 인라인 편집기에서 이뤄진다: 위 칸에 문장을 쓰면
+// 바로 아래에 같은 문장이 나타나고, 거기서 가릴 단어를 탭한 뒤 완료.
+// 여러 줄을 쓰거나 붙여넣으면 줄마다 한 문제(전환 가능), "질문: 답"은 자동 인식.
+function NewCardSlot(props: {
+  state: UIState; dispatch: (p: Patch) => void;
+  renderTokenChips: (tokens: Token[], ri: number, fontSize: number) => React.ReactNode;
+  onAddCards: (cards: NewCard[]) => void; toast: (msg: string) => void;
+}) {
+  const { state, dispatch } = props;
+  const taRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // re-parse on every keystroke but keep words the user already masked
+  const reparse = (text: string, mode: 'auto' | 'one') => (st: UIState): Partial<UIState> => {
+    const hiddenWords = new Set(
+      st.sheetRows.flatMap((r) => (r.kind === 'tokens' ? r.tokens.filter((t) => t.hidden).map((t) => t.word) : [])),
+    );
+    let g = 7000;
+    const rows = parsePaste(text, mode).map((r) =>
+      r.kind === 'tokens'
+        ? { ...r, tokens: r.tokens.map((t) => (!t.nl && hiddenWords.has(t.word) ? { ...t, hidden: true, gid: g++ } : t)) }
+        : r,
+    );
+    return { pasteText: text, pasteMode: mode, sheetRows: rows };
+  };
+
+  const validRows = state.sheetRows.filter((r) => r.kind === 'qa' || r.tokens.some((t) => t.hidden));
+  const tokenRows = state.sheetRows.filter((r) => r.kind === 'tokens');
+  const incomplete = tokenRows.filter((r) => r.kind === 'tokens' && !r.tokens.some((t) => t.hidden)).length;
+  const blanks = tokenRows.reduce((n, r) => n + (r.kind === 'tokens' && r.tokens.some((t) => t.hidden) ? tokensToCard(r.tokens).a.length : 0), 0);
+  const multi = state.sheetRows.length > 1;
+
+  const add = () => {
+    if (validRows.length === 0) return;
+    const cards = validRows.map((r) => {
+      if (r.kind === 'qa') return qaToNewCard(r.q, [r.a], false);
+      const { q, a } = tokensToCard(r.tokens);
+      return qaToNewCard(q, a, false);
+    });
+    props.onAddCards(cards);
+    dispatch({ pasteText: '', sheetRows: [] });
+    taRef.current?.focus();
+    props.toast(cards.length > 1 ? `${cards.length}문제를 추가했어요` : '추가했어요');
+  };
+
+  return (
+    <div style={{ background: '#fff', borderRadius: 12, padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ background: '#F5F5F7', borderRadius: 10, padding: '9px 12px' }}>
+        <textarea
+          ref={taRef}
+          autoFocus
+          rows={Math.min(5, Math.max(2, state.pasteText.split('\n').length))}
+          value={state.pasteText}
+          onChange={(e) => dispatch(reparse(e.target.value, state.pasteMode))}
+          placeholder={'시험에 나올 문장\n("질문: 답"도, 여러 줄 붙여넣기도 돼요)'}
+          style={{ width: '100%', border: 'none', background: 'transparent', color: '#000', fontSize: 15, fontWeight: 600, lineHeight: 1.6, resize: 'none', display: 'block' }}
+        />
+      </div>
+
+      {multi && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 11.5, fontWeight: 700, color: 'rgba(60,60,67,0.55)' }}>{state.sheetRows.length}줄</span>
+          <div style={{ display: 'flex', padding: 2, borderRadius: 8, background: 'rgba(120,120,128,0.12)' }}>
+            {([['auto', '줄마다 한 문제'], ['one', '전체를 한 문제로']] as const).map(([mode, label]) => (
+              <span key={mode} onClick={() => dispatch(reparse(state.pasteText, mode))} style={{ padding: '4px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: state.pasteMode === mode ? '#fff' : 'transparent', color: state.pasteMode === mode ? '#1d1d1f' : 'rgba(60,60,67,0.5)', boxShadow: state.pasteMode === mode ? '0 1px 2px rgba(0,0,0,0.1)' : 'none' }}>{label}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {state.sheetRows.map((r, ri) =>
+        r.kind === 'qa' ? (
+          <div key={ri} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 11px', borderRadius: 10, background: 'rgba(120,120,128,0.07)' }}>
+            <span style={{ flex: 1, fontSize: 14, fontWeight: 600, lineHeight: 1.5, wordBreak: 'keep-all' }}>{r.q}</span>
+            <span style={{ fontSize: 14, fontWeight: 700, color: ACCENT_DEEP, flexShrink: 0 }}>{r.a}</span>
+          </div>
+        ) : (
+          <div key={ri} style={{ padding: '8px 11px', borderRadius: 10, background: 'rgba(120,120,128,0.07)', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '3px 2px', lineHeight: 1.9 }}>
+            {props.renderTokenChips(r.tokens, ri, 15)}
+          </div>
+        ),
+      )}
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        {incomplete > 0 && validRows.length > 0 ? (
+          <span style={{ fontSize: 11.5, fontWeight: 600, color: '#c26a00' }}>{incomplete}줄은 가릴 단어가 없어 빠져요</span>
+        ) : blanks > 0 ? (
+          <span style={{ fontSize: 11.5, fontWeight: 700, color: ACCENT_DEEP, background: ACCENT_SOFT, borderRadius: 7, padding: '4px 9px' }}>빈칸 {blanks}</span>
+        ) : tokenRows.length > 0 ? (
+          <span style={{ fontSize: 11.5, fontWeight: 600, color: ACCENT_DEEP }}>위 문장에서 가릴 단어를 탭하세요</span>
+        ) : null}
+        <div style={{ flex: 1 }} />
+        <div onClick={() => dispatch({ slotOpen: false, pasteText: '', sheetRows: [] })} style={{ padding: '9px 12px', cursor: 'pointer' }}>
+          <span style={{ fontSize: 14, fontWeight: 600, color: 'rgba(60,60,67,0.55)' }}>취소</span>
+        </div>
+        <div onClick={add} style={{ height: 40, padding: '0 18px', borderRadius: 10, background: validRows.length > 0 ? ACCENT : 'rgba(0,122,255,0.28)', display: 'grid', placeItems: 'center', cursor: 'pointer', transition: 'background 0.15s' }}>
+          <span style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>{validRows.length > 1 ? `${validRows.length}문제 완료` : '완료'}</span>
         </div>
       </div>
     </div>
@@ -1374,252 +1469,6 @@ function StudyView(props: {
         )}
       </div>
     </div>
-  );
-}
-
-// ================================================================ ADD SHEET
-function AddSheet(props: {
-  list: ProtoList; state: UIState; dispatch: (p: Patch) => void;
-  storedCardsOf: (deckId: string, sectionId: string) => Card[];
-  commitSection: (deckId: string, sectionId: string, cards: OptimisticNewCard[]) => void;
-  renderTokenChips: (tokens: Token[], ri: number, fontSize: number) => React.ReactNode;
-  toast: (msg: string) => void; commitSelection: () => void;
-}) {
-  const { list, state, dispatch } = props;
-
-  const setTypeCloze = () => {
-    if (state.typeMode === 'cloze') return;
-    const patch: Partial<UIState> = { typeMode: 'cloze' };
-    if (state.typeQ.trim() || state.typeA.trim()) {
-      const text = (state.typeQ.trim() + (state.typeA.trim() ? ' ' + state.typeA.trim() : '')).trim();
-      let toks = tokenizeText(text);
-      if (state.typeA.trim()) {
-        const aWords = new Set(state.typeA.split(/[,\s]+/).map((w) => w.trim()).filter(Boolean));
-        let g = 8000;
-        toks = toks.map((t) => (!t.nl && aWords.has(t.word) ? { ...t, hidden: true, gid: g++ } : t));
-      }
-      patch.typeText = text; patch.typeTokens = toks;
-    }
-    dispatch(patch);
-  };
-  const setTypeQA = () => {
-    if (state.typeMode === 'qa') return;
-    const patch: Partial<UIState> = { typeMode: 'qa' };
-    if (state.typeText.trim()) {
-      const ans = state.typeTokens.filter((t) => t.hidden).map((t) => t.word);
-      const vis = tokensToText(state.typeTokens.filter((t) => !t.hidden || t.nl));
-      patch.typeQ = vis || state.typeText.trim();
-      if (ans.length) patch.typeA = ans.join(', ');
-    }
-    dispatch(patch);
-  };
-  const onTypeText = (e: ChangeEvent<HTMLTextAreaElement>) => {
-    const text = e.target.value;
-    const hiddenWords = new Set(state.typeTokens.filter((t) => t.hidden).map((t) => t.word));
-    let g = 7000;
-    const tokens = tokenizeText(text).map((t) => (!t.nl && hiddenWords.has(t.word) ? { ...t, hidden: true, gid: g++ } : t));
-    dispatch({ typeText: text, typeTokens: tokens });
-  };
-  const typeCanAdd = state.typeMode === 'qa' ? !!(state.typeQ.trim() && state.typeA.trim()) : state.typeTokens.some((t) => t.hidden);
-  const typeAdd = () => {
-    let q: string; let a: string[];
-    if (state.typeMode === 'qa') {
-      q = state.typeQ.trim(); a = state.typeA.split(',').map((x) => x.trim()).filter(Boolean);
-      if (!q || a.length === 0) { props.toast('질문과 답을 입력하세요'); return; }
-    } else {
-      if (!state.typeTokens.some((t) => t.hidden)) { props.toast('가릴 단어를 탭하세요'); return; }
-      const r = tokensToCard(state.typeTokens); q = r.q; a = r.a;
-    }
-    const stored = props.storedCardsOf(list.deckId, list.id);
-    props.commitSection(list.deckId, list.id, [...stored.map((c) => keepCard(c)), qaToNewCard(q, a, false)]);
-    dispatch((st) => ({ typeAdded: st.typeAdded + 1, typeQ: '', typeA: '', typeText: '', typeTokens: [] }));
-    props.toast('추가했어요');
-  };
-
-  const onPaste = (e: ChangeEvent<HTMLTextAreaElement>) => dispatch({ pasteText: e.target.value, sheetRows: parsePaste(e.target.value, state.pasteMode), rowSel: null });
-
-  const rs = state.rowSel;
-  const rsLo = rs ? Math.min(rs.a, rs.b) : -1;
-  const rsHi = rs ? Math.max(rs.a, rs.b) : -1;
-  const rowSelCount = rs ? rsHi - rsLo + 1 : 0;
-  const validRows = state.sheetRows.filter((r) => r.kind === 'qa' || r.tokens.some((t) => t.hidden));
-  const incompleteRows = state.sheetRows.filter((r) => r.kind === 'tokens' && !r.tokens.some((t) => t.hidden)).length;
-
-  const mergeRowSel = () => {
-    if (rowSelCount <= 1) return;
-    dispatch((st) => {
-      const rows = [...st.sheetRows];
-      if (rsLo < 0 || rsHi >= rows.length || rsLo >= rsHi) return { rowSel: null };
-      const toToks = (r: Row, g: number): Token[] => (r.kind === 'tokens' ? r.tokens : [
-        ...tokenizeText(r.q),
-        { word: ':', tail: '', hidden: false, gid: 0 },
-        ...tokenizeText(r.a).map((t) => (t.nl ? t : { ...t, hidden: true, gid: g })),
-      ]);
-      const tokens: Token[] = [];
-      for (let i = rsLo; i <= rsHi; i += 1) {
-        if (i > rsLo) tokens.push({ nl: true, word: '', tail: '', hidden: false, gid: 0 });
-        tokens.push(...toToks(rows[i], 9000 + i * 3));
-      }
-      rows.splice(rsLo, rsHi - rsLo + 1, { kind: 'tokens', tokens });
-      return { sheetRows: rows, rowSel: null };
-    });
-    props.toast(`${rowSelCount}줄을 한 문제로 묶었어요`);
-  };
-
-  const addParsed = () => {
-    if (validRows.length === 0) return;
-    const newCards = validRows.map((r) => {
-      if (r.kind === 'qa') return qaToNewCard(r.q, [r.a], false);
-      const { q, a } = tokensToCard(r.tokens);
-      return qaToNewCard(q, a, false);
-    });
-    const stored = props.storedCardsOf(list.deckId, list.id);
-    props.commitSection(list.deckId, list.id, [...stored.map((c) => keepCard(c)), ...newCards]);
-    dispatch({ sheetOpen: false, pasteText: '', sheetRows: [] });
-    props.toast(`${newCards.length}문제를 추가했어요`);
-  };
-
-  const seg = (active: boolean) => ({ background: active ? '#fff' : 'transparent', color: active ? '#1d1d1f' : 'rgba(60,60,67,0.5)' });
-  const chip = (active: boolean) => ({ background: active ? ACCENT : 'rgba(120,120,128,0.12)', color: active ? '#fff' : '#48484a' });
-
-  return (
-    <>
-      <div onClick={() => dispatch({ sheetOpen: false })} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.28)', zIndex: 15 }} />
-      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, borderRadius: '20px 20px 0 0', background: '#fff', padding: '18px 20px 42px', display: 'flex', flexDirection: 'column', gap: 12, boxShadow: '0 -12px 40px rgba(0,0,0,0.16)', animation: 'sheetUp 0.32s cubic-bezier(0.3,0.9,0.4,1)', maxHeight: '82%', zIndex: 16 }}>
-        <div style={{ width: 40, height: 5, borderRadius: 3, background: 'rgba(120,120,128,0.25)', alignSelf: 'center', flexShrink: 0 }} />
-        <div onClick={() => dispatch({ sheetOpen: false })} style={{ position: 'absolute', top: 12, right: 14, padding: '8px 12px', borderRadius: 12, cursor: 'pointer', zIndex: 1 }}>
-          <span style={{ fontSize: 16, fontWeight: 700, color: ACCENT }}>완료</span>
-        </div>
-        <div style={{ display: 'flex', gap: 4, padding: 3, borderRadius: 10, background: 'rgba(120,120,128,0.1)', flexShrink: 0 }}>
-          <div onClick={() => dispatch({ addTab: 'type' })} style={{ flex: 1, height: 36, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'background 0.15s', ...seg(state.addTab === 'type') }}><span style={{ fontSize: 15, fontWeight: 700 }}>직접 쓰기</span></div>
-          <div onClick={() => dispatch({ addTab: 'paste' })} style={{ flex: 1, height: 36, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'background 0.15s', ...seg(state.addTab === 'paste') }}><span style={{ fontSize: 15, fontWeight: 700 }}>붙여넣기</span></div>
-        </div>
-
-        {state.addTab === 'type' ? (
-          <>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0, overflowY: 'auto' }}>
-              <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-                <div onClick={setTypeCloze} style={{ padding: '7px 14px', borderRadius: 9, cursor: 'pointer', ...chip(state.typeMode === 'cloze') }}><span style={{ fontSize: 13.5, fontWeight: 700 }}>빈칸형</span></div>
-                <div onClick={setTypeQA} style={{ padding: '7px 14px', borderRadius: 9, cursor: 'pointer', ...chip(state.typeMode === 'qa') }}><span style={{ fontSize: 13.5, fontWeight: 700 }}>문답형</span></div>
-              </div>
-              <div style={{ fontSize: 12.5, color: 'rgba(60,60,67,0.55)', fontWeight: 600, flexShrink: 0, marginTop: -4 }}>
-                {state.typeMode === 'cloze' ? '문장을 쓰고, 시험에서 가릴 단어만 탭하면 돼요' : '질문을 보고 답을 떠올리는 카드예요'}
-              </div>
-              {state.typeMode === 'qa' ? (
-                <div style={{ padding: '14px 16px', borderRadius: 12, background: '#F7F7F9', display: 'flex', flexDirection: 'column', gap: 9 }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                    <span style={{ fontSize: 11.5, fontWeight: 700, color: 'rgba(60,60,67,0.45)', letterSpacing: '0.03em' }}>질문</span>
-                    <textarea rows={2} value={state.typeQ} onChange={(e) => dispatch({ typeQ: e.target.value })} placeholder="예: 대통령 임기" style={{ fontSize: 17, fontWeight: 600, border: 'none', background: 'transparent', color: '#000', padding: '2px 0', resize: 'none', lineHeight: 1.5 }} />
-                  </div>
-                  <div style={{ height: 0.5, background: 'rgba(60,60,67,0.12)' }} />
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                    <span style={{ fontSize: 11.5, fontWeight: 700, color: ACCENT, opacity: 0.75, letterSpacing: '0.03em' }}>답 (가려짐)</span>
-                    <input value={state.typeA} onChange={(e) => dispatch({ typeA: e.target.value })} placeholder="예: 5년" style={{ fontSize: 17, fontWeight: 600, border: 'none', background: 'transparent', color: ACCENT_DEEP, padding: '2px 0' }} />
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div style={{ padding: '14px 16px', borderRadius: 12, background: '#F7F7F9', display: 'flex', flexDirection: 'column', gap: 2 }}>
-                    <span style={{ fontSize: 11.5, fontWeight: 700, color: 'rgba(60,60,67,0.45)', letterSpacing: '0.03em' }}>문장 (여러 줄도 한 카드)</span>
-                    <textarea rows={3} value={state.typeText} onChange={onTypeText} placeholder={'예: 커피의 종류\n1. 아메리카노 : 맛이 아주 쓰다'} style={{ fontSize: 16.5, fontWeight: 600, border: 'none', background: 'transparent', color: '#000', padding: '2px 0', resize: 'none', lineHeight: 1.5 }} />
-                  </div>
-                  {state.typeTokens.length > 0 && (
-                    <div style={{ padding: '12px 14px', borderRadius: 10, background: 'rgba(120,120,128,0.08)', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '3px 2px', lineHeight: 1.9 }}>
-                      {props.renderTokenChips(state.typeTokens, -200, 15)}
-                      {state.typeTokens.some((t) => t.hidden) ? (
-                        <span style={{ width: '100%', fontSize: 12.5, color: '#1e9e46', fontWeight: 700, marginTop: 4 }}>
-                          시험 화면: {tokensToCard(state.typeTokens).q.replace(/\n/g, ' / ')}
-                        </span>
-                      ) : (
-                        <span style={{ width: '100%', fontSize: 12.5, color: ACCENT_DEEP, fontWeight: 700, marginTop: 2 }}>가릴 단어를 탭하세요 · 누른 채 끌면 여러 단어가 한 빈칸이 돼요</span>
-                      )}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-            <div style={{ textAlign: 'center', fontSize: 12.5, color: 'rgba(60,60,67,0.45)', fontWeight: 600, flexShrink: 0 }}>{state.typeAdded > 0 ? `이 목록에 ${state.typeAdded}개 추가됨 — 다 쓰셨으면 오른쪽 위 '완료'` : '입력하면 목록에 한 장씩 쌓여요'}</div>
-            <div onClick={typeAdd} style={{ height: 50, borderRadius: 12, background: typeCanAdd ? ACCENT : 'rgba(120,120,128,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, cursor: 'pointer', flexShrink: 0, transition: 'background 0.2s' }}>
-              {typeCanAdd && <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>}
-              <span style={{ fontSize: 17, fontWeight: 700, color: typeCanAdd ? '#fff' : 'rgba(60,60,67,0.4)' }}>
-                {typeCanAdd ? '추가하고 계속'
-                  : state.typeMode === 'cloze' && state.typeText.trim() ? '위에서 가릴 단어를 탭하세요'
-                  : state.typeMode === 'cloze' ? '문장을 입력하세요'
-                  : '질문과 답을 입력하세요'}
-              </span>
-            </div>
-          </>
-        ) : (
-          <>
-            <div style={{ fontSize: 13.5, color: 'rgba(60,60,67,0.6)', lineHeight: 1.5, flexShrink: 0 }}>붙여넣으면 줄마다 한 문제. <strong style={{ color: '#1d1d1f' }}>가릴 단어는 탭</strong>(끌면 여러 단어), <strong style={{ color: '#1d1d1f' }}>줄을 세로로 쓸면</strong> 여러 줄을 한 문제로 묶어요</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-              <span style={{ fontSize: 12.5, fontWeight: 700, color: 'rgba(60,60,67,0.45)' }}>나누기</span>
-              <div onClick={() => dispatch((st) => ({ pasteMode: 'auto', sheetRows: parsePaste(st.pasteText, 'auto'), rowSel: null }))} style={{ padding: '7px 13px', borderRadius: 9, cursor: 'pointer', ...chip(state.pasteMode === 'auto') }}><span style={{ fontSize: 13, fontWeight: 700 }}>자동 (줄·빈 줄)</span></div>
-              <div onClick={() => dispatch((st) => ({ pasteMode: 'one', sheetRows: parsePaste(st.pasteText, 'one'), rowSel: null }))} style={{ padding: '7px 13px', borderRadius: 9, cursor: 'pointer', ...chip(state.pasteMode === 'one') }}><span style={{ fontSize: 13, fontWeight: 700 }}>전체를 한 문제로</span></div>
-            </div>
-            <textarea rows={4} value={state.pasteText} onChange={onPaste} placeholder={'예시)\n헌법 개정 의결: 국회 재적 2/3 찬성'} style={{ border: '1px solid rgba(60,60,67,0.18)', borderRadius: 11, padding: '12px 14px', fontSize: 15.5, lineHeight: 1.6, resize: 'none', background: '#F7F7F9', color: '#000', flexShrink: 0 }} />
-            {state.sheetRows.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 7, overflowY: 'auto', minHeight: 0 }}>
-                {state.sheetRows.map((r, ri) => {
-                  const inRowSel = !!rs && ri >= rsLo && ri <= rsHi;
-                  const common = {
-                    background: inRowSel ? 'rgba(0,122,255,0.1)' : 'rgba(120,120,128,0.08)',
-                    border: inRowSel ? `2px solid ${ACCENT}` : '2px solid transparent',
-                  };
-                  const onRowDown = () => {
-                    if (state.rowSel && !state.rowSelDragging) {
-                      const lo = Math.min(state.rowSel.a, state.rowSel.b), hi = Math.max(state.rowSel.a, state.rowSel.b);
-                      if (ri >= lo && ri <= hi) { dispatch({ rowSel: null }); return; }
-                    }
-                    dispatch({ rowSelDragging: true, rowSel: { a: ri, b: ri } });
-                  };
-                  const onRowEnter = () => dispatch((st) => (st.rowSelDragging ? { rowSel: { a: st.rowSel!.a, b: ri } } : {}));
-                  if (r.kind === 'qa') {
-                    return (
-                      <div key={ri} onPointerDown={onRowDown} onPointerEnter={onRowEnter} style={{ padding: '9px 12px', borderRadius: 10, ...common, display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, touchAction: 'pan-y', transition: 'background 0.12s' }}>
-                        <span style={{ flex: 1, fontSize: 14.5, fontWeight: 600, lineHeight: 1.45, wordBreak: 'keep-all', pointerEvents: 'none' }}>{r.q}</span>
-                        <span style={{ fontSize: 14.5, fontWeight: 700, color: ACCENT_DEEP, flexShrink: 0, pointerEvents: 'none' }}>{r.a}</span>
-                      </div>
-                    );
-                  }
-                  const needsTap = !r.tokens.some((t) => t.hidden) && !(state.sel && state.sel.ri === ri) && !rs;
-                  return (
-                    <div key={ri} onPointerDown={onRowDown} onPointerEnter={onRowEnter} style={{ padding: '9px 12px', borderRadius: 10, ...common, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '3px 2px', flexShrink: 0, lineHeight: 1.9, touchAction: 'pan-y', transition: 'background 0.12s' }}>
-                      {props.renderTokenChips(r.tokens, ri, 14.5)}
-                      {needsTap && <span style={{ width: '100%', fontSize: 12.5, color: ACCENT_DEEP, fontWeight: 700, marginTop: 2 }}>가릴 단어를 탭하세요 · 누른 채 끌면 여러 단어가 한 빈칸이 돼요</span>}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            {rowSelCount > 1 && (
-              <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10, background: ACCENT_SOFT }}>
-                <span style={{ flex: 1, fontSize: 13.5, fontWeight: 700, color: ACCENT_DEEP }}>{rowSelCount}줄 선택됨 · 다시 누르면 해제</span>
-                <div onClick={mergeRowSel} style={{ height: 38, padding: '0 16px', borderRadius: 9, background: ACCENT, display: 'flex', alignItems: 'center', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>한 문제로 묶기</div>
-              </div>
-            )}
-            {incompleteRows > 0 && (
-              <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 10, background: 'rgba(255,149,0,0.12)' }}>
-                <TriangleAlert size={17} strokeWidth={2.2} color="#a85b00" aria-hidden="true" />
-                <span style={{ flex: 1, fontSize: 12.5, fontWeight: 700, color: '#c26a00', lineHeight: 1.4 }}>{incompleteRows}줄은 가릴 단어를 안 정해서 빠져요 — 위에서 단어를 탭하세요</span>
-              </div>
-            )}
-            {state.sheetRows.length > 0 && (
-              <div style={{ flexShrink: 0, textAlign: 'center', fontSize: 12.5, fontWeight: 700, color: validRows.length > 0 ? 'rgba(60,60,67,0.66)' : 'rgba(60,60,67,0.5)' }}>
-                {validRows.length > 0
-                  ? incompleteRows > 0
-                    ? `${validRows.length}문제 추가 예정 · ${incompleteRows}줄 제외`
-                    : `${validRows.length}문제 추가 예정`
-                  : '가릴 단어를 정하면 추가할 수 있어요'}
-              </div>
-            )}
-            <div onClick={addParsed} style={{ height: 50, borderRadius: 12, background: validRows.length > 0 ? ACCENT : 'rgba(120,120,128,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, transition: 'background 0.2s' }}>
-              <span style={{ fontSize: 17, fontWeight: 700, color: validRows.length > 0 ? '#fff' : 'rgba(60,60,67,0.4)' }}>{validRows.length > 0 ? `${validRows.length}문제 추가` : state.sheetRows.length > 0 ? '가릴 단어를 탭하면 문제가 돼요' : '내용을 쓰면 문제를 찾아드려요'}</span>
-            </div>
-          </>
-        )}
-      </div>
-    </>
   );
 }
 
