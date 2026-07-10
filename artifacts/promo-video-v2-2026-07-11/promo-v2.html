@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>시험암기 모바일 빈칸 홍보 영상 v2</title>
+  <style>
+    html, body { margin: 0; background: #111; overflow: hidden; }
+    canvas { display: block; width: 540px; height: 960px; }
+    #status { position: fixed; left: 12px; top: 12px; color: white; font: 14px monospace; }
+  </style>
+</head>
+<body>
+  <canvas id="canvas" width="1080" height="1920"></canvas>
+  <div id="status">loading</div>
+  <script type="module">
+    const canvas = document.getElementById('canvas');
+    const context = canvas.getContext('2d', { alpha: false });
+    const status = document.getElementById('status');
+    const width = canvas.width;
+    const height = canvas.height;
+    const duration = 25;
+
+    const ink = '#111318';
+    const muted = '#656b76';
+    const blue = '#3478f6';
+    const blueDeep = '#155fce';
+    const blueSoft = '#e7f0ff';
+    const graySoft = '#ececef';
+    const warm = '#f5f4ef';
+    const coral = '#d95f54';
+
+    await document.fonts.ready;
+
+    function clamp(value, lower = 0, upper = 1) {
+      return Math.min(Math.max(value, lower), upper);
+    }
+
+    function smooth(value) {
+      const x = clamp(value);
+      return x * x * (3 - 2 * x);
+    }
+
+    function easeOut(value) {
+      const x = clamp(value);
+      return 1 - Math.pow(1 - x, 3);
+    }
+
+    function sceneAlpha(time, start, end, fade = 0.42) {
+      return Math.min(smooth((time - start) / fade), smooth((end - time) / fade));
+    }
+
+    function roundedPath(x, y, w, h, radius) {
+      const r = Math.min(radius, w / 2, h / 2);
+      context.beginPath();
+      context.moveTo(x + r, y);
+      context.arcTo(x + w, y, x + w, y + h, r);
+      context.arcTo(x + w, y + h, x, y + h, r);
+      context.arcTo(x, y + h, x, y, r);
+      context.arcTo(x, y, x + w, y, r);
+      context.closePath();
+    }
+
+    function roundedRect(x, y, w, h, radius, color, alpha = 1, shadow = false) {
+      context.save();
+      context.globalAlpha = alpha;
+      if (shadow) {
+        context.shadowColor = 'rgba(20, 24, 36, 0.14)';
+        context.shadowBlur = 32;
+        context.shadowOffsetY = 14;
+      }
+      roundedPath(x, y, w, h, radius);
+      context.fillStyle = color;
+      context.fill();
+      context.restore();
+    }
+
+    function text(value, x, y, maxWidth, size, weight, color, align = 'left', alpha = 1, lineHeight = size * 1.2) {
+      context.save();
+      context.globalAlpha = alpha;
+      context.fillStyle = color;
+      context.font = `${weight} ${size}px -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif`;
+      context.textAlign = align;
+      context.textBaseline = 'top';
+      const anchor = align === 'center' ? x + maxWidth / 2 : align === 'right' ? x + maxWidth : x;
+      for (const [index, line] of value.split('\n').entries()) {
+        context.fillText(line, anchor, y + index * lineHeight, maxWidth);
+      }
+      context.restore();
+    }
+
+    function drawTap(x, y, progress, color, alpha = 1) {
+      const p = clamp(progress);
+      const radius = 18 + 58 * p;
+      context.save();
+      context.globalAlpha = alpha * (1 - p);
+      context.strokeStyle = color;
+      context.lineWidth = 7 - 3 * p;
+      context.beginPath();
+      context.arc(x, y, radius, 0, Math.PI * 2);
+      context.stroke();
+      context.restore();
+      context.save();
+      context.globalAlpha = alpha * (1 - p * 0.4);
+      context.fillStyle = color;
+      context.beginPath();
+      context.arc(x, y, 14 - p * 4, 0, Math.PI * 2);
+      context.fill();
+      context.restore();
+    }
+
+    function drawBase(color = warm) {
+      context.fillStyle = color;
+      context.fillRect(0, 0, width, height);
+    }
+
+    function drawHook(time) {
+      const alpha = sceneAlpha(time, 0, 3.15, 0.28);
+      if (!alpha) return;
+      drawBase('#f7f7f4');
+      const entry = easeOut(time / 0.65);
+      text('시험암기', 90, 170, 900, 30, 750, muted, 'center', alpha);
+      text('플래시카드와는', 70, 530 + (1 - entry) * 50, 940, 92, 850, ink, 'center', alpha);
+      text('다르게', 70, 650 + (1 - entry) * 50, 940, 118, 850, blue, 'center', alpha);
+      roundedRect(372, 802, 336, 10, 5, blue, alpha);
+      text('답이 여러 개일 때, 차이가 보입니다.', 90, 930, 900, 39, 650, muted, 'center', alpha);
+    }
+
+    function drawFlashcard(time) {
+      const alpha = sceneAlpha(time, 2.65, 7.8);
+      if (!alpha) return;
+      drawBase('#f2f3f5');
+      const local = time - 2.65;
+      text('일반 플래시카드', 70, 120, 940, 34, 750, muted, 'center', alpha);
+      const card = { x: 120, y: 350, w: 840, h: 920 };
+      const revealAt = 2.05;
+      const delta = local - revealAt;
+      const flipping = Math.abs(delta) < 0.30;
+      const scaleX = flipping ? Math.max(0.04, Math.abs(delta) / 0.30) : 1;
+      context.save();
+      context.translate(card.x + card.w / 2, 0);
+      context.scale(scaleX, 1);
+      context.translate(-(card.x + card.w / 2), 0);
+      roundedRect(card.x, card.y, card.w, card.h, 38, '#ffffff', alpha, true);
+      if (delta < 0) {
+        text('질문', card.x + 60, card.y + 68, card.w - 120, 28, 750, muted, 'left', alpha);
+        text('국가 권력은\n무엇으로 나뉠까?', card.x + 72, card.y + 300, card.w - 144, 62, 850, ink, 'center', alpha, 82);
+        text('카드를 뒤집어 정답 확인', card.x + 70, card.y + 780, card.w - 140, 28, 600, muted, 'center', alpha);
+      } else {
+        text('정답', card.x + 60, card.y + 68, card.w - 120, 28, 750, muted, 'left', alpha);
+        const answers = ['입법부', '행정부', '사법부'];
+        answers.forEach((answer, index) => {
+          roundedRect(card.x + 105, card.y + 240 + index * 165, card.w - 210, 116, 20, '#f2f3f5', alpha);
+          text(answer, card.x + 125, card.y + 270 + index * 165, card.w - 250, 46, 800, ink, 'center', alpha);
+        });
+      }
+      context.restore();
+
+      if (local > 1.25 && local < 2.15) drawTap(540, 1130, (local - 1.25) / 0.9, coral, alpha);
+      const captionAlpha = smooth((local - 2.45) / 0.45) * alpha;
+      if (captionAlpha > 0) {
+        roundedRect(205, 1410, 670, 92, 18, '#fde7e4', captionAlpha);
+        text('한 번에 전부 공개', 225, 1432, 630, 38, 800, coral, 'center', captionAlpha);
+        text('하나만 확인하고 싶어도 나머지 답까지 보입니다.', 100, 1545, 880, 34, 600, muted, 'center', captionAlpha);
+      }
+    }
+
+    function drawAppState(revealedCount, alpha, destination) {
+      context.save();
+      context.globalAlpha = alpha;
+      text('×', destination.x + 42, destination.y + 42, 50, 42, 450, '#777b84', 'center', alpha);
+      roundedRect(destination.x + 150, destination.y + 72, destination.w - 290, 6, 3, '#e5e5e7', alpha);
+      text('1/1', destination.x + destination.w - 105, destination.y + 47, 70, 29, 650, '#777b84', 'center', alpha);
+      text('가림 3곳 · 핵심 구조', destination.x + 58, destination.y + 175, 600, 28, 600, '#9a9da5', 'left', alpha);
+      text('국가 권력은', destination.x + 58, destination.y + 275, 280, 50, 800, '#15171b', 'left', alpha);
+      text('·', destination.x + 492, destination.y + 280, 34, 50, 800, '#15171b', 'center', alpha);
+      text('·', destination.x + 682, destination.y + 280, 34, 50, 800, '#15171b', 'center', alpha);
+      text('로 나뉜다.', destination.x + 58, destination.y + 390, 320, 50, 800, '#15171b', 'left', alpha);
+      text(`화면을 탭하면 가림막이 하나씩 열려요 (${Math.min(revealedCount + 1, 3)}/3)`, destination.x + 80, destination.y + destination.h - 115, destination.w - 160, 26, 550, '#9a9da5', 'center', alpha);
+      context.restore();
+
+      const blanks = [
+        { x: destination.x + 340, answer: '입법부' },
+        { x: destination.x + 530, answer: '행정부' },
+        { x: destination.x + 720, answer: '사법부' },
+      ];
+      blanks.forEach((blank, index) => {
+        if (index >= revealedCount) roundedRect(blank.x, destination.y + 262, 150, 82, 16, index === revealedCount ? blueSoft : graySoft, alpha);
+      });
+      blanks.forEach((blank, index) => {
+        if (index >= revealedCount) return;
+        text(blank.answer, blank.x - 4, destination.y + 277, 158, 46, 850, blueDeep, 'center', alpha);
+        roundedRect(blank.x, destination.y + 352, 150, 5, 3, blue, alpha);
+      });
+    }
+
+    function drawCloze(time) {
+      const alpha = sceneAlpha(time, 7.25, 18.2);
+      if (!alpha) return;
+      drawBase('#ffffff');
+      const local = time - 7.25;
+      text('시험암기는', 70, 78, 940, 34, 750, muted, 'center', alpha);
+      text('빈칸을 하나씩 확인합니다.', 55, 135, 970, 62, 850, ink, 'center', alpha);
+      const destination = { x: 90, y: 330, w: 900, h: 1200 };
+      roundedRect(destination.x, destination.y, destination.w, destination.h, 30, '#ffffff', alpha, true);
+
+      const firstReveal = 2.85;
+      const secondReveal = 5.65;
+      const thirdReveal = 8.35;
+      const revealedCount = local >= thirdReveal ? 3 : local >= secondReveal ? 2 : local >= firstReveal ? 1 : 0;
+      drawAppState(revealedCount, alpha, destination);
+
+      const blankCenters = [
+        { x: destination.x + 415, y: destination.y + 303 },
+        { x: destination.x + 605, y: destination.y + 303 },
+        { x: destination.x + 795, y: destination.y + 303 },
+      ];
+      const taps = [firstReveal - 0.7, secondReveal - 0.7, thirdReveal - 0.7];
+      taps.forEach((tapAt, index) => {
+        if (local > tapAt && local < tapAt + 0.9) drawTap(blankCenters[index].x, blankCenters[index].y, (local - tapAt) / 0.9, blue, alpha);
+      });
+
+      let message = '세 개 모두 가린 채 시작';
+      let detail = '같은 문맥 안에서 병렬 항목을 함께 외워요.';
+      let accent = muted;
+      if (revealedCount === 1) {
+        message = '첫 번째만 확인';
+        detail = '나머지 두 빈칸은 그대로 가려져요.';
+        accent = blueDeep;
+      } else if (revealedCount === 2) {
+        message = '두 번째까지 확인';
+        detail = '마지막 답은 아직 보이지 않아요.';
+        accent = blueDeep;
+      } else if (revealedCount === 3) {
+        message = '필요한 순서대로 하나씩';
+        detail = '떠올린 다음에 다음 답을 확인합니다.';
+        accent = blueDeep;
+      }
+      roundedRect(120, 1580, 840, 190, 24, revealedCount ? '#eef5ff' : '#f3f3f4', alpha);
+      text(message, 160, 1615, 760, 46, 850, accent, 'center', alpha);
+      text(detail, 150, 1688, 780, 31, 650, muted, 'center', alpha);
+    }
+
+    function drawStatement(time) {
+      const alpha = sceneAlpha(time, 17.65, 22.05);
+      if (!alpha) return;
+      drawBase(ink);
+      text('플래시카드와는 다르게', 90, 230, 900, 32, 700, '#aab2bf', 'center', alpha);
+      text('여러 개는 함께 외우고', 70, 570, 940, 65, 850, '#ffffff', 'center', alpha);
+      text('답은 하나씩 확인.', 70, 690, 940, 84, 850, '#77a9ff', 'center', alpha);
+      const xValues = [305, 465, 625];
+      xValues.forEach((x, index) => {
+        roundedRect(x, 970, 130, 74, 16, index === 0 ? blue : '#3b3f48', alpha);
+      });
+      text('1', 305, 988, 130, 34, 800, '#ffffff', 'center', alpha);
+      text('2', 465, 988, 130, 34, 800, '#777f8d', 'center', alpha);
+      text('3', 625, 988, 130, 34, 800, '#777f8d', 'center', alpha);
+      text('하나를 봐도, 나머지는 답이 되지 않습니다.', 100, 1195, 880, 34, 600, '#aab2bf', 'center', alpha);
+    }
+
+    function drawEnd(time) {
+      const alpha = sceneAlpha(time, 21.45, 25.3, 0.42);
+      if (!alpha) return;
+      drawBase('#f7f7f4');
+      const local = time - 21.45;
+      const rise = (1 - easeOut(local / 0.6)) * 45;
+      text('시험암기', 70, 320 + rise, 940, 104, 850, ink, 'center', alpha);
+      text('플래시카드와는 다르게', 80, 510 + rise, 920, 40, 750, blue, 'center', alpha);
+      text('여러 개를 외워도\n답은 하나씩.', 90, 690 + rise, 900, 64, 850, ink, 'center', alpha, 84);
+      roundedRect(170, 1135, 740, 118, 24, blue, alpha, true);
+      text('모바일에서 시작하기', 195, 1168, 690, 40, 800, '#ffffff', 'center', alpha);
+      text('exam-memorizer-clockgo.netlify.app', 85, 1310, 910, 31, 600, muted, 'center', alpha);
+    }
+
+    function renderFrame(time) {
+      drawBase(warm);
+      drawHook(time);
+      drawFlashcard(time);
+      drawCloze(time);
+      drawStatement(time);
+      drawEnd(time);
+    }
+
+    function scheduleTone(audio, destination, frequency, start, length, volume, type = 'sine') {
+      const oscillator = audio.createOscillator();
+      const gain = audio.createGain();
+      oscillator.type = type;
+      oscillator.frequency.setValueAtTime(frequency, start);
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(volume, start + 0.018);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + length);
+      oscillator.connect(gain).connect(destination);
+      oscillator.start(start);
+      oscillator.stop(start + length + 0.02);
+    }
+
+    function scheduleAudio(audio, destination) {
+      const start = audio.currentTime + 0.08;
+      const master = audio.createGain();
+      master.gain.setValueAtTime(0.0001, start);
+      master.gain.exponentialRampToValueAtTime(0.68, start + 0.65);
+      master.gain.setValueAtTime(0.68, start + duration - 1.0);
+      master.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+      master.connect(destination);
+
+      for (let segment = 0; segment < 7; segment += 1) {
+        scheduleTone(audio, master, segment % 2 === 0 ? 146.83 : 174.61, start + segment * 4, 3.9, 0.020, 'sine');
+        scheduleTone(audio, master, segment % 2 === 0 ? 220.0 : 261.63, start + segment * 4, 3.9, 0.012, 'sine');
+      }
+      for (let beat = 0; beat < duration; beat += 1) {
+        scheduleTone(audio, master, 98, start + beat, 0.10, 0.035, 'sine');
+      }
+
+      // Flashcard: all answers arrive as one cluster.
+      [392, 493.88, 587.33].forEach((frequency) => scheduleTone(audio, master, frequency, start + 4.70, 0.34, 0.045, 'triangle'));
+      // Cloze: one distinct answer at a time.
+      [523.25, 659.25, 783.99].forEach((frequency, index) => scheduleTone(audio, master, frequency, start + [10.10, 12.90, 15.60][index], 0.28, 0.075, 'sine'));
+    }
+
+    async function uploadBlob(name, blob) {
+      const response = await fetch(`/save?name=${encodeURIComponent(name)}`, { method: 'POST', body: blob });
+      if (!response.ok) throw new Error(`Upload failed: ${name}`);
+    }
+
+    async function savePreviews() {
+      const times = [1.35, 5.25, 8.6, 10.55, 13.35, 19.25, 23.2];
+      for (let index = 0; index < times.length; index += 1) {
+        renderFrame(times[index]);
+        const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+        await uploadBlob(`preview-${String(index + 1).padStart(2, '0')}.png`, blob);
+      }
+    }
+
+    async function renderVideo() {
+      status.textContent = 'previews';
+      await savePreviews();
+      renderFrame(0);
+
+      const audio = new AudioContext({ sampleRate: 44100 });
+      await audio.resume();
+      const audioDestination = audio.createMediaStreamDestination();
+      scheduleAudio(audio, audioDestination);
+
+      const videoStream = canvas.captureStream(30);
+      const stream = new MediaStream([...videoStream.getVideoTracks(), ...audioDestination.stream.getAudioTracks()]);
+      const mimeType = 'video/mp4;codecs=avc1.42E01E,mp4a.40.2';
+      const recorder = new MediaRecorder(stream, {
+        mimeType,
+        videoBitsPerSecond: 10_000_000,
+        audioBitsPerSecond: 192_000,
+      });
+      const chunks = [];
+      recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
+      const stopped = new Promise((resolve) => { recorder.onstop = resolve; });
+      recorder.start(1000);
+      const startedAt = performance.now();
+
+      await new Promise((resolve) => {
+        function tick(now) {
+          const elapsed = (now - startedAt) / 1000;
+          renderFrame(Math.min(elapsed, duration - 1 / 30));
+          status.textContent = `recording ${elapsed.toFixed(1)} / ${duration}`;
+          if (elapsed < duration) requestAnimationFrame(tick);
+          else resolve();
+        }
+        requestAnimationFrame(tick);
+      });
+
+      recorder.stop();
+      await stopped;
+      const video = new Blob(chunks, { type: mimeType });
+      status.textContent = `uploading ${(video.size / 1024 / 1024).toFixed(1)} MB`;
+      await uploadBlob('exam-memorizer-cloze-promo-vertical-25s.mp4', video);
+      status.textContent = 'done';
+      await audio.close();
+    }
+
+    renderVideo().catch(async (error) => {
+      status.textContent = error.stack ?? error.message;
+      await fetch('/error', { method: 'POST', body: error.stack ?? error.message });
+    });
+  </script>
+</body>
+</html>
