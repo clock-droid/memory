@@ -11,12 +11,37 @@ const ACCENT = '#007aff';
 const ACCENT_DEEP = '#0a5dc2';
 const ACCENT_SOFT = 'rgba(0,122,255,0.08)';
 const SUBJECT_COLORS = ['#007aff', '#af52de', '#ff9500', '#34c759', '#ff2d55', '#5856d6', '#00c7be', '#ff3b30'];
-// PC (mouse) users can't discover swipe — surface the keyboard shortcuts to them.
-const IS_PC = typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(pointer: fine)').matches;
+const PC_HINT_QUERY = '(min-width: 769px) and (pointer: fine)';
+
+function usePcHints() {
+  const [isPc, setIsPc] = useState(() => (
+    typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia(PC_HINT_QUERY).matches
+  ));
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return undefined;
+    const media = window.matchMedia(PC_HINT_QUERY);
+    const update = () => setIsPc(media.matches);
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
+
+  return isPc;
+}
 
 // ------------------------------------------------------------------ helpers
 function normalizeRoomCode(value: string) {
   return value.trim().replace(/[^A-Za-z0-9_-]/g, '').slice(0, 48);
+}
+
+function createRoomCode() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `memo-${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`;
+  }
+  return `memo-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function hashStr(value: string) {
@@ -319,6 +344,7 @@ export default function App() {
 }
 
 function IdGate({ onSubmit }: { onSubmit: (code: string) => void }) {
+  const [showExisting, setShowExisting] = useState(false);
   const [value, setValue] = useState('');
   const normalized = normalizeRoomCode(value);
   const hasInvalid = value.trim().replace(/[A-Za-z0-9_\s-]/g, '').length > 0;
@@ -326,27 +352,64 @@ function IdGate({ onSubmit }: { onSubmit: (code: string) => void }) {
     if (!normalized) return;
     onSubmit(normalized);
   };
-  return (
-    <div style={{ minHeight: '100dvh', width: '100%', maxWidth: 480, margin: '0 auto', display: 'flex', flexDirection: 'column', padding: 'calc(env(safe-area-inset-top) + 56px) 24px 32px', gap: 22 }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-        <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em' }}>시험암기</div>
-        <div style={{ fontSize: 15, color: '#5f5f65', lineHeight: 1.6 }}>
-          암기할 내용을 입력하고, 원하는 부분을 여러 곳 가린 뒤 하나씩 확인하며 외워요.
-        </div>
-      </div>
-      <div aria-label="사용 순서" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, padding: 10, borderRadius: 14, background: '#fff' }}>
-        {['내용 입력', '가릴 부분 선택', '하나씩 확인'].map((label, index) => (
-          <div key={label} style={{ minWidth: 0, padding: '9px 6px', borderRadius: 10, background: index === 1 ? ACCENT_SOFT : '#F5F5F7', textAlign: 'center' }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: index === 1 ? ACCENT_DEEP : '#6e6e73', marginBottom: 4 }}>{index + 1}</div>
-            <div style={{ fontSize: 12.5, fontWeight: 700, color: '#1d1d1f', whiteSpace: 'nowrap' }}>{label}</div>
+
+  if (!showExisting) {
+    return (
+      <div style={{ minHeight: '100dvh', width: '100%', maxWidth: 480, margin: '0 auto', display: 'flex', flexDirection: 'column', padding: 'calc(env(safe-area-inset-top) + 72px) 24px calc(env(safe-area-inset-bottom) + 32px)' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ fontSize: 29, fontWeight: 800, letterSpacing: '-0.035em' }}>시험암기</div>
+          <div style={{ maxWidth: 360, fontSize: 16, color: '#5f5f65', lineHeight: 1.65, wordBreak: 'keep-all' }}>
+            암기할 내용을 적고, 원하는 부분을 여러 곳 가려서 하나씩 외워요.
           </div>
-        ))}
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <label htmlFor="sync-code" style={{ fontSize: 12, fontWeight: 700, color: '#6e6e73', letterSpacing: '0.03em' }}>동기화 코드</label>
-        <div style={{ fontSize: 13.5, color: '#5f5f65', lineHeight: 1.5 }}>
-          처음이면 새 코드를 만들고, 다른 기기에서는 같은 코드를 입력하세요.
         </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 34 }}>
+          <button
+            type="button"
+            className="ui-button"
+            onClick={() => onSubmit(createRoomCode())}
+            style={{ width: '100%', minHeight: 54, borderRadius: 13, background: ACCENT, display: 'grid', placeItems: 'center', cursor: 'pointer', fontSize: 16.5, fontWeight: 800, color: '#fff' }}
+          >
+            새 암기장 시작하기
+          </button>
+          <button
+            type="button"
+            className="ui-button"
+            onClick={() => setShowExisting(true)}
+            style={{ width: '100%', minHeight: 50, borderRadius: 13, border: '1px solid rgba(60,60,67,0.16)', background: '#fff', display: 'grid', placeItems: 'center', cursor: 'pointer', fontSize: 15.5, fontWeight: 700, color: '#1d1d1f' }}
+          >
+            기존 암기장 열기
+          </button>
+          <div style={{ padding: '2px 6px 0', color: '#6e6e73', fontSize: 12.5, lineHeight: 1.55, textAlign: 'center', wordBreak: 'keep-all' }}>
+            새 암기장의 동기화 코드는 자동으로 만들어요. 다른 기기 연결은 시작 후 설정에서 할 수 있어요.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ minHeight: '100dvh', width: '100%', maxWidth: 480, margin: '0 auto', display: 'flex', flexDirection: 'column', padding: 'calc(env(safe-area-inset-top) + 18px) 24px calc(env(safe-area-inset-bottom) + 32px)' }}>
+      <button
+        type="button"
+        className="ui-button"
+        onClick={() => { setShowExisting(false); setValue(''); }}
+        aria-label="처음 화면으로"
+        style={{ alignSelf: 'flex-start', minWidth: 44, minHeight: 44, marginLeft: -10, background: 'transparent', display: 'flex', alignItems: 'center', gap: 3, color: ACCENT, cursor: 'pointer', fontSize: 16, fontWeight: 600 }}
+      >
+        <svg width="11" height="18" viewBox="0 0 12 20" fill="none"><path d="M10 2 2 10l8 8" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        처음
+      </button>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginTop: 22 }}>
+        <div style={{ fontSize: 27, fontWeight: 800, letterSpacing: '-0.025em' }}>기존 암기장 열기</div>
+        <div style={{ fontSize: 14.5, color: '#5f5f65', lineHeight: 1.6, wordBreak: 'keep-all' }}>
+          다른 기기에서 사용하던 동기화 코드를 입력하세요.
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginTop: 28 }}>
+        <label htmlFor="sync-code" style={{ fontSize: 12.5, fontWeight: 700, color: '#6e6e73', letterSpacing: '0.02em' }}>동기화 코드</label>
         <input
           id="sync-code"
           autoFocus
@@ -360,21 +423,21 @@ function IdGate({ onSubmit }: { onSubmit: (code: string) => void }) {
         <span id="sync-code-help" style={{ fontSize: 12, color: hasInvalid ? '#b45309' : '#6e6e73', fontWeight: hasInvalid ? 700 : 500, lineHeight: 1.5 }}>
           {hasInvalid
             ? '한글·특수문자는 쓸 수 없어요 — 영문·숫자·- _ 만 남아요'
-            : '영문·숫자·- _ 만 사용할 수 있어요 · 코드를 아는 사람은 같은 암기장을 볼 수 있어요'}
+            : '영문·숫자·- _ 만 사용할 수 있어요'}
         </span>
-        <button type="button" className="ui-button" onClick={() => setValue(`memo-${Math.random().toString(36).slice(2, 8)}`)} style={{ alignSelf: 'flex-start', padding: '6px 2px', fontSize: 13, fontWeight: 700, color: ACCENT, cursor: 'pointer' }}>
-          새 코드 자동 만들기
-        </button>
       </div>
       <button
         type="button"
         className="ui-button"
         onClick={submit}
         disabled={!normalized}
-        style={{ height: 48, borderRadius: 11, background: normalized ? ACCENT : 'rgba(0,122,255,0.28)', display: 'grid', placeItems: 'center', cursor: normalized ? 'pointer' : 'default', transition: 'background 0.15s' }}
+        style={{ minHeight: 52, marginTop: 22, borderRadius: 12, background: normalized ? ACCENT : 'rgba(0,122,255,0.28)', display: 'grid', placeItems: 'center', cursor: normalized ? 'pointer' : 'default', transition: 'background 0.15s' }}
       >
-        <span style={{ fontSize: 15.5, fontWeight: 700, color: '#fff' }}>내 암기장 열기</span>
+        <span style={{ fontSize: 16, fontWeight: 750, color: '#fff' }}>암기장 열기</span>
       </button>
+      <div style={{ marginTop: 12, color: '#6e6e73', fontSize: 12, lineHeight: 1.5, textAlign: 'center' }}>
+        코드를 아는 사람은 같은 암기장을 볼 수 있어요.
+      </div>
     </div>
   );
 }
@@ -730,7 +793,7 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
           onKeyDown={tv.onKeyDown}
           aria-pressed={tv.marked}
           aria-label={`${tv.word} ${tv.marked ? '가림 해제' : '가리기'}`}
-          style={{ display: 'inline-block', padding: `2px ${tv.padX}px`, borderRadius: 8, background: tv.bg, color: tv.fg, border: tv.bd, boxSizing: 'border-box', fontSize, fontWeight: tv.fw, cursor: 'pointer', touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none' }}
+          style={{ display: 'inline-flex', alignItems: 'center', minHeight: 36, padding: `5px ${tv.padX + 2}px`, borderRadius: 8, background: tv.bg, color: tv.fg, border: tv.bd, boxSizing: 'border-box', fontSize, fontWeight: tv.fw, lineHeight: 1.35, cursor: 'pointer', touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none' }}
         >
           {tv.word}
         </button>
@@ -968,6 +1031,7 @@ function DeckView(props: {
   renderTokenChips: (tokens: Token[], ri: number, fontSize: number) => React.ReactNode; toast: (msg: string) => void;
 }) {
   const { list, state, dispatch, weakFirst, lpTimer, rowStart } = props;
+  const isPc = usePcHints();
   const [nameDraft, setNameDraft] = useState(list.name);
   const nameTimer = useRef<number | undefined>(undefined);
   const slotRef = useRef<HTMLDivElement | null>(null);
@@ -1148,7 +1212,7 @@ function DeckView(props: {
 
       {deckTotal > 0 && showGuide && (
         <div style={{ padding: '4px 20px 4px', color: 'rgba(60,60,67,0.5)', fontSize: 11.5, fontWeight: 500, lineHeight: 1.45 }}>
-          {IS_PC ? '클릭하면 수정 · 왼쪽으로 끌면 삭제 · 길게 누르면 순서 변경' : '탭하면 수정 · 왼쪽으로 밀면 삭제 · 길게 누르면 순서 변경'}
+          {isPc ? '클릭하면 수정 · 왼쪽으로 끌면 삭제 · 길게 누르면 순서 변경' : '탭하면 수정 · 왼쪽으로 밀면 삭제 · 길게 누르면 순서 변경'}
         </div>
       )}
 
@@ -1272,6 +1336,7 @@ function NewCardSlot(props: {
   const incomplete = tokenRows.filter((r) => r.kind === 'tokens' && !r.tokens.some((t) => t.hidden)).length;
   const blanks = tokenRows.reduce((n, r) => n + (r.kind === 'tokens' && r.tokens.some((t) => t.hidden) ? tokensToCard(r.tokens).a.length : 0), 0);
   const multi = state.sheetRows.length > 1;
+  const guideStep = state.pasteText.trim().length === 0 ? 0 : validRows.length === 0 ? 1 : 2;
 
   const add = () => {
     if (validRows.length === 0) return;
@@ -1287,6 +1352,14 @@ function NewCardSlot(props: {
 
   return (
     <div style={{ background: '#fff', borderRadius: 12, padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div aria-label="항목 추가 순서" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 5 }}>
+        {['내용 입력', '가릴 부분 탭', '항목 추가'].map((label, index) => (
+          <div key={label} style={{ minWidth: 0, minHeight: 34, padding: '0 5px', borderRadius: 8, background: guideStep === index ? ACCENT_SOFT : '#F5F5F7', color: guideStep === index ? ACCENT_DEEP : '#77777f', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontSize: 11.5, fontWeight: guideStep === index ? 800 : 650, textAlign: 'center', whiteSpace: 'nowrap' }}>
+            <span aria-hidden="true">{index + 1}</span>
+            <span>{label}</span>
+          </div>
+        ))}
+      </div>
       <label htmlFor="new-memory-content" style={{ fontSize: 13, fontWeight: 800, color: '#1d1d1f' }}>암기할 내용</label>
       <div style={{ background: '#F5F5F7', borderRadius: 10, padding: '9px 12px' }}>
         <textarea
@@ -1350,6 +1423,7 @@ function StudyView(props: {
   onDeck: () => void; onRetryRemaining: () => void; onReviewAll: () => void;
 }) {
   const { list, state, dispatch, swipeStart } = props;
+  const isPc = usePcHints();
   const card = list && state.queue.length > 0 ? list.cards.find((c) => c.id === state.queue[0]) : undefined;
   const qParts = card ? card.q.split('___') : [];
   const nBlanks = card ? (qParts.length > 1 ? qParts.length - 1 : 1) : 0;
@@ -1502,11 +1576,11 @@ function StudyView(props: {
       <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '16px 20px 44px', background: 'linear-gradient(180deg,rgba(255,255,255,0) 0%,#fff 30%)', pointerEvents: 'none' }}>
         {!allRevealed ? (
           <div style={{ textAlign: 'center', fontSize: 12, color: 'rgba(60,60,67,0.5)', fontWeight: 500, lineHeight: 1.6 }}>
-            {IS_PC ? keyboardHint : tapHint}
+            {isPc ? keyboardHint : tapHint}
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 9 }}>
-            <div style={{ textAlign: 'center', fontSize: 12, color: 'rgba(60,60,67,0.5)', fontWeight: 500 }}>{IS_PC ? '← 다시 볼래요 · 외웠어요 →' : '옆으로 밀어서 분류할 수도 있어요'}</div>
+            <div style={{ textAlign: 'center', fontSize: 12, color: 'rgba(60,60,67,0.5)', fontWeight: 500 }}>{isPc ? '← 다시 볼래요 · 외웠어요 →' : '옆으로 밀어서 분류할 수도 있어요'}</div>
             <div style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 10, pointerEvents: 'auto' }}>
               <button type="button" className="study-judge-button" onClick={props.onAgain} aria-label="다시 볼래요" title="다시 볼래요" style={{ flex: 1, height: 50, padding: '0 16px', borderRadius: 12, border: 'none', background: 'rgba(255,149,0,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit' }}>
                 <span style={{ fontSize: 15, fontWeight: 700, color: '#8a4d00' }}>다시 볼래요</span>
