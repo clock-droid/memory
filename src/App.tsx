@@ -10,7 +10,6 @@ const ROOM_KEY = 'exam-memorizer-room-code';
 const ACCENT = '#007aff';
 const ACCENT_DEEP = '#0a5dc2';
 const ACCENT_SOFT = 'rgba(0,122,255,0.08)';
-const SUBJECT_COLORS = ['#007aff', '#af52de', '#ff9500', '#34c759', '#ff2d55', '#5856d6', '#00c7be', '#ff3b30'];
 const PC_HINT_QUERY = '(min-width: 769px) and (pointer: fine)';
 
 function usePcHints() {
@@ -42,16 +41,6 @@ function createRoomCode() {
     return `memo-${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`;
   }
   return `memo-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function hashStr(value: string) {
-  let hash = 0;
-  for (let i = 0; i < value.length; i += 1) hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
-  return hash;
-}
-
-function colorForDeck(deckId: string) {
-  return SUBJECT_COLORS[hashStr(deckId) % SUBJECT_COLORS.length];
 }
 
 type Token = { word: string; tail: string; hidden: boolean; gid: number; nl?: boolean };
@@ -272,8 +261,6 @@ type ProtoCard = {
 type ProtoList = {
   id: string;
   deckId: string;
-  subject: string;
-  color: string;
   name: string;
   synthetic: boolean;
   cards: ProtoCard[];
@@ -288,8 +275,8 @@ function emptyDeckCache(): DeckCacheEntry {
 type View = 'home' | 'deck' | 'study';
 type UIState = {
   view: View;
+  activeDeckId: string | null;
   activeSectionId: string | null;
-  collapsed: Record<string, boolean>;
   shuffle: boolean;
   filter: 'all' | 'unknown' | 'done';
   again: Record<string, number>;
@@ -322,7 +309,7 @@ type UIState = {
 };
 
 const initialUI: UIState = {
-  view: 'home', activeSectionId: null, collapsed: {}, shuffle: false, filter: 'all', again: {},
+  view: 'home', activeDeckId: null, activeSectionId: null, shuffle: false, filter: 'all', again: {},
   queue: [], sessionTotal: 0, sessionDone: 0, revealedIdx: [], review: false,
   dragX: 0, dragging: false, snap: false,
   openRowId: null, rowDrag: null, reorder: null, sel: null,
@@ -370,7 +357,7 @@ function IdGate({ onSubmit }: { onSubmit: (code: string) => void }) {
             onClick={() => onSubmit(createRoomCode())}
             style={{ width: '100%', minHeight: 54, borderRadius: 13, background: ACCENT, display: 'grid', placeItems: 'center', cursor: 'pointer', fontSize: 16.5, fontWeight: 800, color: '#fff' }}
           >
-            새 암기장 시작하기
+            새로 시작하기
           </button>
           <button
             type="button"
@@ -378,10 +365,10 @@ function IdGate({ onSubmit }: { onSubmit: (code: string) => void }) {
             onClick={() => setShowExisting(true)}
             style={{ width: '100%', minHeight: 50, borderRadius: 13, border: '1px solid rgba(60,60,67,0.16)', background: '#fff', display: 'grid', placeItems: 'center', cursor: 'pointer', fontSize: 15.5, fontWeight: 700, color: '#1d1d1f' }}
           >
-            기존 암기장 열기
+            기존 데이터 불러오기
           </button>
           <div style={{ padding: '2px 6px 0', color: '#6e6e73', fontSize: 12.5, lineHeight: 1.55, textAlign: 'center', wordBreak: 'keep-all' }}>
-            새 암기장의 동기화 코드는 자동으로 만들어요. 다른 기기 연결은 시작 후 설정에서 할 수 있어요.
+            공유 코드는 자동으로 만들어요. 다른 기기 연결은 시작 후 설정에서 할 수 있어요.
           </div>
         </div>
       </div>
@@ -402,7 +389,7 @@ function IdGate({ onSubmit }: { onSubmit: (code: string) => void }) {
       </button>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginTop: 22 }}>
-        <div style={{ fontSize: 27, fontWeight: 800, letterSpacing: '-0.025em' }}>기존 암기장 열기</div>
+        <div style={{ fontSize: 27, fontWeight: 800, letterSpacing: '-0.025em' }}>기존 데이터 불러오기</div>
         <div style={{ fontSize: 14.5, color: '#5f5f65', lineHeight: 1.6, wordBreak: 'keep-all' }}>
           다른 기기에서 사용하던 동기화 코드를 입력하세요.
         </div>
@@ -433,10 +420,10 @@ function IdGate({ onSubmit }: { onSubmit: (code: string) => void }) {
         disabled={!normalized}
         style={{ minHeight: 52, marginTop: 22, borderRadius: 12, background: normalized ? ACCENT : 'rgba(0,122,255,0.28)', display: 'grid', placeItems: 'center', cursor: normalized ? 'pointer' : 'default', transition: 'background 0.15s' }}
       >
-        <span style={{ fontSize: 16, fontWeight: 750, color: '#fff' }}>암기장 열기</span>
+        <span style={{ fontSize: 16, fontWeight: 750, color: '#fff' }}>불러오기</span>
       </button>
       <div style={{ marginTop: 12, color: '#6e6e73', fontSize: 12, lineHeight: 1.5, textAlign: 'center' }}>
-        코드를 아는 사람은 같은 암기장을 볼 수 있어요.
+        코드를 아는 사람은 같은 카드 데이터를 볼 수 있어요.
       </div>
     </div>
   );
@@ -559,8 +546,8 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
       for (const section of sections) {
         seen.add(section.id);
         out.push({
-          id: section.id, deckId: deck.id, subject: deck.name || '암기장', color: colorForDeck(deck.id),
-          name: section.name || '세부 암기장', synthetic: false,
+          id: section.id, deckId: deck.id,
+          name: !section.name || section.name === '새 목록' ? '새 암기장' : section.name, synthetic: false,
           cards: cards.filter((c) => (c.sectionId ?? 'default') === section.id).map(toProto),
         });
       }
@@ -574,7 +561,7 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
         }
         for (const [key, bucket] of byBucket) {
           out.push({
-            id: key, deckId: deck.id, subject: deck.name || '암기장', color: colorForDeck(deck.id),
+            id: key, deckId: deck.id,
             name: '기본', synthetic: true, cards: bucket.map(toProto),
           });
         }
@@ -583,7 +570,7 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
     return out;
   }, [decks, deckDataById]);
 
-  const activeList = lists.find((l) => l.id === state.activeSectionId);
+  const activeList = lists.find((l) => l.deckId === state.activeDeckId && l.id === state.activeSectionId);
   const weakFirst = useCallback((cards: ProtoCard[]) => [...cards].sort((x, y) => (state.again[y.id] || 0) - (state.again[x.id] || 0)), [state.again]);
 
   const storedCardsOf = useCallback((deckId: string, sectionId: string): Card[] => {
@@ -637,11 +624,11 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
     try {
       let deckId = decks.find((d) => d.name === '일반')?.id;
       if (!deckId) deckId = await repository.addDeck('일반');
-      const sectionId = await repository.addSection(deckId, '새 목록');
+      const sectionId = await repository.addSection(deckId, '새 암기장');
       lastAddedSnapshotRef.current = null;
-      dispatch({ view: 'deck', activeSectionId: sectionId, slotOpen: true, pasteText: '', sheetRows: [] });
+      dispatch({ view: 'deck', activeDeckId: deckId, activeSectionId: sectionId, slotOpen: true, pasteText: '', sheetRows: [] });
     } catch {
-      toast('목록을 만들지 못했어요');
+      toast('암기장을 만들지 못했어요');
     }
   }, [repository, decks, toast]);
 
@@ -659,14 +646,14 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
 
   const deleteList = useCallback(async () => {
     if (!repository || !activeList || activeList.synthetic) return;
-    const label = activeList.cards.length > 0 ? `암기 항목 ${activeList.cards.length}개가 함께 삭제돼요.` : '';
-    if (!window.confirm(`"${activeList.name}" 목록을 삭제할까요? ${label}`)) return;
+    const label = activeList.cards.length > 0 ? `카드 ${activeList.cards.length}개가 함께 삭제돼요.` : '';
+    if (!window.confirm(`"${activeList.name}" 암기장을 삭제할까요? ${label}`)) return;
     const remaining = (deckDataById[activeList.deckId]?.sections ?? []).filter((s) => s.id !== activeList.id);
-    dispatch({ view: 'home', activeSectionId: null, openRowId: null });
+    dispatch({ view: 'home', activeDeckId: null, activeSectionId: null, openRowId: null });
     try {
       await repository.deleteSection(activeList.deckId, activeList.id);
       if (remaining.length === 0) await repository.deleteDeck(activeList.deckId);
-      toast('목록을 삭제했어요');
+      toast('암기장을 삭제했어요');
     } catch {
       toast('삭제에 실패했어요');
     }
@@ -676,7 +663,7 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
     if (!activeList) return;
     const idx = activeList.cards.findIndex((cc) => cc.id === c.id);
     if (idx < 0) return;
-    if (c.isGroup) toast('묶음 항목은 저장하면 일반 항목으로 바뀌어요');
+    if (c.isGroup) toast('묶음 카드는 저장하면 일반 카드로 바뀌어요');
     if (c.q.includes('___') || c.isGroup) {
       const tokens = cardToTokens(c.q, c.a);
       dispatch({ editSheetOpen: true, editIdx: idx, editMode: 'tokens', editTokens: tokens, editText: tokensToText(tokens) });
@@ -707,10 +694,10 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
     return true;
   }, [activeList, storedCardsOf, commitSection, toast]);
 
-  const startStudy = useCallback((sectionId: string, cardIds?: string[]) => {
-    const list = lists.find((l) => l.id === sectionId);
+  const startStudy = useCallback((deckId: string, sectionId: string, cardIds?: string[]) => {
+    const list = lists.find((l) => l.deckId === deckId && l.id === sectionId);
     if (!list) return;
-    if (list.cards.length === 0) { dispatch({ view: 'deck', activeSectionId: sectionId }); return; }
+    if (list.cards.length === 0) { dispatch({ view: 'deck', activeDeckId: deckId, activeSectionId: sectionId }); return; }
     let ids = cardIds ?? weakFirst(list.cards.filter((c) => !c.memorized)).map((c) => c.id);
     let review = false;
     if (ids.length === 0) { ids = list.cards.map((c) => c.id); review = true; }
@@ -718,7 +705,7 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
       ids = [...ids];
       for (let i = ids.length - 1; i > 0; i -= 1) { const j = Math.floor(Math.random() * (i + 1)); [ids[i], ids[j]] = [ids[j], ids[i]]; }
     }
-    dispatch({ view: 'study', activeSectionId: sectionId, queue: ids, sessionTotal: ids.length, sessionDone: 0, revealedIdx: [], dragX: 0, openRowId: null, review });
+    dispatch({ view: 'study', activeDeckId: deckId, activeSectionId: sectionId, queue: ids, sessionTotal: ids.length, sessionDone: 0, revealedIdx: [], dragX: 0, openRowId: null, review });
   }, [lists, weakFirst, state.shuffle]);
 
   const doKnown = useCallback(() => {
@@ -738,7 +725,7 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
       if (st.queue.length === 1) return { again, revealedIdx: [], dragX: 0, dragging: false, snap: false };
       return { again, queue: [...st.queue.slice(1), st.queue[0]], revealedIdx: [], dragX: 0, dragging: false, snap: false };
     });
-    if (last) toast('마지막 항목이에요 — 한 번 더!');
+    if (last) toast('마지막 카드예요 — 한 번 더!');
   }, [state.queue, toast]);
 
   const commitSwipe = useCallback((dir: number) => {
@@ -787,7 +774,7 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
     });
   }, [state.sel]);
 
-  const renderTokenChips = (tokens: Token[], ri: number, fontSize: number) => tokenViews(tokens, ri).map((tv) =>
+  const renderTokenChips = (tokens: Token[], ri: number, fontSize: number, outlined = false) => tokenViews(tokens, ri).map((tv) =>
     tv.brk ? (
       <span key={tv.key} style={{ width: '100%', height: 2 }} />
     ) : (
@@ -799,12 +786,23 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
           onPointerEnter={tv.onEnter}
           onKeyDown={tv.onKeyDown}
           aria-pressed={tv.marked}
-          aria-label={`${tv.word} ${tv.marked ? '가림 해제' : '가리기'}`}
-          style={{ display: 'inline-flex', alignItems: 'center', minHeight: 36, padding: `5px ${tv.padX + 2}px`, borderRadius: 8, background: tv.bg, color: tv.fg, border: tv.bd, boxSizing: 'border-box', fontSize, fontWeight: tv.fw, lineHeight: 1.35, cursor: 'pointer', touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none' }}
+          aria-label={`${tv.word}${tv.tail} ${tv.marked ? '가림 해제' : '가리기'}`}
+          style={outlined ? {
+            display: 'inline-flex', alignItems: 'center', minHeight: 46, padding: '8px 14px', borderRadius: 11,
+            background: tv.marked ? ACCENT : '#fff', color: tv.marked ? '#fff' : '#1d1d1f',
+            border: tv.marked ? '1px solid transparent' : '1px solid rgba(60,60,67,0.14)',
+            boxShadow: tv.marked ? '0 2px 5px rgba(0,122,255,0.18)' : '0 1px 2px rgba(0,0,0,0.02)',
+            boxSizing: 'border-box', fontSize, fontWeight: tv.marked ? 700 : 600, lineHeight: 1.3,
+            cursor: 'pointer', touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none',
+          } : {
+            display: 'inline-flex', alignItems: 'center', minHeight: 36, padding: `5px ${tv.padX + 2}px`, borderRadius: 8,
+            background: tv.bg, color: tv.fg, border: tv.bd, boxSizing: 'border-box', fontSize, fontWeight: tv.fw,
+            lineHeight: 1.35, cursor: 'pointer', touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none',
+          }}
         >
-          {tv.word}
+          {tv.word}{outlined && !tv.marked ? tv.tail : ''}
         </button>
-        <span style={{ fontSize, fontWeight: 600 }}>{tv.tail}</span>
+        {(!outlined || tv.marked) && <span style={{ fontSize, fontWeight: 600 }}>{tv.tail}</span>}
       </span>
     ));
 
@@ -813,11 +811,9 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
     <div style={{ height: '100dvh', width: '100%', maxWidth: 480, margin: '0 auto', position: 'relative', background: '#F2F2F7', color: '#000', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {state.view === 'home' && (
         <HomeView
-          lists={lists} decksState={decksState} collapsed={state.collapsed} roomCode={roomCode}
-          weakFirst={weakFirst}
-          onToggleCollapse={(deckId) => dispatch((st) => ({ collapsed: { ...st.collapsed, [deckId]: !st.collapsed[deckId] } }))}
-          onOpenList={(id) => dispatch({ view: 'deck', activeSectionId: id, openRowId: null, filter: 'all' })}
-          onContinue={(id) => startStudy(id)}
+          lists={lists} decksState={decksState}
+          onOpenList={(list) => dispatch({ view: 'deck', activeDeckId: list.deckId, activeSectionId: list.id, openRowId: null, filter: 'all' })}
+          onContinue={(list) => startStudy(list.deckId, list.id)}
           onNewList={newList}
           onOpenSettings={() => dispatch({ settingsOpen: true })}
         />
@@ -827,19 +823,19 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
         <DeckView
           list={activeList} state={state} dispatch={dispatch} weakFirst={weakFirst}
           lpTimer={lpTimer} rowStart={rowStart}
-          onHome={() => dispatch({ view: 'home', openRowId: null })}
+          onHome={() => dispatch({ view: 'home', activeDeckId: null, activeSectionId: null, openRowId: null })}
           onRename={(name) => !activeList.synthetic && renameSection(activeList.deckId, activeList.id, name)}
           onToggleMem={(card) => toggleMemorized(activeList.deckId, card.id, !card.memorized)}
           onDelete={(card) => {
             const stored = storedCardsOf(activeList.deckId, activeList.id).filter((c) => c.id !== card.id);
             commitSection(activeList.deckId, activeList.id, stored.map((c) => keepCard(c)));
             dispatch({ openRowId: null });
-            toast('암기 항목을 삭제했어요');
+            toast('카드를 삭제했어요');
           }}
           onEdit={openEditFor}
           onMove={moveCard}
           onDeleteList={deleteList}
-          onStart={(ids) => startStudy(activeList.id, ids)}
+          onStart={(ids) => startStudy(activeList.deckId, activeList.id, ids)}
           onOpenAdd={() => {
             lastAddedSnapshotRef.current = null;
             dispatch({ slotOpen: true, pasteText: '', pasteMode: 'auto', sheetRows: [], openRowId: null });
@@ -882,8 +878,8 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
           list={activeList} state={state} dispatch={dispatch} swipeStart={swipeStart}
           onCommitSwipe={commitSwipe} onKnown={doKnown} onAgain={doAgain}
           onDeck={() => dispatch({ view: 'deck', queue: [], revealedIdx: [], dragX: 0, openRowId: null })}
-          onRetryRemaining={() => activeList && startStudy(activeList.id)}
-          onReviewAll={() => activeList && startStudy(activeList.id, activeList.cards.map((c) => c.id))}
+          onRetryRemaining={() => activeList && startStudy(activeList.deckId, activeList.id)}
+          onReviewAll={() => activeList && startStudy(activeList.deckId, activeList.id, activeList.cards.map((c) => c.id))}
         />
       )}
 
@@ -897,7 +893,7 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
             const stored = storedCardsOf(activeList.deckId, activeList.id).filter((_, i) => i !== state.editIdx);
             commitSection(activeList.deckId, activeList.id, stored.map((c) => keepCard(c)));
             dispatch({ editSheetOpen: false });
-            toast('암기 항목을 삭제했어요');
+            toast('카드를 삭제했어요');
           }}
           openEditFor={openEditFor}
         />
@@ -932,25 +928,13 @@ function EmptyStateAction(props: { label: string; onClick: () => void }) {
 
 // ================================================================ HOME
 function HomeView(props: {
-  lists: ProtoList[]; decksState: 'loading' | 'ready' | 'error'; collapsed: Record<string, boolean>; roomCode: string;
-  weakFirst: (cards: ProtoCard[]) => ProtoCard[];
-  onToggleCollapse: (deckId: string) => void; onOpenList: (id: string) => void; onContinue: (id: string) => void;
+  lists: ProtoList[]; decksState: 'loading' | 'ready' | 'error';
+  onOpenList: (list: ProtoList) => void; onContinue: (list: ProtoList) => void;
   onNewList: () => void; onOpenSettings: () => void;
 }) {
   const { lists, decksState } = props;
   const contList = lists.find((l) => l.cards.some((c) => !c.memorized));
   const contRemain = contList ? contList.cards.filter((c) => !c.memorized).length : 0;
-
-  type Group = { deckId: string; subject: string; color: string; lists: ProtoList[] };
-  const groupOrder: string[] = [];
-  const groupMap: Record<string, Group> = {};
-  for (const l of lists) {
-    if (!groupMap[l.deckId]) { groupMap[l.deckId] = { deckId: l.deckId, subject: l.subject, color: l.color, lists: [] }; groupOrder.push(l.deckId); }
-    groupMap[l.deckId].lists.push(l);
-  }
-  // A single "일반"-style group is just noise for a first-timer — show the lists
-  // flat and only reveal subject headers once there's more than one subject.
-  const showHeaders = groupOrder.length > 1;
   const activateWithKeyboard = (action: () => void) => (e: ReactKeyboardEvent<HTMLElement>) => {
     if (e.key !== 'Enter' && e.key !== ' ') return;
     e.preventDefault();
@@ -972,16 +956,16 @@ function HomeView(props: {
         )}
         {decksState === 'ready' && lists.length === 0 && (
           <div style={{ padding: '38px 20px', textAlign: 'center', color: 'rgba(60,60,67,0.58)', fontSize: 15, lineHeight: 1.6, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
-            <div>아직 암기 목록이 없어요.<br />첫 목록에 외울 내용을 추가해보세요.</div>
-            <EmptyStateAction label="첫 목록 만들기" onClick={props.onNewList} />
+            <div>아직 암기장이 없어요.<br />첫 암기장에 외울 카드를 추가해보세요.</div>
+            <EmptyStateAction label="첫 암기장 만들기" onClick={props.onNewList} />
           </div>
         )}
 
         {contList && (
-          <button type="button" className="ui-button" onClick={() => props.onContinue(contList.id)} style={{ width: '100%', marginBottom: 16, padding: '12px 14px', borderRadius: 12, background: ACCENT, color: '#fff', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
+          <button type="button" className="ui-button" onClick={() => props.onContinue(contList)} style={{ width: '100%', marginBottom: 16, padding: '12px 14px', borderRadius: 12, background: ACCENT, color: '#fff', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
             <span style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
               <span style={{ fontSize: 12, fontWeight: 600, opacity: 0.82 }}>이어서 암기 · {contRemain}개 남음</span>
-              <span style={{ fontSize: 16, fontWeight: 700, letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{showHeaders ? `${contList.subject} · ${contList.name}` : contList.name}</span>
+              <span style={{ fontSize: 16, fontWeight: 700, letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{contList.name}</span>
             </span>
             <span style={{ width: 32, height: 32, borderRadius: 999, background: 'rgba(255,255,255,0.24)', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
               <svg width="12" height="14" viewBox="0 0 16 18"><path d="M2 1.5v15l13-7.5z" fill="#fff" /></svg>
@@ -989,67 +973,33 @@ function HomeView(props: {
           </button>
         )}
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-          {groupOrder.map((deckId, gi) => {
-            const g = groupMap[deckId];
-            const allCards = g.lists.reduce((n, l) => n + l.cards.length, 0);
-            const doneCards = g.lists.reduce((n, l) => n + l.cards.filter((c) => c.memorized).length, 0);
-            const isCollapsed = showHeaders && !!props.collapsed[deckId];
-            // single-subject home: the "new list" row lives inside the one group
-            const withAddRow = !showHeaders && gi === groupOrder.length - 1;
-            return (
-              <div key={deckId} style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                {showHeaders && (
-                  <div onClick={() => props.onToggleCollapse(deckId)} onKeyDown={activateWithKeyboard(() => props.onToggleCollapse(deckId))} role="button" tabIndex={0} aria-expanded={!isCollapsed} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 6px', cursor: 'pointer' }}>
-                    <span style={{ width: 8, height: 8, borderRadius: 999, background: g.color, flexShrink: 0 }} />
-                    <span style={{ fontSize: 14.5, fontWeight: 700, letterSpacing: '-0.01em' }}>{g.subject}</span>
-                    <span style={{ fontSize: 12.5, fontWeight: 600, color: 'rgba(60,60,67,0.45)' }}>{g.lists.length}개 · {doneCards}/{allCards} 외움</span>
-                    <div style={{ flex: 1 }} />
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(60,60,67,0.4)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" style={{ transform: isCollapsed ? 'rotate(0deg)' : 'rotate(180deg)', transition: 'transform 0.2s' }}><path d="m6 9 6 6 6-6" /></svg>
+        {lists.length > 0 && (
+          <div style={{ background: '#fff', borderRadius: 12, overflow: 'hidden' }}>
+            {lists.map((l) => {
+              const remain = l.cards.filter((c) => !c.memorized).length;
+              const allDone = l.cards.length > 0 && remain === 0;
+              return (
+                <div key={`${l.deckId}:${l.id}`} onClick={() => props.onOpenList(l)} onKeyDown={activateWithKeyboard(() => props.onOpenList(l))} role="button" tabIndex={0} aria-label={`${l.name} 열기`} style={{ padding: '11px 14px', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', borderBottom: '1px solid rgba(60,60,67,0.08)' }}>
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+                    <div style={{ fontSize: 15, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name}</div>
+                    <div style={{ fontSize: 12.5, color: '#6e6e73' }}>{l.cards.length === 0 ? '카드 없음' : `카드 ${l.cards.length}개 · ${l.cards.length - remain}개 외움`}</div>
                   </div>
-                )}
-                {!isCollapsed && (
-                  <div style={{ background: '#fff', borderRadius: 12, overflow: 'hidden' }}>
-                    {g.lists.map((l, li) => {
-                      const remain = l.cards.filter((c) => !c.memorized).length;
-                      const allDone = l.cards.length > 0 && remain === 0;
-                      const lastRow = li === g.lists.length - 1 && !withAddRow;
-                      return (
-                        <div key={l.id} onClick={() => props.onOpenList(l.id)} onKeyDown={activateWithKeyboard(() => props.onOpenList(l.id))} role="button" tabIndex={0} aria-label={`${l.name} 목록 열기`} style={{ padding: '11px 14px', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', borderBottom: lastRow ? 'none' : '1px solid rgba(60,60,67,0.08)' }}>
-                          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-                            <div style={{ fontSize: 15, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name}</div>
-                            <div style={{ fontSize: 12.5, color: '#6e6e73' }}>{l.cards.length === 0 ? '비어 있음' : `${l.cards.length}개 · ${l.cards.length - remain}개 외움`}</div>
-                          </div>
-                          {allDone && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#1e9e46', flexShrink: 0 }}>
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1e9e46" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
-                              <span style={{ fontSize: 12.5, fontWeight: 700 }}>전부 외움</span>
-                            </div>
-                          )}
-                          <svg width="7" height="12" viewBox="0 0 8 14" style={{ flexShrink: 0 }}><path d="M1 1l6 6-6 6" stroke="rgba(60,60,67,0.3)" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                        </div>
-                      );
-                    })}
-                    {withAddRow && (
-                      <button type="button" className="ui-button" onClick={props.onNewList} aria-label="새 목록 만들기" style={{ width: '100%', padding: '12px 14px', background: 'transparent', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={ACCENT} strokeWidth="2.2" strokeLinecap="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
-                        <span style={{ fontSize: 14, fontWeight: 600, color: ACCENT }}>새 목록</span>
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-          {showHeaders && (
-            <div style={{ background: '#fff', borderRadius: 12, overflow: 'hidden' }}>
-              <button type="button" className="ui-button" onClick={props.onNewList} aria-label="새 목록 만들기" style={{ width: '100%', padding: '12px 14px', background: 'transparent', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={ACCENT} strokeWidth="2.2" strokeLinecap="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
-                <span style={{ fontSize: 14, fontWeight: 600, color: ACCENT }}>새 목록</span>
-              </button>
-            </div>
-          )}
-        </div>
+                  {allDone && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#1e9e46', flexShrink: 0 }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1e9e46" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+                      <span style={{ fontSize: 12.5, fontWeight: 700 }}>전부 외움</span>
+                    </div>
+                  )}
+                  <svg width="7" height="12" viewBox="0 0 8 14" style={{ flexShrink: 0 }}><path d="M1 1l6 6-6 6" stroke="rgba(60,60,67,0.3)" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                </div>
+              );
+            })}
+            <button type="button" className="ui-button" onClick={props.onNewList} aria-label="새 암기장 만들기" style={{ width: '100%', padding: '12px 14px', background: 'transparent', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={ACCENT} strokeWidth="2.2" strokeLinecap="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
+              <span style={{ fontSize: 14, fontWeight: 600, color: ACCENT }}>새 암기장</span>
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1170,9 +1120,9 @@ function DeckView(props: {
   }
 
   const startEnabled = deckTotal > 0 && visible.length > 0;
-  const startLabel = deckTotal === 0 ? '암기 항목을 먼저 추가하세요'
+  const startLabel = deckTotal === 0 ? '카드를 먼저 추가하세요'
     : studyCards.length > 0 ? (state.filter === 'unknown' ? `모르는 것 (${studyCards.length})` : `암기 시작 (${studyCards.length})`)
-    : visible.length > 0 ? '복습하기' : '암기 항목 없음';
+    : visible.length > 0 ? '복습하기' : '카드 없음';
 
   const chips: Array<{ key: 'all' | 'unknown' | 'done'; label: string }> = [
     { key: 'all', label: `전체 ${cardsAll.length}` },
@@ -1188,7 +1138,7 @@ function DeckView(props: {
           <span style={{ fontSize: 17, color: ACCENT }}>홈</span>
         </button>
         <input
-          aria-label="목록 이름"
+          aria-label="암기장 이름"
           value={nameDraft}
           onChange={(e) => {
             const v = e.target.value;
@@ -1209,7 +1159,7 @@ function DeckView(props: {
             onClick={() => {
               const next = !state.shuffle;
               dispatch({ shuffle: next });
-              props.toast(next ? '섞기 켬 — 순서를 무작위로' : '섞기 끔 — 헷갈린 항목부터');
+              props.toast(next ? '섞기 켬 — 순서를 무작위로' : '섞기 끔 — 헷갈린 카드부터');
             }}
             aria-label="섞기" aria-pressed={state.shuffle} title="섞기"
             style={{ width: 40, height: 40, borderRadius: 12, background: state.shuffle ? 'rgba(0,122,255,0.14)' : 'transparent', display: 'grid', placeItems: 'center', cursor: 'pointer' }}
@@ -1217,7 +1167,7 @@ function DeckView(props: {
             <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke={state.shuffle ? ACCENT : 'rgba(60,60,67,0.5)'} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.7-1.1 2-1.7 3.3-1.7H22" /><path d="m18 2 4 4-4 4" /><path d="M2 6h1.9c1.5 0 2.9.9 3.6 2.2" /><path d="M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8" /><path d="m18 14 4 4-4 4" /></svg>
           </button>
           {!list.synthetic && (
-            <button type="button" className="ui-button" onClick={props.onDeleteList} aria-label="목록 삭제" title="목록 삭제" style={{ width: 40, height: 40, borderRadius: 12, background: 'transparent', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+            <button type="button" className="ui-button" onClick={props.onDeleteList} aria-label="암기장 삭제" title="암기장 삭제" style={{ width: 40, height: 40, borderRadius: 12, background: 'transparent', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(60,60,67,0.5)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
             </button>
           )}
@@ -1251,7 +1201,7 @@ function DeckView(props: {
       <div style={{ flex: 1, overflowY: 'auto', padding: '2px 16px 130px', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         {deckTotal === 0 && (
           <div style={{ padding: '26px 20px 12px', textAlign: 'center', color: 'rgba(60,60,67,0.58)', fontSize: 14.5, lineHeight: 1.6 }}>
-            아직 암기 항목이 없어요.<br />외울 내용 하나부터 추가해보세요.
+            아직 카드가 없어요.<br />외울 카드 하나부터 추가해보세요.
           </div>
         )}
         {rows.map((row, idx) => {
@@ -1308,7 +1258,7 @@ function DeckView(props: {
       <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '12px 16px calc(env(safe-area-inset-bottom) + 20px)', background: 'linear-gradient(180deg,rgba(242,242,247,0) 0%,#F2F2F7 32%)', display: 'flex', gap: 10 }}>
         <button type="button" className="ui-button" onClick={props.onOpenAdd} style={{ height: 50, padding: '0 18px', borderRadius: 12, background: '#fff', border: '1px solid rgba(60,60,67,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer', flexShrink: 0 }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1d1d1f" strokeWidth="2.4" strokeLinecap="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
-          <span style={{ fontSize: 14.5, fontWeight: 700 }}>항목 추가</span>
+          <span style={{ fontSize: 14.5, fontWeight: 700 }}>카드 추가</span>
         </button>
         <button
           type="button"
@@ -1316,7 +1266,7 @@ function DeckView(props: {
           onClick={() => {
             if (studyCards.length > 0) props.onStart(weakFirst(studyCards).map((c) => c.id));
             else if (visible.length > 0) props.onStart(visible.map((c) => c.id));
-            else props.toast('외울 항목이 없어요');
+            else props.toast('외울 카드가 없어요');
           }}
           disabled={!startEnabled}
           style={{ flex: 1, height: 50, borderRadius: 12, background: startEnabled ? ACCENT : 'rgba(120,120,128,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, cursor: startEnabled ? 'pointer' : 'default' }}
@@ -1334,7 +1284,7 @@ function DeckView(props: {
 // 저장 후 편집기를 닫지 않고 비운 뒤 다시 포커스해 연속 입력을 지원한다.
 function ContinuousAddView(props: {
   state: UIState; dispatch: (p: Patch) => void;
-  renderTokenChips: (tokens: Token[], ri: number, fontSize: number) => React.ReactNode;
+  renderTokenChips: (tokens: Token[], ri: number, fontSize: number, outlined?: boolean) => React.ReactNode;
   onAddCards: (cards: NewCard[]) => void;
   onUndoLast: () => number;
   onClose: () => void;
@@ -1401,13 +1351,13 @@ function ContinuousAddView(props: {
         <button type="button" className="ui-button" onClick={props.onClose} style={{ minWidth: 44, minHeight: 44, justifySelf: 'start', background: 'transparent', color: ACCENT, fontSize: 16.5, fontWeight: 600, cursor: 'pointer' }}>
           취소
         </button>
-        <div style={{ textAlign: 'center', fontSize: 18, fontWeight: 800, letterSpacing: '-0.02em' }}>연속 추가</div>
+        <div style={{ textAlign: 'center', fontSize: 18, fontWeight: 800, letterSpacing: '-0.02em' }}>카드 연속 추가</div>
         <button type="button" className="ui-button" onClick={props.onClose} style={{ minWidth: 44, minHeight: 44, justifySelf: 'end', background: 'transparent', color: ACCENT, fontSize: 16.5, fontWeight: 700, cursor: 'pointer', textAlign: 'right' }}>
           완료
         </button>
       </div>
       <div aria-live="polite" style={{ height: 34, display: 'grid', placeItems: 'center', color: 'rgba(60,60,67,0.55)', fontSize: 14, fontWeight: 600, flexShrink: 0 }}>
-        {addedCount}개 추가됨
+        카드 {addedCount}개 추가됨
       </div>
 
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '12px 16px 190px', display: 'flex', flexDirection: 'column', gap: 18 }}>
@@ -1433,7 +1383,7 @@ function ContinuousAddView(props: {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(60,60,67,0.55)' }}>{state.sheetRows.length}줄</span>
               <div style={{ display: 'flex', padding: 2, borderRadius: 8, background: 'rgba(120,120,128,0.12)' }}>
-                {([['auto', '줄마다 추가'], ['one', '한 항목으로']] as const).map(([mode, label]) => (
+                {([['auto', '줄마다 추가'], ['one', '한 카드로']] as const).map(([mode, label]) => (
                   <button type="button" className="ui-button" key={mode} onClick={() => dispatch(reparse(state.pasteText, mode))} aria-pressed={state.pasteMode === mode} style={{ minHeight: 34, padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: state.pasteMode === mode ? '#fff' : 'transparent', color: state.pasteMode === mode ? '#1d1d1f' : '#6e6e73', boxShadow: state.pasteMode === mode ? '0 1px 2px rgba(0,0,0,0.1)' : 'none' }}>{label}</button>
                 ))}
               </div>
@@ -1455,7 +1405,7 @@ function ContinuousAddView(props: {
             </div>
           ) : (
             <div key={ri} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '7px 4px', lineHeight: 1.9 }}>
-              {props.renderTokenChips(r.tokens, ri, 16)}
+              {props.renderTokenChips(r.tokens, ri, 16, true)}
             </div>
           ))}
 
@@ -1545,7 +1495,7 @@ function StudyView(props: {
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
             <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.01em' }}>{state.review ? '복습 끝!' : '오늘 목표 달성!'}</div>
             <div style={{ fontSize: 15, color: 'rgba(60,60,67,0.6)', textAlign: 'center', lineHeight: 1.5 }}>
-              {list ? (deckRemain === 0 ? `"${list.name}" 전부 외웠어요` : `${state.sessionTotal}개 확인 완료 · 안 외운 항목 ${deckRemain}개 남음`) : ''}
+              {list ? (deckRemain === 0 ? `"${list.name}" 전부 외웠어요` : `${state.sessionTotal}개 확인 완료 · 안 외운 카드 ${deckRemain}개 남음`) : ''}
             </div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%', marginTop: 10 }}>
@@ -1555,7 +1505,7 @@ function StudyView(props: {
             {allMemorized && (
               <button type="button" className="ui-button" onClick={props.onReviewAll} style={{ height: 50, borderRadius: 12, background: 'rgba(120,120,128,0.16)', display: 'grid', placeItems: 'center', cursor: 'pointer', fontSize: 15.5, fontWeight: 700, color: '#48484a' }}>처음부터 복습</button>
             )}
-            <button type="button" className="ui-button" onClick={props.onDeck} style={{ height: 50, borderRadius: 12, background: 'transparent', display: 'grid', placeItems: 'center', cursor: 'pointer', fontSize: 15.5, fontWeight: 600, color: '#6e6e73' }}>목록으로</button>
+            <button type="button" className="ui-button" onClick={props.onDeck} style={{ height: 50, borderRadius: 12, background: 'transparent', display: 'grid', placeItems: 'center', cursor: 'pointer', fontSize: 15.5, fontWeight: 600, color: '#6e6e73' }}>암기장으로</button>
           </div>
         </div>
       </div>
@@ -1747,7 +1697,7 @@ function EditSheet(props: {
         ) : (
           <>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0 }}>
-              <span style={{ fontSize: 11.5, fontWeight: 700, color: '#6e6e73', letterSpacing: '0.03em' }}>내용 (여러 줄도 한 항목)</span>
+              <span style={{ fontSize: 11.5, fontWeight: 700, color: '#6e6e73', letterSpacing: '0.03em' }}>내용 (여러 줄도 한 카드)</span>
               <textarea rows={3} value={state.editText} onChange={onEditText} placeholder="문장 전체를 쓰세요" style={{ fontSize: 16.5, fontWeight: 600, border: 'none', background: 'transparent', color: '#000', padding: '2px 0', resize: 'none', lineHeight: 1.5 }} />
             </div>
             <div style={{ padding: '12px 14px', borderRadius: 10, background: 'rgba(120,120,128,0.08)', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '3px 2px', lineHeight: 1.9, overflowY: 'auto', minHeight: 0 }}>
@@ -1786,7 +1736,7 @@ function SettingsSheet(props: { roomCode: string; onClose: () => void; onChangeR
       <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, borderRadius: '20px 20px 0 0', background: '#fff', padding: '18px 20px 42px', display: 'flex', flexDirection: 'column', gap: 14, boxShadow: '0 -12px 40px rgba(0,0,0,0.16)', animation: 'sheetUp 0.32s cubic-bezier(0.3,0.9,0.4,1)', zIndex: 16 }}>
         <div style={{ width: 40, height: 5, borderRadius: 3, background: 'rgba(120,120,128,0.25)', alignSelf: 'center' }} />
         <div style={{ fontSize: 20, fontWeight: 800 }}>동기화 코드</div>
-        <div style={{ fontSize: 13.5, color: '#5f5f65', lineHeight: 1.5 }}>다른 기기(PC·아이폰)에서 <strong style={{ color: '#1d1d1f' }}>같은 코드</strong>를 입력하면 같은 암기장을 봐요. 코드를 아는 사람도 열 수 있으니 안전하게 보관하세요.</div>
+        <div style={{ fontSize: 13.5, color: '#5f5f65', lineHeight: 1.5 }}>다른 기기(PC·아이폰)에서 <strong style={{ color: '#1d1d1f' }}>같은 코드</strong>를 입력하면 같은 카드 데이터를 봐요. 코드를 아는 사람도 불러올 수 있으니 안전하게 보관하세요.</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, height: 52, borderRadius: 12, background: '#F7F7F9', padding: '0 8px 0 16px' }}>
           <span style={{ flex: 1, fontSize: 18, fontWeight: 800, color: '#1d1d1f', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{props.roomCode}</span>
           <button type="button" className="ui-button" onClick={copy} style={{ height: 40, padding: '0 16px', borderRadius: 9, background: copied ? 'rgba(52,199,89,0.15)' : ACCENT, display: 'grid', placeItems: 'center', cursor: 'pointer', flexShrink: 0, fontSize: 14.5, fontWeight: 700, color: copied ? '#1e9e46' : '#fff' }}>{copied ? '복사됨 ✓' : '복사'}</button>
