@@ -457,6 +457,12 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
   const lpTimer = useRef<number | undefined>(undefined);
   const rowStart = useRef<{ x: number; y: number; moved: boolean }>({ x: 0, y: 0, moved: false });
   const swipeStart = useRef<{ x: number; moved: boolean }>({ x: 0, moved: false });
+  const lastAddedSnapshotRef = useRef<{
+    deckId: string;
+    sectionId: string;
+    cards: OptimisticNewCard[];
+    addedCount: number;
+  } | null>(null);
 
   const toast = useCallback((msg: string) => {
     window.clearTimeout(toastTimer.current);
@@ -632,6 +638,7 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
       let deckId = decks.find((d) => d.name === '일반')?.id;
       if (!deckId) deckId = await repository.addDeck('일반');
       const sectionId = await repository.addSection(deckId, '새 목록');
+      lastAddedSnapshotRef.current = null;
       dispatch({ view: 'deck', activeSectionId: sectionId, slotOpen: true, pasteText: '', sheetRows: [] });
     } catch {
       toast('목록을 만들지 못했어요');
@@ -816,7 +823,7 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
         />
       )}
 
-      {state.view === 'deck' && activeList && (
+      {state.view === 'deck' && activeList && !state.slotOpen && (
         <DeckView
           list={activeList} state={state} dispatch={dispatch} weakFirst={weakFirst}
           lpTimer={lpTimer} rowStart={rowStart}
@@ -833,12 +840,40 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
           onMove={moveCard}
           onDeleteList={deleteList}
           onStart={(ids) => startStudy(activeList.id, ids)}
-          onAddCards={(cards) => {
-            const stored = storedCardsOf(activeList.deckId, activeList.id);
-            commitSection(activeList.deckId, activeList.id, [...stored.map((c) => keepCard(c)), ...cards]);
+          onOpenAdd={() => {
+            lastAddedSnapshotRef.current = null;
+            dispatch({ slotOpen: true, pasteText: '', pasteMode: 'auto', sheetRows: [], openRowId: null });
           }}
-          renderTokenChips={renderTokenChips}
           toast={toast}
+        />
+      )}
+
+      {state.view === 'deck' && activeList && state.slotOpen && (
+        <ContinuousAddView
+          state={state}
+          dispatch={dispatch}
+          renderTokenChips={renderTokenChips}
+          onAddCards={(cards) => {
+            const stored = storedCardsOf(activeList.deckId, activeList.id).map((card) => keepCard(card));
+            lastAddedSnapshotRef.current = {
+              deckId: activeList.deckId,
+              sectionId: activeList.id,
+              cards: stored,
+              addedCount: cards.length,
+            };
+            commitSection(activeList.deckId, activeList.id, [...stored, ...cards]);
+          }}
+          onUndoLast={() => {
+            const snapshot = lastAddedSnapshotRef.current;
+            if (!snapshot || snapshot.deckId !== activeList.deckId || snapshot.sectionId !== activeList.id) return 0;
+            commitSection(snapshot.deckId, snapshot.sectionId, snapshot.cards);
+            lastAddedSnapshotRef.current = null;
+            return snapshot.addedCount;
+          }}
+          onClose={() => {
+            lastAddedSnapshotRef.current = null;
+            dispatch({ slotOpen: false, pasteText: '', pasteMode: 'auto', sheetRows: [], sel: null });
+          }}
         />
       )}
 
@@ -1027,15 +1062,12 @@ function DeckView(props: {
   onHome: () => void; onRename: (name: string) => void; onToggleMem: (card: ProtoCard) => void;
   onDelete: (card: ProtoCard) => void; onEdit: (card: ProtoCard) => void; onMove: (draggedId: string, targetId: string) => void;
   onDeleteList: () => void;
-  onStart: (ids: string[]) => void; onAddCards: (cards: NewCard[]) => void;
-  renderTokenChips: (tokens: Token[], ri: number, fontSize: number) => React.ReactNode; toast: (msg: string) => void;
+  onStart: (ids: string[]) => void; onOpenAdd: () => void; toast: (msg: string) => void;
 }) {
   const { list, state, dispatch, weakFirst, lpTimer, rowStart } = props;
   const isPc = usePcHints();
   const [nameDraft, setNameDraft] = useState(list.name);
   const nameTimer = useRef<number | undefined>(undefined);
-  const slotRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => { if (state.slotOpen) slotRef.current?.scrollIntoView({ block: 'nearest' }); }, [state.slotOpen]);
   // Row gestures (swipe-delete, long-press reorder) are invisible — explain them
   // once on the first deck visit, then stay quiet.
   const [showGuide] = useState(() => !localStorage.getItem('exam-memorizer-hint-seen'));
@@ -1217,7 +1249,7 @@ function DeckView(props: {
       )}
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '2px 16px 130px', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-        {deckTotal === 0 && !state.slotOpen && (
+        {deckTotal === 0 && (
           <div style={{ padding: '26px 20px 12px', textAlign: 'center', color: 'rgba(60,60,67,0.58)', fontSize: 14.5, lineHeight: 1.6 }}>
             아직 암기 항목이 없어요.<br />외울 내용 하나부터 추가해보세요.
           </div>
@@ -1271,22 +1303,13 @@ function DeckView(props: {
             </div>
           );
         })}
-
-        {/* 새 암기 항목은 목록 맨 끝에서 바로 만든다 — 시트 없음 */}
-        <div ref={slotRef} style={{ marginTop: rows.length > 0 ? 10 : 0, flexShrink: 0 }}>
-          {state.slotOpen && (
-            <NewCardSlot state={state} dispatch={dispatch} renderTokenChips={props.renderTokenChips} onAddCards={props.onAddCards} toast={props.toast} />
-          )}
-        </div>
       </div>
 
       <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '12px 16px calc(env(safe-area-inset-bottom) + 20px)', background: 'linear-gradient(180deg,rgba(242,242,247,0) 0%,#F2F2F7 32%)', display: 'flex', gap: 10 }}>
-        {!state.slotOpen && (
-          <button type="button" className="ui-button" onClick={() => { dispatch({ slotOpen: true, openRowId: null }); slotRef.current?.scrollIntoView({ block: 'nearest' }); }} style={{ height: 50, padding: '0 18px', borderRadius: 12, background: '#fff', border: '1px solid rgba(60,60,67,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer', flexShrink: 0 }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1d1d1f" strokeWidth="2.4" strokeLinecap="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
-            <span style={{ fontSize: 14.5, fontWeight: 700 }}>항목 추가</span>
-          </button>
-        )}
+        <button type="button" className="ui-button" onClick={props.onOpenAdd} style={{ height: 50, padding: '0 18px', borderRadius: 12, background: '#fff', border: '1px solid rgba(60,60,67,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer', flexShrink: 0 }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1d1d1f" strokeWidth="2.4" strokeLinecap="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
+          <span style={{ fontSize: 14.5, fontWeight: 700 }}>항목 추가</span>
+        </button>
         <button
           type="button"
           className="ui-button"
@@ -1306,16 +1329,24 @@ function DeckView(props: {
   );
 }
 
-// ================================================================ NEW CARD SLOT
-// 암기 항목 추가는 목록 맨 끝의 인라인 편집기에서 이뤄진다: 내용을 쓰면
-// 바로 아래에 같은 내용이 나타나고, 거기서 가릴 부분을 선택한 뒤 추가한다.
-// 여러 줄을 쓰거나 붙여넣으면 줄마다 한 항목(전환 가능), "질문: 답"은 자동 인식.
-function NewCardSlot(props: {
+// ================================================================ CONTINUOUS ADD
+// 추가 중에는 목록 관리 UI를 모두 치우고 현재 입력에만 집중한다.
+// 저장 후 편집기를 닫지 않고 비운 뒤 다시 포커스해 연속 입력을 지원한다.
+function ContinuousAddView(props: {
   state: UIState; dispatch: (p: Patch) => void;
   renderTokenChips: (tokens: Token[], ri: number, fontSize: number) => React.ReactNode;
-  onAddCards: (cards: NewCard[]) => void; toast: (msg: string) => void;
+  onAddCards: (cards: NewCard[]) => void;
+  onUndoLast: () => number;
+  onClose: () => void;
 }) {
   const { state, dispatch } = props;
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const undoTimer = useRef<number | undefined>(undefined);
+  const [addedCount, setAddedCount] = useState(0);
+  const [lastAddedCount, setLastAddedCount] = useState(0);
+  const [undoVisible, setUndoVisible] = useState(false);
+
+  useEffect(() => () => window.clearTimeout(undoTimer.current), []);
 
   // re-parse on every keystroke but keep words the user already masked
   const reparse = (text: string, mode: 'auto' | 'one') => (st: UIState): Partial<UIState> => {
@@ -1336,7 +1367,6 @@ function NewCardSlot(props: {
   const incomplete = tokenRows.filter((r) => r.kind === 'tokens' && !r.tokens.some((t) => t.hidden)).length;
   const blanks = tokenRows.reduce((n, r) => n + (r.kind === 'tokens' && r.tokens.some((t) => t.hidden) ? tokensToCard(r.tokens).a.length : 0), 0);
   const multi = state.sheetRows.length > 1;
-  const guideStep = state.pasteText.trim().length === 0 ? 0 : validRows.length === 0 ? 1 : 2;
 
   const add = () => {
     if (validRows.length === 0) return;
@@ -1346,69 +1376,116 @@ function NewCardSlot(props: {
       return qaToNewCard(q, a, false);
     });
     props.onAddCards(cards);
-    dispatch({ slotOpen: false, pasteText: '', sheetRows: [] });
-    props.toast(cards.length > 1 ? `암기 항목 ${cards.length}개를 추가했어요` : '암기 항목을 추가했어요');
+    setAddedCount((count) => count + cards.length);
+    setLastAddedCount(cards.length);
+    setUndoVisible(true);
+    window.clearTimeout(undoTimer.current);
+    undoTimer.current = window.setTimeout(() => setUndoVisible(false), 4500);
+    dispatch({ pasteText: '', pasteMode: 'auto', sheetRows: [], sel: null });
+    window.requestAnimationFrame(() => inputRef.current?.focus());
+  };
+
+  const undoLast = () => {
+    const undone = props.onUndoLast();
+    if (undone === 0) return;
+    setAddedCount((count) => Math.max(0, count - undone));
+    setLastAddedCount(0);
+    setUndoVisible(false);
+    window.clearTimeout(undoTimer.current);
+    window.requestAnimationFrame(() => inputRef.current?.focus());
   };
 
   return (
-    <div style={{ background: '#fff', borderRadius: 12, padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div aria-label="항목 추가 순서" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 5 }}>
-        {['내용 입력', '가릴 부분 탭', '항목 추가'].map((label, index) => (
-          <div key={label} style={{ minWidth: 0, minHeight: 34, padding: '0 5px', borderRadius: 8, background: guideStep === index ? ACCENT_SOFT : '#F5F5F7', color: guideStep === index ? ACCENT_DEEP : '#77777f', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontSize: 11.5, fontWeight: guideStep === index ? 800 : 650, textAlign: 'center', whiteSpace: 'nowrap' }}>
-            <span aria-hidden="true">{index + 1}</span>
-            <span>{label}</span>
-          </div>
-        ))}
+    <div style={{ flex: 1, minHeight: 0, position: 'relative', display: 'flex', flexDirection: 'column', background: '#F2F2F7', paddingTop: 'env(safe-area-inset-top)' }}>
+      <div style={{ height: 60, padding: '6px 16px 0', display: 'grid', gridTemplateColumns: '76px 1fr 76px', alignItems: 'center', flexShrink: 0 }}>
+        <button type="button" className="ui-button" onClick={props.onClose} style={{ minWidth: 44, minHeight: 44, justifySelf: 'start', background: 'transparent', color: ACCENT, fontSize: 16.5, fontWeight: 600, cursor: 'pointer' }}>
+          취소
+        </button>
+        <div style={{ textAlign: 'center', fontSize: 18, fontWeight: 800, letterSpacing: '-0.02em' }}>연속 추가</div>
+        <button type="button" className="ui-button" onClick={props.onClose} style={{ minWidth: 44, minHeight: 44, justifySelf: 'end', background: 'transparent', color: ACCENT, fontSize: 16.5, fontWeight: 700, cursor: 'pointer', textAlign: 'right' }}>
+          완료
+        </button>
       </div>
-      <label htmlFor="new-memory-content" style={{ fontSize: 13, fontWeight: 800, color: '#1d1d1f' }}>암기할 내용</label>
-      <div style={{ background: '#F5F5F7', borderRadius: 10, padding: '9px 12px' }}>
-        <textarea
-          id="new-memory-content"
-          autoFocus
-          rows={Math.min(5, Math.max(2, state.pasteText.split('\n').length))}
-          value={state.pasteText}
-          onChange={(e) => dispatch(reparse(e.target.value, state.pasteMode))}
-          placeholder={'내용을 입력하거나 붙여넣으세요\n("질문: 답"과 여러 줄도 가능해요)'}
-          style={{ width: '100%', border: 'none', background: 'transparent', color: '#000', fontSize: 15, fontWeight: 600, lineHeight: 1.6, resize: 'none', display: 'block' }}
-        />
+      <div aria-live="polite" style={{ height: 34, display: 'grid', placeItems: 'center', color: 'rgba(60,60,67,0.55)', fontSize: 14, fontWeight: 600, flexShrink: 0 }}>
+        {addedCount}개 추가됨
       </div>
 
-      {multi && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 11.5, fontWeight: 700, color: 'rgba(60,60,67,0.55)' }}>{state.sheetRows.length}줄</span>
-          <div style={{ display: 'flex', padding: 2, borderRadius: 8, background: 'rgba(120,120,128,0.12)' }}>
-            {([['auto', '줄마다 한 항목'], ['one', '전체를 한 항목으로']] as const).map(([mode, label]) => (
-              <button type="button" className="ui-button" key={mode} onClick={() => dispatch(reparse(state.pasteText, mode))} aria-pressed={state.pasteMode === mode} style={{ padding: '4px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: state.pasteMode === mode ? '#fff' : 'transparent', color: state.pasteMode === mode ? '#1d1d1f' : '#6e6e73', boxShadow: state.pasteMode === mode ? '0 1px 2px rgba(0,0,0,0.1)' : 'none' }}>{label}</button>
-            ))}
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '12px 16px 190px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <div style={{ background: '#fff', borderRadius: 14, padding: '18px 14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <label htmlFor="new-memory-content" style={{ fontSize: 16, fontWeight: 800, color: '#1d1d1f' }}>암기할 내용</label>
+          <div style={{ minHeight: 150, border: '1px solid rgba(60,60,67,0.14)', borderRadius: 11, background: '#fff', padding: '12px 13px' }}>
+            <textarea
+              ref={inputRef}
+              id="new-memory-content"
+              autoFocus
+              rows={Math.min(6, Math.max(4, state.pasteText.split('\n').length))}
+              value={state.pasteText}
+              onChange={(e) => dispatch(reparse(e.target.value, state.pasteMode))}
+              placeholder={'내용을 입력하거나 붙여넣으세요\n예: 대한민국의 수도는 서울이다'}
+              style={{ width: '100%', minHeight: 124, border: 'none', background: 'transparent', color: '#000', fontSize: 17, fontWeight: 600, lineHeight: 1.55, resize: 'none', display: 'block' }}
+            />
           </div>
         </div>
-      )}
 
-      {state.sheetRows.map((r, ri) =>
-        r.kind === 'qa' ? (
-          <div key={ri} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 11px', borderRadius: 10, background: 'rgba(120,120,128,0.07)' }}>
-            <span style={{ flex: 1, fontSize: 14, fontWeight: 600, lineHeight: 1.5, wordBreak: 'keep-all' }}>{r.q}</span>
-            <span style={{ fontSize: 14, fontWeight: 700, color: ACCENT_DEEP, flexShrink: 0 }}>{r.a}</span>
-          </div>
-        ) : (
-          <div key={ri} style={{ padding: '8px 11px', borderRadius: 10, background: 'rgba(120,120,128,0.07)', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '3px 2px', lineHeight: 1.9 }}>
-            {props.renderTokenChips(r.tokens, ri, 15)}
-          </div>
-        ),
-      )}
+        {state.sheetRows.length > 0 && (
+          <div style={{ padding: '0 12px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {multi && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(60,60,67,0.55)' }}>{state.sheetRows.length}줄</span>
+              <div style={{ display: 'flex', padding: 2, borderRadius: 8, background: 'rgba(120,120,128,0.12)' }}>
+                {([['auto', '줄마다 추가'], ['one', '한 항목으로']] as const).map(([mode, label]) => (
+                  <button type="button" className="ui-button" key={mode} onClick={() => dispatch(reparse(state.pasteText, mode))} aria-pressed={state.pasteMode === mode} style={{ minHeight: 34, padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: state.pasteMode === mode ? '#fff' : 'transparent', color: state.pasteMode === mode ? '#1d1d1f' : '#6e6e73', boxShadow: state.pasteMode === mode ? '0 1px 2px rgba(0,0,0,0.1)' : 'none' }}>{label}</button>
+                ))}
+              </div>
+            </div>
+          )}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        {incomplete > 0 && validRows.length > 0 ? (
-          <span style={{ fontSize: 11.5, fontWeight: 600, color: '#a34f00' }}>{incomplete}줄은 가릴 부분이 없어 빠져요</span>
-        ) : blanks > 0 ? (
-          <span style={{ fontSize: 11.5, fontWeight: 700, color: ACCENT_DEEP, background: ACCENT_SOFT, borderRadius: 7, padding: '4px 9px' }}>가림 {blanks}곳</span>
-        ) : tokenRows.length > 0 ? (
-          <span style={{ fontSize: 11.5, fontWeight: 700, color: ACCENT_DEEP }}>위 내용에서 가릴 부분을 탭하세요 · 여러 곳 선택 가능</span>
-        ) : null}
-        <div style={{ flex: 1 }} />
-        <button type="button" className="ui-button" onClick={() => dispatch({ slotOpen: false, pasteText: '', sheetRows: [] })} style={{ padding: '9px 12px', background: 'transparent', fontSize: 14, fontWeight: 600, color: '#6e6e73', cursor: 'pointer' }}>취소</button>
-        <button type="button" className="ui-button" onClick={add} disabled={validRows.length === 0} style={{ height: 40, padding: '0 18px', borderRadius: 10, background: validRows.length > 0 ? ACCENT : 'rgba(0,122,255,0.28)', display: 'grid', placeItems: 'center', cursor: validRows.length > 0 ? 'pointer' : 'default', transition: 'background 0.15s', fontSize: 14, fontWeight: 700, color: '#fff' }}>
-          {validRows.length > 1 ? `${validRows.length}개 추가` : '항목 추가'}
+          {tokenRows.length > 0 && (
+            <div style={{ color: 'rgba(60,60,67,0.58)', fontSize: 13.5, fontWeight: 600 }}>
+              {incomplete > 0 && validRows.length > 0
+                ? `${incomplete}줄은 가릴 부분이 없어 빠져요`
+                : blanks > 0 ? `가림 ${blanks}곳 선택됨` : '가릴 부분을 탭하세요'}
+            </div>
+          )}
+
+          {state.sheetRows.map((r, ri) => r.kind === 'qa' ? (
+            <div key={ri} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 12px', borderRadius: 10, background: 'rgba(120,120,128,0.07)' }}>
+              <span style={{ flex: 1, fontSize: 15, fontWeight: 600, lineHeight: 1.5, wordBreak: 'keep-all' }}>{r.q}</span>
+              <span style={{ fontSize: 15, fontWeight: 700, color: ACCENT_DEEP, flexShrink: 0 }}>{r.a}</span>
+            </div>
+          ) : (
+            <div key={ri} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '7px 4px', lineHeight: 1.9 }}>
+              {props.renderTokenChips(r.tokens, ri, 16)}
+            </div>
+          ))}
+
+          </div>
+        )}
+      </div>
+
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '10px 16px calc(env(safe-area-inset-bottom) + 18px)', background: '#F2F2F7', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ minHeight: 54 }}>
+          {undoVisible && (
+            <div
+              role="status"
+              aria-live="polite"
+              style={{ minHeight: 54, borderRadius: 12, background: '#fff', border: '1px solid rgba(60,60,67,0.1)', display: 'flex', alignItems: 'center', padding: '0 14px', animation: 'undoIn 0.18s ease-out' }}
+            >
+              <span style={{ flex: 1, fontSize: 14.5, fontWeight: 650 }}>추가했어요</span>
+              <button type="button" className="ui-button" onClick={undoLast} disabled={lastAddedCount === 0} style={{ minWidth: 64, minHeight: 44, background: 'transparent', color: '#6e6e73', fontSize: 14, fontWeight: 700, textAlign: 'right', cursor: 'pointer' }}>
+                되돌리기
+              </button>
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          className="ui-button"
+          onClick={add}
+          disabled={validRows.length === 0}
+          style={{ width: '100%', height: 54, borderRadius: 12, background: validRows.length > 0 ? ACCENT : 'rgba(0,122,255,0.24)', color: '#fff', display: 'grid', placeItems: 'center', cursor: validRows.length > 0 ? 'pointer' : 'default', fontSize: 16, fontWeight: 800, transition: 'background 0.15s, transform 0.12s' }}
+        >
+          {validRows.length > 1 ? `${validRows.length}개 추가하고 계속` : '추가하고 계속'}
         </button>
       </div>
     </div>
