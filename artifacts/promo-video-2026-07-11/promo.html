@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>시험암기 홍보 영상 렌더러</title>
+  <style>
+    html, body { margin: 0; background: #111; overflow: hidden; }
+    canvas { display: block; width: 540px; height: 960px; }
+    #status { position: fixed; left: 12px; top: 12px; color: white; font: 14px monospace; }
+  </style>
+</head>
+<body>
+  <canvas id="canvas" width="1080" height="1920"></canvas>
+  <div id="status">loading</div>
+  <script type="module">
+    const canvas = document.getElementById('canvas');
+    const context = canvas.getContext('2d', { alpha: false });
+    const status = document.getElementById('status');
+    const width = canvas.width;
+    const height = canvas.height;
+    const duration = 30;
+    const colors = {
+      ink: '#14151b',
+      muted: '#636976',
+      blue: '#3b7df2',
+      green: '#4fbd70',
+      cream: '#faf8ef',
+      white: '#ffffff',
+    };
+
+    const assetPaths = {
+      home: '/assets/home.png',
+      add: '/assets/add.png',
+      hidden: '/assets/hidden.png',
+      revealed: '/assets/revealed.png',
+    };
+
+    const assets = Object.fromEntries(await Promise.all(Object.entries(assetPaths).map(async ([key, path]) => {
+      const image = new Image();
+      image.src = path;
+      await image.decode();
+      return [key, image];
+    })));
+    await document.fonts.ready;
+
+    function clamp(value, lower = 0, upper = 1) {
+      return Math.min(Math.max(value, lower), upper);
+    }
+
+    function smooth(value) {
+      const x = clamp(value);
+      return x * x * (3 - 2 * x);
+    }
+
+    function easeOut(value) {
+      const x = clamp(value);
+      return 1 - Math.pow(1 - x, 3);
+    }
+
+    function sceneAlpha(time, start, end, fade = 0.48) {
+      return Math.min(smooth((time - start) / fade), smooth((end - time) / fade));
+    }
+
+    function roundedPath(x, y, w, h, radius) {
+      const r = Math.min(radius, w / 2, h / 2);
+      context.beginPath();
+      context.moveTo(x + r, y);
+      context.arcTo(x + w, y, x + w, y + h, r);
+      context.arcTo(x + w, y + h, x, y + h, r);
+      context.arcTo(x, y + h, x, y, r);
+      context.arcTo(x, y, x + w, y, r);
+      context.closePath();
+    }
+
+    function roundedRect(x, y, w, h, radius, color, alpha = 1, shadow = false) {
+      context.save();
+      context.globalAlpha = alpha;
+      if (shadow) {
+        context.shadowColor = 'rgba(20, 26, 45, 0.18)';
+        context.shadowBlur = 34;
+        context.shadowOffsetY = 16;
+      }
+      roundedPath(x, y, w, h, radius);
+      context.fillStyle = color;
+      context.fill();
+      context.restore();
+    }
+
+    function text(value, x, y, maxWidth, size, weight, color, align = 'left', alpha = 1, lineHeight = size * 1.18) {
+      context.save();
+      context.globalAlpha = alpha;
+      context.fillStyle = color;
+      context.font = `${weight} ${size}px -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif`;
+      context.textAlign = align;
+      context.textBaseline = 'top';
+      const anchor = align === 'center' ? x + maxWidth / 2 : align === 'right' ? x + maxWidth : x;
+      for (const [index, line] of value.split('\n').entries()) {
+        context.fillText(line, anchor, y + index * lineHeight, maxWidth);
+      }
+      context.restore();
+    }
+
+    function drawBookIcon(cx, cy, size, color, alpha = 1) {
+      context.save();
+      context.globalAlpha = alpha;
+      context.strokeStyle = color;
+      context.lineWidth = Math.max(5, size * 0.055);
+      context.lineCap = 'round';
+      context.lineJoin = 'round';
+      for (const direction of [-1, 1]) {
+        context.beginPath();
+        context.moveTo(cx, cy + size * 0.35);
+        context.bezierCurveTo(cx + direction * size * 0.12, cy + size * 0.20, cx + direction * size * 0.27, cy + size * 0.20, cx + direction * size * 0.37, cy + size * 0.20);
+        context.lineTo(cx + direction * size * 0.37, cy - size * 0.30);
+        context.bezierCurveTo(cx + direction * size * 0.22, cy - size * 0.30, cx + direction * size * 0.08, cy - size * 0.18, cx, cy - size * 0.12);
+        context.closePath();
+        context.stroke();
+      }
+      context.restore();
+    }
+
+    function drawBackground(time) {
+      const gradient = context.createLinearGradient(120, 0, 960, height);
+      gradient.addColorStop(0, '#f5f7fe');
+      gradient.addColorStop(1, '#fbf7ed');
+      context.fillStyle = gradient;
+      context.fillRect(0, 0, width, height);
+      const drift = Math.sin(time * 0.55) * 32;
+      roundedRect(-210 + drift, 1340, 560, 560, 280, colors.blue, 0.055);
+      roundedRect(770 - drift, -170, 470, 470, 235, colors.green, 0.055);
+    }
+
+    function drawImageCover(image, x, y, w, h, alpha = 1, crop = null) {
+      context.save();
+      context.globalAlpha = alpha;
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = 'high';
+      if (crop) context.drawImage(image, crop.x, crop.y, crop.w, crop.h, x, y, w, h);
+      else context.drawImage(image, x, y, w, h);
+      context.restore();
+    }
+
+    function drawPhone(image, x, y, w, h, alpha, crop = null) {
+      roundedRect(x - 16, y - 16, w + 32, h + 32, 54, colors.white, alpha, true);
+      context.save();
+      roundedPath(x, y, w, h, 40);
+      context.clip();
+      drawImageCover(image, x, y, w, h, alpha, crop);
+      context.restore();
+      roundedRect(x + w / 2 - 68, y + 17, 136, 24, 12, colors.ink, alpha * 0.82);
+    }
+
+    function drawTap(x, y, progress, color, alpha) {
+      const p = clamp(progress);
+      const outer = 34 + 110 * p;
+      context.save();
+      context.globalAlpha = alpha * (1 - p);
+      context.strokeStyle = color;
+      context.lineWidth = 8 - 4 * p;
+      context.beginPath();
+      context.arc(x, y, outer / 2, 0, Math.PI * 2);
+      context.stroke();
+      context.restore();
+      context.save();
+      context.globalAlpha = alpha * (1 - 0.35 * p);
+      context.fillStyle = color;
+      context.beginPath();
+      context.arc(x, y, (32 - 10 * p) / 2, 0, Math.PI * 2);
+      context.fill();
+      context.restore();
+    }
+
+    function drawHook(time) {
+      const alpha = sceneAlpha(time, 0, 4.4, 0.35);
+      if (!alpha) return;
+      const entry = easeOut(time / 0.85);
+      text('외워야 할 게\n쌓일수록', 92, 280 + (1 - entry) * 80, 896, 96, 850, colors.ink, 'center', alpha, 112);
+      text('암기는 더 단순해야 하니까.', 100, 615, 880, 40, 650, colors.muted, 'center', alpha);
+      const labels = ['헌법재판소 구성', '대통령 임기', '국회의 정기회'];
+      labels.forEach((label, index) => {
+        const x = 230 + (index - 1) * 245;
+        const y = 900 + Math.sin(time * 1.8) * 14 + Math.abs(index - 1) * 100;
+        context.save();
+        context.translate(x + 310, y + 71);
+        context.rotate((index - 1) * 0.075);
+        context.translate(-(x + 310), -(y + 71));
+        roundedRect(x, y, 620, 142, 32, colors.white, alpha * 0.93, true);
+        roundedRect(x + 26, y + 38, 66, 66, 20, colors.blue, alpha * 0.12);
+        text('?', x + 26, y + 44, 66, 31, 750, colors.blue, 'center', alpha);
+        text(label, x + 118, y + 47, 450, 35, 750, colors.ink, 'left', alpha);
+        context.restore();
+      });
+    }
+
+    function drawBrand(time) {
+      const alpha = sceneAlpha(time, 3.8, 6.5);
+      if (!alpha) return;
+      const p = easeOut((time - 3.8) / 0.65);
+      roundedRect(440, 490 + (1 - p) * 45, 200, 200, 54, colors.ink, alpha, true);
+      drawBookIcon(540, 595 + (1 - p) * 45, 108, colors.white, alpha);
+      text('시험암기', 80, 755, 920, 104, 850, colors.ink, 'center', alpha);
+      text('적고, 가리고, 외울 때까지.', 80, 920, 920, 43, 650, colors.muted, 'center', alpha);
+    }
+
+    function drawInput(time) {
+      const alpha = sceneAlpha(time, 5.9, 13.2);
+      if (!alpha) return;
+      const local = time - 5.9;
+      const rise = (1 - easeOut(local / 0.7)) * 90;
+      text('문장을 적고', 82, 115, 916, 66, 850, colors.ink, 'center', alpha);
+      text('가릴 답만 톡.', 82, 215, 916, 66, 850, colors.blue, 'center', alpha);
+      drawPhone(assets.add, 250, 420 + rise, 580, 1255, alpha);
+      roundedRect(125, 1390, 830, 196, 34, colors.white, alpha * 0.97, true);
+      const typed = clamp((local - 1.25) / 1.6);
+      const full = '대한민국의 수도는 서울이다';
+      const partial = [...full].slice(0, Math.round([...full].length * typed)).join('');
+      text(partial, 173, 1448, 740, 42, 650, colors.ink, 'left', alpha);
+      if (typed > 0.98) {
+        const highlight = smooth((local - 3.0) / 0.55);
+        roundedRect(619, 1435, 132, 66, 16, colors.blue, alpha * 0.16 * highlight);
+        text('서울', 632, 1446, 106, 40, 750, colors.blue, 'center', alpha * highlight);
+        if (local > 3.25 && local < 4.2) drawTap(685, 1470, (local - 3.25) / 0.95, colors.blue, alpha);
+      }
+      if (local > 4.5) {
+        const doneAlpha = smooth((local - 4.5) / 0.45) * alpha;
+        roundedRect(375, 1620, 330, 78, 39, colors.blue, doneAlpha);
+        text('카드가 만들어졌어요', 390, 1640, 300, 28, 750, colors.white, 'center', doneAlpha);
+      }
+    }
+
+    function drawStudy(time) {
+      const alpha = sceneAlpha(time, 12.6, 19.7);
+      if (!alpha) return;
+      const local = time - 12.6;
+      text('답은 가리고', 90, 130, 900, 68, 850, colors.ink, 'center', alpha);
+      text('필요할 때 확인.', 90, 230, 900, 68, 850, colors.blue, 'center', alpha);
+      const reveal = smooth((local - 3.1) / 0.55);
+      const crop = { x: 400, y: 0, w: 480, h: 720 };
+      drawPhone(assets.hidden, 195, 430, 690, 1035, alpha * (1 - reveal), crop);
+      drawPhone(assets.revealed, 195, 430, 690, 1035, alpha * reveal, crop);
+      if (local > 2.35 && local < 3.35) drawTap(625, 610, local - 2.35, colors.blue, alpha);
+      if (reveal > 0.2) {
+        roundedRect(333, 1515, 414, 82, 41, colors.green, alpha * reveal * 0.15);
+        text('3초만 보고 다시 가려져요', 350, 1538, 380, 29, 750, '#26713c', 'center', alpha * reveal);
+      }
+    }
+
+    function drawJudgement(time) {
+      const alpha = sceneAlpha(time, 19.0, 23.9);
+      if (!alpha) return;
+      const local = time - 19.0;
+      text('기억났다면', 90, 150, 900, 60, 850, colors.ink, 'center', alpha);
+      text('외웠어요', 90, 245, 900, 76, 850, '#207f42', 'center', alpha);
+      roundedRect(105, 500, 870, 610, 48, colors.white, alpha, true);
+      text('대한민국의 수도는', 175, 635, 730, 47, 750, colors.ink, 'left', alpha);
+      roundedRect(176, 742, 728, 105, 24, colors.blue, alpha * 0.10);
+      text('서울이다', 205, 762, 670, 50, 850, colors.blue, 'center', alpha);
+      roundedRect(105, 1240, 405, 142, 34, '#fae8d1', alpha);
+      roundedRect(535, 1240, 440, 142, 34, '#dcf4df', alpha);
+      text('다시 불러요', 125, 1283, 365, 39, 750, '#754a21', 'center', alpha);
+      text('외웠어요', 555, 1283, 400, 39, 750, '#216b38', 'center', alpha);
+      if (local > 2.0 && local < 3.0) drawTap(755, 1311, local - 2.0, colors.green, alpha);
+      text('아니면, 다음에 다시.', 100, 1480, 880, 38, 650, colors.muted, 'center', smooth((local - 2.55) / 0.5) * alpha);
+    }
+
+    function drawSync(time) {
+      const alpha = sceneAlpha(time, 23.1, 27.7);
+      if (!alpha) return;
+      const local = time - 23.1;
+      text('PC에서도, 아이폰에서도', 70, 150, 940, 57, 850, colors.ink, 'center', alpha);
+      text('같은 암기장 그대로.', 70, 250, 940, 65, 850, colors.blue, 'center', alpha);
+      roundedRect(75, 585, 660, 520, 32, colors.white, alpha, true);
+      context.save();
+      roundedPath(97, 607, 616, 476, 20);
+      context.clip();
+      drawImageCover(assets.home, 97, 607, 616, 476, alpha);
+      context.restore();
+      roundedRect(245, 1110, 320, 28, 14, colors.ink, alpha * 0.72);
+      drawPhone(assets.home, 690, 760, 285, 617, alpha);
+      const pulse = 0.5 + 0.5 * Math.sin(local * 4.2);
+      roundedRect(485, 1280, 128, 128, 64, colors.blue, alpha * (0.10 + 0.06 * pulse));
+      drawBookIcon(549, 1346, 60, colors.blue, alpha);
+      text('같은 공유 코드 하나면\n실시간으로 이어져요', 110, 1510, 860, 38, 650, colors.muted, 'center', alpha, 52);
+    }
+
+    function drawEnd(time) {
+      const alpha = sceneAlpha(time, 27.0, 30.35);
+      if (!alpha) return;
+      const local = time - 27.0;
+      const scale = 0.88 + 0.12 * easeOut(local / 0.65);
+      context.save();
+      context.translate(540, 755);
+      context.scale(scale, scale);
+      context.translate(-540, -755);
+      roundedRect(420, 330, 240, 240, 68, colors.ink, alpha, true);
+      drawBookIcon(540, 454, 130, colors.white, alpha);
+      text('시험암기', 70, 660, 940, 112, 850, colors.ink, 'center', alpha);
+      context.restore();
+      text('외울 건 넣고,\n기억만 꺼내세요.', 105, 850, 870, 64, 850, colors.blue, 'center', alpha, 86);
+      roundedRect(175, 1215, 730, 126, 63, colors.blue, alpha, true);
+      text('무료로 시작하기', 200, 1252, 680, 44, 750, colors.white, 'center', alpha);
+      text('exam-memorizer-clockgo.netlify.app', 90, 1400, 900, 29, 550, colors.muted, 'center', alpha);
+    }
+
+    function renderFrame(time) {
+      drawBackground(time);
+      drawHook(time);
+      drawBrand(time);
+      drawInput(time);
+      drawStudy(time);
+      drawJudgement(time);
+      drawSync(time);
+      drawEnd(time);
+    }
+
+    function scheduleTone(audio, destination, frequency, start, length, volume, type = 'sine') {
+      const oscillator = audio.createOscillator();
+      const gain = audio.createGain();
+      oscillator.type = type;
+      oscillator.frequency.setValueAtTime(frequency, start);
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(volume, start + 0.025);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + length);
+      oscillator.connect(gain).connect(destination);
+      oscillator.start(start);
+      oscillator.stop(start + length + 0.02);
+    }
+
+    function scheduleMusic(audio, destination) {
+      const start = audio.currentTime + 0.08;
+      const master = audio.createGain();
+      master.gain.setValueAtTime(0.0001, start);
+      master.gain.exponentialRampToValueAtTime(0.72, start + 0.8);
+      master.gain.setValueAtTime(0.72, start + duration - 1.2);
+      master.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+      master.connect(destination);
+      const progressions = [[261.63, 329.63, 392.0], [220.0, 261.63, 329.63], [174.61, 220.0, 261.63], [196.0, 246.94, 293.66]];
+      for (let segment = 0; segment < 8; segment += 1) {
+        const chord = progressions[segment % progressions.length];
+        for (const frequency of chord) scheduleTone(audio, master, frequency, start + segment * 4, 3.92, 0.026, 'sine');
+      }
+      const melody = [523.25, 659.25, 783.99, 659.25, 440.0, 523.25, 659.25, 587.33];
+      for (let step = 0; step < duration * 2; step += 1) {
+        scheduleTone(audio, master, melody[step % melody.length], start + step * 0.5, 0.34, 0.026, 'triangle');
+      }
+      for (let beat = 0; beat < duration * 2; beat += 1) {
+        const when = start + beat * 0.5;
+        const oscillator = audio.createOscillator();
+        const gain = audio.createGain();
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(72, when);
+        oscillator.frequency.exponentialRampToValueAtTime(48, when + 0.11);
+        gain.gain.setValueAtTime(0.09, when);
+        gain.gain.exponentialRampToValueAtTime(0.0001, when + 0.13);
+        oscillator.connect(gain).connect(master);
+        oscillator.start(when);
+        oscillator.stop(when + 0.14);
+      }
+      for (const tap of [4.0, 6.25, 9.25, 12.9, 15.75, 20.95, 23.4, 27.25]) {
+        scheduleTone(audio, master, 980, start + tap, 0.18, 0.085, 'sine');
+      }
+    }
+
+    async function uploadBlob(name, blob) {
+      const response = await fetch(`/save?name=${encodeURIComponent(name)}`, { method: 'POST', body: blob });
+      if (!response.ok) throw new Error(`Upload failed: ${name}`);
+    }
+
+    async function savePreviews() {
+      const times = [1.8, 5.0, 9.7, 16.3, 21.7, 28.5];
+      for (let index = 0; index < times.length; index += 1) {
+        renderFrame(times[index]);
+        const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+        await uploadBlob(`preview-${String(index + 1).padStart(2, '0')}.png`, blob);
+      }
+    }
+
+    async function renderVideo() {
+      status.textContent = 'previews';
+      await savePreviews();
+      renderFrame(0);
+
+      const audio = new AudioContext({ sampleRate: 44100 });
+      await audio.resume();
+      const audioDestination = audio.createMediaStreamDestination();
+      scheduleMusic(audio, audioDestination);
+
+      const videoStream = canvas.captureStream(30);
+      const stream = new MediaStream([...videoStream.getVideoTracks(), ...audioDestination.stream.getAudioTracks()]);
+      const mimeType = 'video/mp4;codecs=avc1.42E01E,mp4a.40.2';
+      const recorder = new MediaRecorder(stream, {
+        mimeType,
+        videoBitsPerSecond: 10_000_000,
+        audioBitsPerSecond: 192_000,
+      });
+      const chunks = [];
+      recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
+      const stopped = new Promise((resolve) => { recorder.onstop = resolve; });
+      recorder.start(1000);
+      const startedAt = performance.now();
+
+      await new Promise((resolve) => {
+        function tick(now) {
+          const elapsed = (now - startedAt) / 1000;
+          renderFrame(Math.min(elapsed, duration - 1 / 30));
+          status.textContent = `recording ${elapsed.toFixed(1)} / ${duration}`;
+          if (elapsed < duration) requestAnimationFrame(tick);
+          else resolve();
+        }
+        requestAnimationFrame(tick);
+      });
+
+      recorder.stop();
+      await stopped;
+      const video = new Blob(chunks, { type: mimeType });
+      status.textContent = `uploading ${(video.size / 1024 / 1024).toFixed(1)} MB`;
+      await uploadBlob('exam-memorizer-promo-vertical-30s.mp4', video);
+      status.textContent = 'done';
+      await audio.close();
+    }
+
+    renderVideo().catch(async (error) => {
+      status.textContent = error.stack ?? error.message;
+      await fetch('/error', { method: 'POST', body: error.stack ?? error.message });
+    });
+  </script>
+</body>
+</html>
