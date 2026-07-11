@@ -189,10 +189,10 @@ export function createServerRepository(roomCode: string): Repository | null {
         body: JSON.stringify({ starred }),
       });
     },
-    async toggleCardMastered(deckId, cardId, mastered) {
+    async setCardAnswerMastery(deckId, cardId, answerMastery) {
       await request(roomCode, `/decks/${encodeURIComponent(deckId)}/cards/${encodeURIComponent(cardId)}`, {
         method: 'PATCH',
-        body: JSON.stringify({ mastered }),
+        body: JSON.stringify({ answerMastery }),
       });
     },
   };

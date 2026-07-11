@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
+import { RotateCcw } from 'lucide-react';
 import { createFirebaseRepository } from './firebase';
 import { createLocalRepository } from './localRepository';
 import { createServerRepository } from './serverRepository';
@@ -217,18 +218,41 @@ function deriveQA(card: Card): { q: string; a: string[] } {
   return { q: card.prompt, a: card.answers };
 }
 
-function qaToNewCard(q: string, a: string[], mastered: boolean): NewCard {
+function normalizeAnswerMastery(card: Pick<Card, 'answerMastery' | 'mastered'>, answerCount: number): boolean[] {
+  if (Array.isArray(card.answerMastery)) {
+    return Array.from({ length: answerCount }, (_, i) => Boolean(card.answerMastery?.[i]));
+  }
+  return Array.from({ length: answerCount }, () => Boolean(card.mastered));
+}
+
+function remapAnswerMastery(card: Card, nextAnswers: string[]): boolean[] {
+  const previous = deriveQA(card);
+  const previousMastery = normalizeAnswerMastery(card, previous.a.length);
+  return nextAnswers.map((answer, i) => previous.a[i] === answer && Boolean(previousMastery[i]));
+}
+
+function masterySummary(cards: ProtoCard[]) {
+  return cards.reduce((summary, card) => ({
+    total: summary.total + card.a.length,
+    known: summary.known + card.knownCount,
+  }), { total: 0, known: 0 });
+}
+
+function qaToNewCard(q: string, a: string[], answerMastery = a.map(() => false)): NewCard {
   const isCloze = q.includes('___');
+  const normalized = a.map((_, i) => Boolean(answerMastery[i]));
   return {
     type: isCloze ? 'cloze' : 'pair',
     prompt: q,
     answers: a,
     rawText: isCloze ? q : `${q}: ${a.join(', ')}`,
-    mastered,
+    answerMastery: normalized,
+    mastered: normalized.length > 0 && normalized.every(Boolean),
   };
 }
 
-function cardToNewCard(card: Card, masteredOverride?: boolean): NewCard {
+function cardToNewCard(card: Card, answerMasteryOverride?: boolean[]): NewCard {
+  const answerMastery = answerMasteryOverride ?? normalizeAnswerMastery(card, card.answers.length);
   return {
     type: card.type,
     prompt: card.prompt,
@@ -236,7 +260,8 @@ function cardToNewCard(card: Card, masteredOverride?: boolean): NewCard {
     rawText: card.rawText,
     groupItems: card.groupItems,
     starred: card.starred,
-    mastered: masteredOverride !== undefined ? masteredOverride : card.mastered,
+    answerMastery,
+    mastered: answerMastery.length > 0 && answerMastery.every(Boolean),
   };
 }
 
@@ -244,8 +269,8 @@ function cardToNewCard(card: Card, masteredOverride?: boolean): NewCard {
 // current id (the server regenerates ids on every content PUT).
 type OptimisticNewCard = NewCard & { optimisticId?: string };
 
-function keepCard(card: Card, masteredOverride?: boolean): OptimisticNewCard {
-  return { ...cardToNewCard(card, masteredOverride), optimisticId: card.id };
+function keepCard(card: Card, answerMasteryOverride?: boolean[]): OptimisticNewCard {
+  return { ...cardToNewCard(card, answerMasteryOverride), optimisticId: card.id };
 }
 
 // ------------------------------------------------------------------ view model
@@ -253,6 +278,9 @@ type ProtoCard = {
   id: string;
   q: string;
   a: string[];
+  answerMastery: boolean[];
+  knownCount: number;
+  remainingCount: number;
   memorized: boolean;
   isGroup: boolean;
   source: Card;
@@ -273,21 +301,19 @@ function emptyDeckCache(): DeckCacheEntry {
 
 // ------------------------------------------------------------------ ui state
 type View = 'home' | 'deck' | 'study';
+type StudyTarget = { cardId: string; answerIndexes: number[] };
 type UIState = {
   view: View;
   activeDeckId: string | null;
   activeSectionId: string | null;
   shuffle: boolean;
   filter: 'all' | 'unknown' | 'done';
-  again: Record<string, number>;
-  queue: string[];
+  queue: StudyTarget[];
   sessionTotal: number;
   sessionDone: number;
   revealedIdx: number[];
+  retryAnswerIdx: number[];
   review: boolean;
-  dragX: number;
-  dragging: boolean;
-  snap: boolean;
   openRowId: string | null;
   rowDrag: { id: string; x: number; base: number } | null;
   reorder: { id: string; dy: number; overId?: string | null } | null;
@@ -309,9 +335,8 @@ type UIState = {
 };
 
 const initialUI: UIState = {
-  view: 'home', activeDeckId: null, activeSectionId: null, shuffle: false, filter: 'all', again: {},
-  queue: [], sessionTotal: 0, sessionDone: 0, revealedIdx: [], review: false,
-  dragX: 0, dragging: false, snap: false,
+  view: 'home', activeDeckId: null, activeSectionId: null, shuffle: false, filter: 'all',
+  queue: [], sessionTotal: 0, sessionDone: 0, revealedIdx: [], retryAnswerIdx: [], review: false,
   openRowId: null, rowDrag: null, reorder: null, sel: null,
   slotOpen: false, pasteText: '', pasteMode: 'auto', sheetRows: [],
   editSheetOpen: false, editIdx: null, editMode: 'qa', editQ: '', editA: '', editText: '', editTokens: [],
@@ -443,7 +468,6 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
   const toastTimer = useRef<number | undefined>(undefined);
   const lpTimer = useRef<number | undefined>(undefined);
   const rowStart = useRef<{ x: number; y: number; moved: boolean }>({ x: 0, y: 0, moved: false });
-  const swipeStart = useRef<{ x: number; moved: boolean }>({ x: 0, moved: false });
   const lastAddedSnapshotRef = useRef<{
     deckId: string;
     sectionId: string;
@@ -541,7 +565,19 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
       const seen = new Set<string>();
       const toProto = (c: Card): ProtoCard => {
         const { q, a } = deriveQA(c);
-        return { id: c.id, q, a, memorized: !!c.mastered, isGroup: c.type === 'group', source: c };
+        const answerMastery = normalizeAnswerMastery(c, a.length);
+        const knownCount = answerMastery.filter(Boolean).length;
+        return {
+          id: c.id,
+          q,
+          a,
+          answerMastery,
+          knownCount,
+          remainingCount: a.length - knownCount,
+          memorized: a.length > 0 && knownCount === a.length,
+          isGroup: c.type === 'group',
+          source: c,
+        };
       };
       for (const section of sections) {
         seen.add(section.id);
@@ -571,7 +607,7 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
   }, [decks, deckDataById]);
 
   const activeList = lists.find((l) => l.deckId === state.activeDeckId && l.id === state.activeSectionId);
-  const weakFirst = useCallback((cards: ProtoCard[]) => [...cards].sort((x, y) => (state.again[y.id] || 0) - (state.again[x.id] || 0)), [state.again]);
+  const weakFirst = useCallback((cards: ProtoCard[]) => [...cards].sort((x, y) => y.remainingCount - x.remainingCount), []);
 
   const storedCardsOf = useCallback((deckId: string, sectionId: string): Card[] => {
     const cards = deckDataById[deckId]?.cards ?? [];
@@ -596,15 +632,22 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
     repository.setSectionContent(deckId, sectionId, sourceText, payload).catch(() => toast('저장에 실패했어요'));
   }, [repository, toast]);
 
-  const toggleMemorized = useCallback((deckId: string, cardId: string, mastered: boolean) => {
+  const setAnswerMastery = useCallback((deckId: string, cardId: string, answerMastery: boolean[]) => {
     if (!repository) return;
+    const mastered = answerMastery.length > 0 && answerMastery.every(Boolean);
     setDeckDataById((cur) => {
       const prev = cur[deckId];
       if (!prev) return cur;
-      return { ...cur, [deckId]: { ...prev, cards: prev.cards.map((c) => (c.id === cardId ? { ...c, mastered } : c)) } };
+      return {
+        ...cur,
+        [deckId]: {
+          ...prev,
+          cards: prev.cards.map((c) => (c.id === cardId ? { ...c, answerMastery, mastered, starred: mastered ? false : c.starred } : c)),
+        },
+      };
     });
-    repository.toggleCardMastered(deckId, cardId, mastered).catch(() => {});
-  }, [repository]);
+    repository.setCardAnswerMastery(deckId, cardId, answerMastery).catch(() => toast('학습 상태 저장에 실패했어요'));
+  }, [repository, toast]);
 
   const renameSection = useCallback((deckId: string, sectionId: string, name: string) => {
     if (!repository) return;
@@ -688,7 +731,7 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
     const stored = storedCardsOf(activeList.deckId, activeList.id);
     if (st.editIdx >= stored.length) return true;
     const rebuilt = stored.map((c, i) =>
-      i === st.editIdx ? { ...qaToNewCard(q, a, !!c.mastered), optimisticId: c.id } : keepCard(c),
+      i === st.editIdx ? { ...qaToNewCard(q, a, remapAnswerMastery(c, a)), optimisticId: c.id } : keepCard(c),
     );
     commitSection(activeList.deckId, activeList.id, rebuilt);
     return true;
@@ -698,44 +741,47 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
     const list = lists.find((l) => l.deckId === deckId && l.id === sectionId);
     if (!list) return;
     if (list.cards.length === 0) { dispatch({ view: 'deck', activeDeckId: deckId, activeSectionId: sectionId }); return; }
-    let ids = cardIds ?? weakFirst(list.cards.filter((c) => !c.memorized)).map((c) => c.id);
+    let cards = cardIds
+      ? cardIds.map((id) => list.cards.find((card) => card.id === id)).filter((card): card is ProtoCard => Boolean(card))
+      : weakFirst(list.cards.filter((card) => card.remainingCount > 0));
     let review = false;
-    if (ids.length === 0) { ids = list.cards.map((c) => c.id); review = true; }
+    if (cards.length === 0) { cards = list.cards; review = true; }
+    else if (cards.every((card) => card.remainingCount === 0)) review = true;
+    let queue: StudyTarget[] = cards.map((card) => {
+      const remaining = card.answerMastery.flatMap((known, i) => (known ? [] : [i]));
+      return {
+        cardId: card.id,
+        answerIndexes: remaining.length > 0 ? remaining : card.a.map((_, i) => i),
+      };
+    }).filter((target) => target.answerIndexes.length > 0);
     if (state.shuffle) {
-      ids = [...ids];
-      for (let i = ids.length - 1; i > 0; i -= 1) { const j = Math.floor(Math.random() * (i + 1)); [ids[i], ids[j]] = [ids[j], ids[i]]; }
+      queue = [...queue];
+      for (let i = queue.length - 1; i > 0; i -= 1) { const j = Math.floor(Math.random() * (i + 1)); [queue[i], queue[j]] = [queue[j], queue[i]]; }
     }
-    dispatch({ view: 'study', activeDeckId: deckId, activeSectionId: sectionId, queue: ids, sessionTotal: ids.length, sessionDone: 0, revealedIdx: [], dragX: 0, openRowId: null, review });
+    const sessionTotal = queue.reduce((total, target) => total + target.answerIndexes.length, 0);
+    dispatch({
+      view: 'study', activeDeckId: deckId, activeSectionId: sectionId, queue, sessionTotal, sessionDone: 0,
+      revealedIdx: [], retryAnswerIdx: [], openRowId: null, review,
+    });
   }, [lists, weakFirst, state.shuffle]);
 
-  const doKnown = useCallback(() => {
+  const completeStudyTarget = useCallback(() => {
     const list = activeList;
-    const cardId = state.queue[0];
-    if (!list || !cardId) return;
-    toggleMemorized(list.deckId, cardId, true);
-    dispatch((st) => ({ queue: st.queue.slice(1), sessionDone: st.sessionDone + 1, revealedIdx: [], dragX: 0, dragging: false, snap: false }));
-  }, [activeList, state.queue, toggleMemorized]);
-
-  const doAgain = useCallback(() => {
-    const cardId = state.queue[0];
-    if (!cardId) return;
-    const last = state.queue.length === 1;
-    dispatch((st) => {
-      const again = { ...st.again, [cardId]: (st.again[cardId] || 0) + 1 };
-      if (st.queue.length === 1) return { again, revealedIdx: [], dragX: 0, dragging: false, snap: false };
-      return { again, queue: [...st.queue.slice(1), st.queue[0]], revealedIdx: [], dragX: 0, dragging: false, snap: false };
-    });
-    if (last) toast('마지막 카드예요 — 한 번 더!');
-  }, [state.queue, toast]);
-
-  const commitSwipe = useCallback((dir: number) => {
-    dispatch({ dragging: false, dragX: dir * 560 });
-    window.setTimeout(() => {
-      if (dir > 0) doKnown(); else doAgain();
-      dispatch({ snap: true, dragX: 0 });
-      window.setTimeout(() => dispatch({ snap: false }), 60);
-    }, 200);
-  }, [doKnown, doAgain]);
+    const target = state.queue[0];
+    if (!list || !target) return;
+    const card = list.cards.find((item) => item.id === target.cardId);
+    if (!card) return;
+    const retry = new Set(state.retryAnswerIdx);
+    const nextMastery = [...card.answerMastery];
+    target.answerIndexes.forEach((answerIndex) => { nextMastery[answerIndex] = !retry.has(answerIndex); });
+    setAnswerMastery(list.deckId, card.id, nextMastery);
+    dispatch((st) => ({
+      queue: st.queue.slice(1),
+      sessionDone: st.sessionDone + target.answerIndexes.length,
+      revealedIdx: [],
+      retryAnswerIdx: [],
+    }));
+  }, [activeList, state.queue, state.retryAnswerIdx, setAnswerMastery]);
 
   // ---- token view descriptors
   const tokenViews = useCallback((tokens: Token[], ri: number) => {
@@ -825,7 +871,6 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
           lpTimer={lpTimer} rowStart={rowStart}
           onHome={() => dispatch({ view: 'home', activeDeckId: null, activeSectionId: null, openRowId: null })}
           onRename={(name) => !activeList.synthetic && renameSection(activeList.deckId, activeList.id, name)}
-          onToggleMem={(card) => toggleMemorized(activeList.deckId, card.id, !card.memorized)}
           onDelete={(card) => {
             const stored = storedCardsOf(activeList.deckId, activeList.id).filter((c) => c.id !== card.id);
             commitSection(activeList.deckId, activeList.id, stored.map((c) => keepCard(c)));
@@ -875,9 +920,9 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
 
       {state.view === 'study' && (
         <StudyView
-          list={activeList} state={state} dispatch={dispatch} swipeStart={swipeStart}
-          onCommitSwipe={commitSwipe} onKnown={doKnown} onAgain={doAgain}
-          onDeck={() => dispatch({ view: 'deck', queue: [], revealedIdx: [], dragX: 0, openRowId: null })}
+          list={activeList} state={state} dispatch={dispatch}
+          onComplete={completeStudyTarget}
+          onDeck={() => dispatch({ view: 'deck', queue: [], revealedIdx: [], retryAnswerIdx: [], openRowId: null })}
           onRetryRemaining={() => activeList && startStudy(activeList.deckId, activeList.id)}
           onReviewAll={() => activeList && startStudy(activeList.deckId, activeList.id, activeList.cards.map((c) => c.id))}
         />
@@ -933,8 +978,8 @@ function HomeView(props: {
   onNewList: () => void; onOpenSettings: () => void;
 }) {
   const { lists, decksState } = props;
-  const contList = lists.find((l) => l.cards.some((c) => !c.memorized));
-  const contRemain = contList ? contList.cards.filter((c) => !c.memorized).length : 0;
+  const contList = lists.find((l) => l.cards.some((c) => c.remainingCount > 0));
+  const contRemain = contList ? contList.cards.reduce((total, card) => total + card.remainingCount, 0) : 0;
   const activateWithKeyboard = (action: () => void) => (e: ReactKeyboardEvent<HTMLElement>) => {
     if (e.key !== 'Enter' && e.key !== ' ') return;
     e.preventDefault();
@@ -964,7 +1009,7 @@ function HomeView(props: {
         {contList && (
           <button type="button" className="ui-button" onClick={() => props.onContinue(contList)} style={{ width: '100%', marginBottom: 16, padding: '12px 14px', borderRadius: 12, background: ACCENT, color: '#fff', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
             <span style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, opacity: 0.82 }}>이어서 암기 · {contRemain}개 남음</span>
+              <span style={{ fontSize: 12, fontWeight: 600, opacity: 0.82 }}>이어서 암기 · 가림 {contRemain}개</span>
               <span style={{ fontSize: 16, fontWeight: 700, letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{contList.name}</span>
             </span>
             <span style={{ width: 32, height: 32, borderRadius: 999, background: 'rgba(255,255,255,0.24)', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
@@ -976,13 +1021,13 @@ function HomeView(props: {
         {lists.length > 0 && (
           <div style={{ background: '#fff', borderRadius: 12, overflow: 'hidden' }}>
             {lists.map((l) => {
-              const remain = l.cards.filter((c) => !c.memorized).length;
-              const allDone = l.cards.length > 0 && remain === 0;
+              const progress = masterySummary(l.cards);
+              const allDone = progress.total > 0 && progress.known === progress.total;
               return (
                 <div key={`${l.deckId}:${l.id}`} onClick={() => props.onOpenList(l)} onKeyDown={activateWithKeyboard(() => props.onOpenList(l))} role="button" tabIndex={0} aria-label={`${l.name} 열기`} style={{ padding: '11px 14px', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', borderBottom: '1px solid rgba(60,60,67,0.08)' }}>
                   <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
                     <div style={{ fontSize: 15, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name}</div>
-                    <div style={{ fontSize: 12.5, color: '#6e6e73' }}>{l.cards.length === 0 ? '카드 없음' : `카드 ${l.cards.length}개 · ${l.cards.length - remain}개 외움`}</div>
+                    <div style={{ fontSize: 12.5, color: '#6e6e73' }}>{l.cards.length === 0 ? '카드 없음' : `가림 ${progress.known}/${progress.total} · 카드 ${l.cards.length}개`}</div>
                   </div>
                   {allDone && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#1e9e46', flexShrink: 0 }}>
@@ -1009,7 +1054,7 @@ function HomeView(props: {
 function DeckView(props: {
   list: ProtoList; state: UIState; dispatch: (p: Patch) => void; weakFirst: (cards: ProtoCard[]) => ProtoCard[];
   lpTimer: React.MutableRefObject<number | undefined>; rowStart: React.MutableRefObject<{ x: number; y: number; moved: boolean }>;
-  onHome: () => void; onRename: (name: string) => void; onToggleMem: (card: ProtoCard) => void;
+  onHome: () => void; onRename: (name: string) => void;
   onDelete: (card: ProtoCard) => void; onEdit: (card: ProtoCard) => void; onMove: (draggedId: string, targetId: string) => void;
   onDeleteList: () => void;
   onStart: (ids: string[]) => void; onOpenAdd: () => void; toast: (msg: string) => void;
@@ -1025,15 +1070,15 @@ function DeckView(props: {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { setNameDraft(list.name); }, [list.id]);
   const cardsAll = list.cards;
-  const filterFn = (c: ProtoCard) => (state.filter === 'done' ? c.memorized : state.filter === 'unknown' ? !c.memorized : true);
+  const filterFn = (c: ProtoCard) => (state.filter === 'done' ? c.memorized : state.filter === 'unknown' ? c.remainingCount > 0 : true);
   const visible = cardsAll.filter(filterFn);
-  const learningCards = weakFirst(visible.filter((c) => !c.memorized));
+  const learningCards = weakFirst(visible.filter((c) => c.remainingCount > 0));
   const doneCards = visible.filter((c) => c.memorized);
-  const studyCards = visible.filter((c) => !c.memorized);
-  const deckRemain = cardsAll.filter((c) => !c.memorized).length;
+  const studyCards = visible.filter((c) => c.remainingCount > 0);
   const deckTotal = cardsAll.length;
-  const deckPct = deckTotal ? Math.round(((deckTotal - deckRemain) / deckTotal) * 100) : 0;
-  const cntUnknown = cardsAll.filter((c) => !c.memorized).length;
+  const mastery = masterySummary(cardsAll);
+  const deckPct = mastery.total ? Math.round((mastery.known / mastery.total) * 100) : 0;
+  const cntUnknown = cardsAll.filter((c) => c.remainingCount > 0).length;
   const cntDone = cardsAll.filter((c) => c.memorized).length;
 
   const cardGroup = (c: ProtoCard) => (c.memorized ? 'done' : 'learning');
@@ -1111,23 +1156,24 @@ function DeckView(props: {
 
   const rows: Array<{ header: true; label: string; dot: string } | { header: false; card: ProtoCard }> = [];
   if (learningCards.length > 0) {
-    rows.push({ header: true, label: `외우는 중 ${learningCards.length}`, dot: 'rgba(120,120,128,0.5)' });
+    const retryCount = learningCards.reduce((total, card) => total + card.remainingCount, 0);
+    rows.push({ header: true, label: `다시 ${retryCount}`, dot: '#ff9500' });
     learningCards.forEach((c) => rows.push({ header: false, card: c }));
   }
   if (doneCards.length > 0) {
-    rows.push({ header: true, label: `외웠어요 ${doneCards.length}`, dot: '#34c759' });
+    rows.push({ header: true, label: `완료 ${doneCards.length}`, dot: '#34c759' });
     doneCards.forEach((c) => rows.push({ header: false, card: c }));
   }
 
   const startEnabled = deckTotal > 0 && visible.length > 0;
   const startLabel = deckTotal === 0 ? '카드를 먼저 추가하세요'
-    : studyCards.length > 0 ? (state.filter === 'unknown' ? `모르는 것 (${studyCards.length})` : `암기 시작 (${studyCards.length})`)
+    : studyCards.length > 0 ? `가림 ${studyCards.reduce((total, card) => total + card.remainingCount, 0)}개 시작`
     : visible.length > 0 ? '복습하기' : '카드 없음';
 
   const chips: Array<{ key: 'all' | 'unknown' | 'done'; label: string }> = [
     { key: 'all', label: `전체 ${cardsAll.length}` },
-    { key: 'unknown', label: `외우는 중 ${cntUnknown}` },
-    { key: 'done', label: `외웠어요 ${cntDone}` },
+    { key: 'unknown', label: `다시 ${cntUnknown}` },
+    { key: 'done', label: `완료 ${cntDone}` },
   ];
 
   return (
@@ -1178,7 +1224,7 @@ function DeckView(props: {
         <div style={{ flex: 1, height: 3, borderRadius: 2, background: 'rgba(120,120,128,0.16)', overflow: 'hidden' }}>
           <div style={{ width: `${deckPct}%`, height: '100%', background: '#34c759' }} />
         </div>
-        <span style={{ fontSize: 12, fontWeight: 600, color: '#6e6e73', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{deckTotal === 0 ? '0개' : `${deckTotal - deckRemain}/${deckTotal} 외움`}</span>
+        <span style={{ fontSize: 12, fontWeight: 600, color: '#6e6e73', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{mastery.total === 0 ? '가림 없음' : `${mastery.known}/${mastery.total} 가림`}</span>
       </div>
 
       <div style={{ margin: '0 16px 4px', display: 'flex', padding: 2, borderRadius: 9, background: 'rgba(120,120,128,0.12)' }}>
@@ -1238,16 +1284,9 @@ function DeckView(props: {
                     </span>
                   ))}
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, paddingTop: 2, pointerEvents: 'none' }}>
-                  <div onClick={(e) => { e.stopPropagation(); props.onToggleMem(c); }} onPointerDown={(e) => e.stopPropagation()} role="button" aria-label={c.memorized ? '외움 취소' : '외웠다고 표시'} title={c.memorized ? '외움 취소' : '외웠다고 표시'} style={{ pointerEvents: 'auto', width: 32, height: 32, margin: '-6px -6px -6px 0', display: 'grid', placeItems: 'center', cursor: 'pointer', borderRadius: 999 }}>
-                    {c.memorized ? (
-                      <div style={{ width: 20, height: 20, borderRadius: 999, background: '#34c759', display: 'grid', placeItems: 'center' }}>
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
-                      </div>
-                    ) : (
-                      <div style={{ width: 20, height: 20, borderRadius: 999, border: '1.5px solid rgba(120,120,128,0.35)', boxSizing: 'border-box' }} />
-                    )}
-                  </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0, paddingTop: 3, pointerEvents: 'none', color: c.memorized ? '#1e9e46' : '#6e6e73' }}>
+                  <span style={{ fontSize: 11.5, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{c.knownCount}/{c.a.length}</span>
+                  {c.memorized && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1e9e46" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>}
                 </div>
               </div>
             </div>
@@ -1321,9 +1360,9 @@ function ContinuousAddView(props: {
   const add = () => {
     if (validRows.length === 0) return;
     const cards = validRows.map((r) => {
-      if (r.kind === 'qa') return qaToNewCard(r.q, [r.a], false);
+      if (r.kind === 'qa') return qaToNewCard(r.q, [r.a]);
       const { q, a } = tokensToCard(r.tokens);
-      return qaToNewCard(q, a, false);
+      return qaToNewCard(q, a);
     });
     props.onAddCards(cards);
     setAddedCount((count) => count + cards.length);
@@ -1445,47 +1484,56 @@ function ContinuousAddView(props: {
 // ================================================================ STUDY
 function StudyView(props: {
   list: ProtoList | undefined; state: UIState; dispatch: (p: Patch) => void;
-  swipeStart: React.MutableRefObject<{ x: number; moved: boolean }>;
-  onCommitSwipe: (dir: number) => void; onKnown: () => void; onAgain: () => void;
+  onComplete: () => void;
   onDeck: () => void; onRetryRemaining: () => void; onReviewAll: () => void;
 }) {
-  const { list, state, dispatch, swipeStart } = props;
+  const { list, state, dispatch } = props;
   const isPc = usePcHints();
-  const card = list && state.queue.length > 0 ? list.cards.find((c) => c.id === state.queue[0]) : undefined;
+  const target = state.queue[0];
+  const card = list && target ? list.cards.find((c) => c.id === target.cardId) : undefined;
   const qParts = card ? card.q.split('___') : [];
   const nBlanks = card ? (qParts.length > 1 ? qParts.length - 1 : 1) : 0;
   const isCloze = !!card && qParts.length > 1;
+  const targetIndexes = target?.answerIndexes ?? [];
+  const targetSet = new Set(targetIndexes);
+  const retrySet = new Set(state.retryAnswerIdx);
   let nextIdx = -1;
-  for (let i = 0; i < nBlanks; i += 1) { if (!state.revealedIdx.includes(i)) { nextIdx = i; break; } }
-  const allRevealed = !!card && nextIdx === -1;
-  const dx = state.dragX;
+  for (const answerIndex of targetIndexes) {
+    if (!state.revealedIdx.includes(answerIndex)) { nextIdx = answerIndex; break; }
+  }
+  const allRevealed = !!card && targetIndexes.length > 0 && nextIdx === -1;
 
   const revealNext = () => { if (nextIdx >= 0) dispatch((st) => ({ revealedIdx: [...st.revealedIdx, nextIdx] })); };
+  const toggleRetry = (answerIndex: number) => {
+    dispatch((st) => ({
+      retryAnswerIdx: st.retryAnswerIdx.includes(answerIndex)
+        ? st.retryAnswerIdx.filter((i) => i !== answerIndex)
+        : [...st.retryAnswerIdx, answerIndex],
+    }));
+  };
 
-  // PC keyboard: Space/Enter reveal (then judge as known), arrows judge, Escape closes.
+  // PC keyboard: Space/Enter reveals the next target, then advances.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (document.activeElement?.tagName || '').toLowerCase();
-      if (tag === 'input' || tag === 'textarea') return;
       if (e.key === 'Escape') { props.onDeck(); return; }
+      if (tag === 'input' || tag === 'textarea' || tag === 'button' || tag === 'select') return;
       if (!card) return;
       if (e.key === ' ' || e.key === 'Enter') {
         e.preventDefault();
         if (nextIdx >= 0) revealNext();
-        else props.onCommitSwipe(1);
+        else props.onComplete();
         return;
       }
-      if (e.key === 'ArrowRight') { e.preventDefault(); props.onCommitSwipe(1); }
-      if (e.key === 'ArrowLeft') { e.preventDefault(); props.onCommitSwipe(-1); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   });
 
   if (!card) {
-    const deckRemain = list ? list.cards.filter((c) => !c.memorized).length : 0;
-    const deckTotal = list ? list.cards.length : 0;
-    const allMemorized = !!list && deckRemain === 0 && deckTotal > 0;
+    const progress = list ? masterySummary(list.cards) : { total: 0, known: 0 };
+    const remaining = progress.total - progress.known;
+    const allMemorized = progress.total > 0 && remaining === 0;
     return (
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, paddingTop: 'env(safe-area-inset-top)', background: '#fff' }}>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 18, padding: '0 32px 100px' }}>
@@ -1493,14 +1541,14 @@ function StudyView(props: {
             <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#1e9e46" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-            <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.01em' }}>{state.review ? '복습 끝!' : '오늘 목표 달성!'}</div>
+            <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.01em' }}>{state.review ? '복습 끝!' : '오늘 학습 끝!'}</div>
             <div style={{ fontSize: 15, color: 'rgba(60,60,67,0.6)', textAlign: 'center', lineHeight: 1.5 }}>
-              {list ? (deckRemain === 0 ? `"${list.name}" 전부 외웠어요` : `${state.sessionTotal}개 확인 완료 · 안 외운 카드 ${deckRemain}개 남음`) : ''}
+              {list ? (remaining === 0 ? `가림 ${progress.total}개 완료` : `가림 ${state.sessionTotal}개 확인 · 다시 ${remaining}개`) : ''}
             </div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%', marginTop: 10 }}>
-            {deckRemain > 0 && (
-              <button type="button" className="ui-button" onClick={props.onRetryRemaining} style={{ height: 50, borderRadius: 12, background: ACCENT, display: 'grid', placeItems: 'center', cursor: 'pointer', fontSize: 15.5, fontWeight: 700, color: '#fff' }}>안 외운 {deckRemain}개 다시</button>
+            {remaining > 0 && (
+              <button type="button" className="ui-button" onClick={props.onRetryRemaining} style={{ height: 50, borderRadius: 12, background: ACCENT, display: 'grid', placeItems: 'center', cursor: 'pointer', fontSize: 15.5, fontWeight: 700, color: '#fff' }}>가림 {remaining}개 다시</button>
             )}
             {allMemorized && (
               <button type="button" className="ui-button" onClick={props.onReviewAll} style={{ height: 50, borderRadius: 12, background: 'rgba(120,120,128,0.16)', display: 'grid', placeItems: 'center', cursor: 'pointer', fontSize: 15.5, fontWeight: 700, color: '#48484a' }}>처음부터 복습</button>
@@ -1512,24 +1560,27 @@ function StudyView(props: {
     );
   }
 
-  const cardSegs: Array<{ text: string; kind: 'text' | 'next' | 'waiting' | 'revealed'; answer: string }> = [];
+  const cardSegs: Array<{ text: string; kind: 'text' | 'next' | 'waiting' | 'revealed'; answer: string; answerIndex: number; target: boolean }> = [];
   if (isCloze) {
     qParts.forEach((t, i) => {
-      cardSegs.push({ text: t, kind: 'text', answer: '' });
+      cardSegs.push({ text: t, kind: 'text', answer: '', answerIndex: -1, target: false });
       if (i < qParts.length - 1) {
-        const kind = state.revealedIdx.includes(i) ? 'revealed' : i === nextIdx ? 'next' : 'waiting';
-        cardSegs.push({ text: '', kind, answer: card.a[i] || '' });
+        const isTarget = targetSet.has(i);
+        const kind = !isTarget || state.revealedIdx.includes(i) ? 'revealed' : i === nextIdx ? 'next' : 'waiting';
+        cardSegs.push({ text: '', kind, answer: card.a[i] || '', answerIndex: i, target: isTarget });
       }
     });
   }
 
-  const progressPct = state.sessionTotal ? Math.round((state.sessionDone / state.sessionTotal) * 100) : 0;
-  const cardBadge = isCloze ? (nBlanks > 1 ? `가림 ${nBlanks}곳` : '가림 1곳') : '문답';
-  const tapHint = isCloze && nBlanks > 1
-    ? `화면을 탭하면 가림막이 하나씩 열려요 (${Math.min(state.revealedIdx.length + 1, nBlanks)}/${nBlanks})`
+  const checkedInCard = targetIndexes.filter((i) => state.revealedIdx.includes(i)).length;
+  const checkedTotal = state.sessionDone + checkedInCard;
+  const progressPct = state.sessionTotal ? Math.round((checkedTotal / state.sessionTotal) * 100) : 0;
+  const cardBadge = isCloze ? (nBlanks > 1 ? `가림 ${nBlanks}곳` : '가림 1곳') : (card.a.length > 1 ? `문답 · 답 ${card.a.length}개` : '문답');
+  const tapHint = targetIndexes.length > 1
+    ? `탭하면 다음 답 (${checkedInCard + 1}/${targetIndexes.length})`
     : '화면을 탭하면 답이 보여요';
-  const keyboardHint = isCloze && nBlanks > 1
-    ? `스페이스를 누르면 가림막이 하나씩 열려요 (${Math.min(state.revealedIdx.length + 1, nBlanks)}/${nBlanks})`
+  const keyboardHint = targetIndexes.length > 1
+    ? `스페이스를 누르면 다음 답 (${checkedInCard + 1}/${targetIndexes.length})`
     : '스페이스를 누르면 답이 보여요';
 
   return (
@@ -1541,28 +1592,16 @@ function StudyView(props: {
         <div style={{ flex: 1, height: 3, borderRadius: 2, background: 'rgba(120,120,128,0.16)', overflow: 'hidden' }}>
           <div style={{ width: `${progressPct}%`, height: '100%', borderRadius: 2, background: ACCENT, transition: 'width 0.35s cubic-bezier(0.3,0.9,0.4,1)' }} />
         </div>
-        <span style={{ fontSize: 12.5, fontWeight: 600, color: 'rgba(60,60,67,0.6)', fontVariantNumeric: 'tabular-nums' }}>{Math.min(state.sessionDone + 1, state.sessionTotal)}/{state.sessionTotal}</span>
+        <span style={{ fontSize: 12.5, fontWeight: 600, color: 'rgba(60,60,67,0.6)', fontVariantNumeric: 'tabular-nums' }}>{checkedTotal}/{state.sessionTotal}</span>
       </div>
-
-      <div style={{ position: 'absolute', top: 120, left: 24, padding: '9px 16px', borderRadius: 14, background: 'rgba(255,149,0,0.92)', color: '#fff', fontSize: 15, fontWeight: 800, transform: 'rotate(-8deg)', opacity: Math.min(Math.max(-dx / 110, 0), 1), transition: 'opacity 0.1s', zIndex: 5, pointerEvents: 'none' }}>다시 볼래요</div>
-      <div style={{ position: 'absolute', top: 120, right: 24, padding: '9px 16px', borderRadius: 14, background: '#34c759', color: '#fff', fontSize: 15, fontWeight: 800, transform: 'rotate(8deg)', opacity: Math.min(Math.max(dx / 110, 0), 1), transition: 'opacity 0.1s', zIndex: 5, pointerEvents: 'none' }}>외웠어요 ✓</div>
 
       <div
         key={`${card.id}-${state.sessionDone}-${state.queue.length}`}
-        role="button"
-        tabIndex={0}
-        aria-label={allRevealed ? '외웠다고 표시' : isCloze ? `가림막 공개 ${state.revealedIdx.length + 1}/${nBlanks}` : '답 공개'}
-        onPointerDown={(e) => { swipeStart.current = { x: e.clientX, moved: false }; try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ } dispatch({ dragging: true }); }}
-        onPointerMove={(e) => { if (!state.dragging) return; const d = e.clientX - swipeStart.current.x; if (Math.abs(d) > 8) swipeStart.current.moved = true; dispatch({ dragX: d }); }}
-        onPointerUp={() => {
-          if (!state.dragging) return;
-          const d = state.dragX;
-          if (!swipeStart.current.moved) { dispatch({ dragging: false, dragX: 0 }); revealNext(); return; }
-          if (d > 90) props.onCommitSwipe(1);
-          else if (d < -90) props.onCommitSwipe(-1);
-          else dispatch({ dragging: false, dragX: 0 });
-        }}
-        style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, animation: 'cardIn 0.3s cubic-bezier(0.3,0.9,0.4,1)', transform: `translateX(${dx}px) rotate(${(dx * 0.035).toFixed(2)}deg)`, transition: state.dragging || state.snap ? 'none' : 'transform 0.25s cubic-bezier(0.3,0.9,0.4,1)', touchAction: 'pan-y', cursor: 'pointer' }}
+        role={allRevealed ? undefined : 'button'}
+        tabIndex={allRevealed ? undefined : 0}
+        aria-label={allRevealed ? undefined : isCloze ? `가림막 공개 ${checkedInCard + 1}/${targetIndexes.length}` : '답 공개'}
+        onClick={() => { if (!allRevealed) revealNext(); }}
+        style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, animation: 'cardIn 0.3s cubic-bezier(0.3,0.9,0.4,1)', touchAction: 'pan-y', cursor: allRevealed ? 'default' : 'pointer' }}
       >
         <div style={{ padding: '26px 24px 0', display: 'flex', alignItems: 'center' }}>
           <div style={{ fontSize: 11.5, fontWeight: 600, color: 'rgba(60,60,67,0.5)', letterSpacing: '0.03em' }}>{cardBadge}{list ? ` · ${list.name}` : ''}</div>
@@ -1571,13 +1610,31 @@ function StudyView(props: {
           {!isCloze ? (
             <>
               <div style={{ fontSize: 25, fontWeight: 800, letterSpacing: '-0.015em', lineHeight: 1.4, wordBreak: 'keep-all', whiteSpace: 'pre-line' }}>{card.q}</div>
-              {!allRevealed ? (
-                <div style={{ height: 42, borderRadius: 10, background: 'rgba(0,122,255,0.16)', width: `${Math.max(7, Math.min(card.a.join(', ').length + 1, 18))}em`, maxWidth: '100%', fontSize: 16 }} />
-              ) : (
-                <div style={{ borderLeft: `3px solid ${ACCENT}`, padding: '2px 0 2px 14px', animation: 'popIn 0.22s cubic-bezier(0.3,1.2,0.4,1)' }}>
-                  <span style={{ fontSize: 21, fontWeight: 700, color: '#1d1d1f', wordBreak: 'keep-all', lineHeight: 1.45, whiteSpace: 'pre-line' }}>{card.a.join(', ')}</span>
-                </div>
-              )}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 10 }}>
+                {card.a.map((answer, answerIndex) => {
+                  const isTarget = targetSet.has(answerIndex);
+                  const revealed = !isTarget || state.revealedIdx.includes(answerIndex);
+                  if (!revealed) {
+                    return <div key={answerIndex} style={{ height: 42, borderRadius: 10, background: answerIndex === nextIdx ? 'rgba(0,122,255,0.16)' : 'rgba(120,120,128,0.12)', width: `${Math.max(7, Math.min(answer.length + 1, 18))}em`, maxWidth: '100%', fontSize: 16 }} />;
+                  }
+                  if (!allRevealed || !isTarget) {
+                    return <div key={answerIndex} style={{ borderLeft: `3px solid ${isTarget ? ACCENT : 'rgba(120,120,128,0.24)'}`, padding: '2px 0 2px 14px', color: isTarget ? '#1d1d1f' : 'rgba(60,60,67,0.62)', fontSize: 21, fontWeight: 700, wordBreak: 'keep-all', lineHeight: 1.45, whiteSpace: 'pre-line', animation: isTarget ? 'popIn 0.22s cubic-bezier(0.3,1.2,0.4,1)' : undefined }}>{answer}</div>;
+                  }
+                  const retry = retrySet.has(answerIndex);
+                  return (
+                    <button
+                      key={answerIndex}
+                      type="button"
+                      aria-pressed={retry}
+                      onClick={(e) => { e.stopPropagation(); toggleRetry(answerIndex); }}
+                      style={{ border: 0, borderLeft: `3px solid ${retry ? '#ff9500' : ACCENT}`, borderRadius: 0, padding: '2px 10px 2px 14px', background: retry ? 'rgba(255,149,0,0.12)' : 'transparent', color: retry ? '#8a4d00' : '#1d1d1f', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', animation: 'popIn 0.22s cubic-bezier(0.3,1.2,0.4,1)' }}
+                    >
+                      <span style={{ fontSize: 21, fontWeight: 700, wordBreak: 'keep-all', lineHeight: 1.45, whiteSpace: 'pre-line' }}>{answer}</span>
+                      {retry && <RotateCcw size={15} strokeWidth={2.4} aria-hidden="true" />}
+                    </button>
+                  );
+                })}
+              </div>
             </>
           ) : (
             <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.01em', lineHeight: 2, wordBreak: 'keep-all', whiteSpace: 'pre-line' }}>
@@ -1591,7 +1648,19 @@ function StudyView(props: {
                     <span style={{ display: 'inline-block', minWidth: 68, height: 36, padding: '0 14px', borderRadius: 8, background: 'rgba(120,120,128,0.12)', verticalAlign: 'middle', margin: '0 3px' }} />
                   )}
                   {seg.kind === 'revealed' && (
-                    <span style={{ display: 'inline-block', padding: '0 2px', borderBottom: `2px solid ${ACCENT}`, color: ACCENT_DEEP, fontWeight: 800, margin: '0 3px', animation: 'popIn 0.22s cubic-bezier(0.3,1.2,0.4,1)' }}>{seg.answer}</span>
+                    allRevealed && seg.target ? (
+                      <button
+                        type="button"
+                        aria-pressed={retrySet.has(seg.answerIndex)}
+                        onClick={(e) => { e.stopPropagation(); toggleRetry(seg.answerIndex); }}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 7px', border: 0, borderBottom: `2px solid ${retrySet.has(seg.answerIndex) ? '#ff9500' : ACCENT}`, borderRadius: 6, background: retrySet.has(seg.answerIndex) ? 'rgba(255,149,0,0.12)' : 'transparent', color: retrySet.has(seg.answerIndex) ? '#8a4d00' : ACCENT_DEEP, font: 'inherit', fontWeight: 800, lineHeight: 'inherit', margin: '0 3px', cursor: 'pointer', animation: 'popIn 0.22s cubic-bezier(0.3,1.2,0.4,1)' }}
+                      >
+                        {seg.answer}
+                        {retrySet.has(seg.answerIndex) && <RotateCcw size={14} strokeWidth={2.4} aria-hidden="true" />}
+                      </button>
+                    ) : (
+                      <span style={{ display: 'inline-block', padding: '0 2px', borderBottom: `2px solid ${seg.target ? ACCENT : 'rgba(120,120,128,0.24)'}`, color: seg.target ? ACCENT_DEEP : 'rgba(60,60,67,0.62)', fontWeight: 800, margin: '0 3px', animation: seg.target ? 'popIn 0.22s cubic-bezier(0.3,1.2,0.4,1)' : undefined }}>{seg.answer}</span>
+                    )
                   )}
                 </span>
               ))}
@@ -1607,15 +1676,12 @@ function StudyView(props: {
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 9 }}>
-            <div style={{ textAlign: 'center', fontSize: 12, color: 'rgba(60,60,67,0.5)', fontWeight: 500 }}>{isPc ? '← 다시 볼래요 · 외웠어요 →' : '옆으로 밀어서 분류할 수도 있어요'}</div>
-            <div style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 10, pointerEvents: 'auto' }}>
-              <button type="button" className="study-judge-button" onClick={props.onAgain} aria-label="다시 볼래요" title="다시 볼래요" style={{ flex: 1, height: 50, padding: '0 16px', borderRadius: 12, border: 'none', background: 'rgba(255,149,0,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit' }}>
-                <span style={{ fontSize: 15, fontWeight: 700, color: '#8a4d00' }}>다시 볼래요</span>
-              </button>
-              <button type="button" className="study-judge-button" onClick={props.onKnown} aria-label="외웠어요" title="외웠어요" style={{ flex: 1, height: 50, padding: '0 16px', borderRadius: 12, border: 'none', background: 'rgba(52,199,89,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit' }}>
-                <span style={{ fontSize: 15, fontWeight: 800, color: '#116b2d' }}>외웠어요</span>
-              </button>
+            <div style={{ textAlign: 'center', fontSize: 12, color: retrySet.size > 0 ? '#8a4d00' : 'rgba(60,60,67,0.5)', fontWeight: 600 }}>
+              {retrySet.size > 0 ? `다시 ${retrySet.size}개` : '몰랐던 답을 탭하세요'}
             </div>
+            <button type="button" className="study-judge-button" onClick={props.onComplete} style={{ width: '100%', height: 50, padding: '0 16px', borderRadius: 12, border: 'none', background: ACCENT, color: '#fff', display: 'grid', placeItems: 'center', cursor: 'pointer', pointerEvents: 'auto', fontFamily: 'inherit', fontSize: 15.5, fontWeight: 800 }}>
+              다음
+            </button>
           </div>
         )}
       </div>

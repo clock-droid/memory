@@ -166,10 +166,13 @@ export function createLocalRepository(roomCode: string): Repository {
       );
       write(roomCode, state);
     },
-    async toggleCardMastered(deckId, cardId, mastered) {
+    async setCardAnswerMastery(deckId, cardId, answerMastery) {
       const state = read(roomCode);
+      const mastered = answerMastery.length > 0 && answerMastery.every(Boolean);
       state.cardsByDeck[deckId] = (state.cardsByDeck[deckId] ?? []).map((card) =>
-        card.id === cardId ? { ...card, mastered, starred: mastered ? false : card.starred, updatedAt: Date.now() } : card,
+        card.id === cardId
+          ? { ...card, answerMastery, mastered, starred: mastered ? false : card.starred, updatedAt: Date.now() }
+          : card,
       );
       write(roomCode, state);
     },

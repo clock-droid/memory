@@ -63,15 +63,9 @@ export function applyRoomRequest({ room, method, parts, body }) {
     if (method === 'PATCH' && parts[3]) {
       const hasStarred = Object.prototype.hasOwnProperty.call(body, 'starred');
       const hasMastered = Object.prototype.hasOwnProperty.call(body, 'mastered');
+      const hasAnswerMastery = Array.isArray(body.answerMastery);
       room.cardsByDeck[deckId] = room.cardsByDeck[deckId].map((card) =>
-        card.id === parts[3]
-          ? {
-              ...card,
-              ...(hasStarred ? { starred: Boolean(body.starred), mastered: body.starred ? false : card.mastered } : {}),
-              ...(hasMastered ? { mastered: Boolean(body.mastered), starred: body.mastered ? false : card.starred } : {}),
-              updatedAt: Date.now(),
-            }
-          : card,
+        card.id === parts[3] ? applyCardPatch(card, body, { hasStarred, hasMastered, hasAnswerMastery }) : card,
       );
       return { status: 200, body: { ok: true }, write: true };
     }
@@ -121,4 +115,20 @@ export function applyRoomRequest({ room, method, parts, body }) {
   }
 
   return { status: 404, body: { error: 'Not found' }, write: false };
+}
+
+function applyCardPatch(card, body, { hasStarred, hasMastered, hasAnswerMastery }) {
+  const answerMastery = hasAnswerMastery ? body.answerMastery.map(Boolean) : card.answerMastery;
+  const masteredFromAnswers = hasAnswerMastery && answerMastery.length > 0 ? answerMastery.every(Boolean) : undefined;
+  let mastered = masteredFromAnswers ?? (hasMastered ? Boolean(body.mastered) : card.mastered);
+  let starred = hasStarred ? Boolean(body.starred) : card.starred;
+  if (hasStarred && starred) mastered = false;
+  if ((hasMastered || hasAnswerMastery) && mastered) starred = false;
+  return {
+    ...card,
+    ...(hasStarred || ((hasMastered || hasAnswerMastery) && mastered) ? { starred } : {}),
+    ...(hasAnswerMastery ? { answerMastery } : {}),
+    ...(hasStarred || hasMastered || hasAnswerMastery ? { mastered } : {}),
+    updatedAt: Date.now(),
+  };
 }

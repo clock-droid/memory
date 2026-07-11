@@ -138,8 +138,10 @@ export function createFirebaseRepository(roomCode: string): Repository | null {
         updatedAt: Date.now(),
       });
     },
-    async toggleCardMastered(deckId, cardId, mastered) {
+    async setCardAnswerMastery(deckId, cardId, answerMastery) {
+      const mastered = answerMastery.length > 0 && answerMastery.every(Boolean);
       await updateDoc(doc(db, 'rooms', roomCode, 'decks', deckId, 'cards', cardId), {
+        answerMastery,
         mastered,
         ...(mastered ? { starred: false } : {}),
         updatedAt: Date.now(),

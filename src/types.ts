@@ -24,6 +24,7 @@ export type Card = {
   rawText: string;
   groupItems?: GroupItem[];
   starred?: boolean;
+  answerMastery?: boolean[];
   mastered?: boolean;
   createdAt: number;
   updatedAt: number;
@@ -64,5 +65,5 @@ export type Repository = {
   deleteSection: (deckId: string, sectionId: string) => Promise<void>;
   setSectionContent: (deckId: string, sectionId: string, sourceText: string, cards: NewCard[]) => Promise<void>;
   toggleCardStar: (deckId: string, cardId: string, starred: boolean) => Promise<void>;
-  toggleCardMastered: (deckId: string, cardId: string, mastered: boolean) => Promise<void>;
+  setCardAnswerMastery: (deckId: string, cardId: string, answerMastery: boolean[]) => Promise<void>;
 };
