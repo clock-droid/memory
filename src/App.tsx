@@ -464,6 +464,7 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
   const [decksState, setDecksState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [deckDataById, setDeckDataById] = useState<Record<string, DeckCacheEntry>>({});
   const [state, dispatch] = useReducer(uiReducer, initialUI);
+  const [draftList, setDraftList] = useState<{ name: string } | null>(null);
   const pendingSectionRenamesRef = useRef<Record<string, string>>({});
   const toastTimer = useRef<number | undefined>(undefined);
   const lpTimer = useRef<number | undefined>(undefined);
@@ -473,6 +474,8 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
     sectionId: string;
     cards: OptimisticNewCard[];
     addedCount: number;
+    createdList?: boolean;
+    createdDeck?: boolean;
   } | null>(null);
 
   const toast = useCallback((msg: string) => {
@@ -662,18 +665,74 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
       .catch(() => toast('이름 저장에 실패했어요'));
   }, [repository, toast]);
 
-  const newList = useCallback(async () => {
+  const newList = useCallback(() => {
     if (!repository) return;
+    lastAddedSnapshotRef.current = null;
+    setDraftList({ name: '새 암기장' });
+    dispatch({ view: 'deck', activeDeckId: null, activeSectionId: null, slotOpen: true, pasteText: '', sheetRows: [] });
+  }, [repository]);
+
+  const createDraftListWithCards = useCallback(async (cards: NewCard[]): Promise<boolean> => {
+    if (!repository || !draftList) return false;
+    let deckId = decks.find((deck) => deck.name === '일반')?.id;
+    let sectionId: string | undefined;
+    let createdDeck = false;
     try {
-      let deckId = decks.find((d) => d.name === '일반')?.id;
-      if (!deckId) deckId = await repository.addDeck('일반');
-      const sectionId = await repository.addSection(deckId, '새 암기장');
-      lastAddedSnapshotRef.current = null;
-      dispatch({ view: 'deck', activeDeckId: deckId, activeSectionId: sectionId, slotOpen: true, pasteText: '', sheetRows: [] });
+      if (!deckId) {
+        deckId = await repository.addDeck('일반');
+        createdDeck = true;
+      }
+      sectionId = await repository.addSection(deckId, draftList.name);
+      const sourceText = cards.map((card) => card.rawText).join('\n');
+      await repository.setSectionContent(deckId, sectionId, sourceText, cards);
+
+      const now = Date.now();
+      const resolvedDeckId = deckId;
+      const resolvedSectionId = sectionId;
+      const optimisticCards: Card[] = cards.map((card, index) => ({
+        ...card,
+        id: `tmp_${now}_${index}`,
+        sectionId: resolvedSectionId,
+        createdAt: now,
+        updatedAt: now,
+      }));
+      setDecks((current) => current.some((deck) => deck.id === resolvedDeckId)
+        ? current
+        : [...current, { id: resolvedDeckId, name: '일반', createdAt: now, updatedAt: now }]);
+      setDeckDataById((current) => {
+        const previous = current[resolvedDeckId] ?? emptyDeckCache();
+        const section: Section = { id: resolvedSectionId, name: draftList.name, sourceText, createdAt: now, updatedAt: now };
+        return {
+          ...current,
+          [resolvedDeckId]: {
+            ...previous,
+            cards: [...previous.cards.filter((card) => (card.sectionId ?? 'default') !== resolvedSectionId), ...optimisticCards],
+            sections: [...previous.sections.filter((item) => item.id !== resolvedSectionId), section],
+            cardsLoaded: true,
+            sectionsLoaded: true,
+          },
+        };
+      });
+      lastAddedSnapshotRef.current = {
+        deckId: resolvedDeckId,
+        sectionId: resolvedSectionId,
+        cards: [],
+        addedCount: cards.length,
+        createdList: true,
+        createdDeck,
+      };
+      setDraftList(null);
+      dispatch({ activeDeckId: resolvedDeckId, activeSectionId: resolvedSectionId });
+      return true;
     } catch {
+      try {
+        if (sectionId && deckId) await repository.deleteSection(deckId, sectionId);
+        if (createdDeck && deckId) await repository.deleteDeck(deckId);
+      } catch { /* best-effort cleanup */ }
       toast('암기장을 만들지 못했어요');
+      return false;
     }
-  }, [repository, decks, toast]);
+  }, [repository, draftList, decks, toast]);
 
   const moveCard = useCallback((draggedId: string, targetId: string) => {
     if (!activeList) return;
@@ -889,12 +948,14 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
         />
       )}
 
-      {state.view === 'deck' && activeList && state.slotOpen && (
+      {state.view === 'deck' && state.slotOpen && (activeList || draftList) && (
         <ContinuousAddView
           state={state}
           dispatch={dispatch}
           renderTokenChips={renderTokenChips}
-          onAddCards={(cards) => {
+          onAddCards={async (cards) => {
+            if (draftList) return createDraftListWithCards(cards);
+            if (!activeList) return false;
             const stored = storedCardsOf(activeList.deckId, activeList.id).map((card) => keepCard(card));
             lastAddedSnapshotRef.current = {
               deckId: activeList.deckId,
@@ -903,17 +964,55 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
               addedCount: cards.length,
             };
             commitSection(activeList.deckId, activeList.id, [...stored, ...cards]);
+            return true;
           }}
-          onUndoLast={() => {
+          onUndoLast={async () => {
             const snapshot = lastAddedSnapshotRef.current;
-            if (!snapshot || snapshot.deckId !== activeList.deckId || snapshot.sectionId !== activeList.id) return 0;
+            if (!snapshot) return 0;
+            if (snapshot.createdList) {
+              try {
+                await repository?.deleteSection(snapshot.deckId, snapshot.sectionId);
+                if (snapshot.createdDeck) await repository?.deleteDeck(snapshot.deckId);
+                setDeckDataById((current) => {
+                  const previous = current[snapshot.deckId];
+                  if (!previous) return current;
+                  if (snapshot.createdDeck) {
+                    const next = { ...current };
+                    delete next[snapshot.deckId];
+                    return next;
+                  }
+                  return {
+                    ...current,
+                    [snapshot.deckId]: {
+                      ...previous,
+                      cards: previous.cards.filter((card) => (card.sectionId ?? 'default') !== snapshot.sectionId),
+                      sections: previous.sections.filter((section) => section.id !== snapshot.sectionId),
+                    },
+                  };
+                });
+                if (snapshot.createdDeck) setDecks((current) => current.filter((deck) => deck.id !== snapshot.deckId));
+                setDraftList({ name: '새 암기장' });
+                dispatch({ activeDeckId: null, activeSectionId: null });
+                lastAddedSnapshotRef.current = null;
+                return snapshot.addedCount;
+              } catch {
+                toast('되돌리지 못했어요');
+                return 0;
+              }
+            }
+            if (!activeList || snapshot.deckId !== activeList.deckId || snapshot.sectionId !== activeList.id) return 0;
             commitSection(snapshot.deckId, snapshot.sectionId, snapshot.cards);
             lastAddedSnapshotRef.current = null;
             return snapshot.addedCount;
           }}
           onClose={() => {
             lastAddedSnapshotRef.current = null;
-            dispatch({ slotOpen: false, pasteText: '', pasteMode: 'auto', sheetRows: [], sel: null });
+            if (draftList) {
+              setDraftList(null);
+              dispatch({ view: 'home', slotOpen: false, activeDeckId: null, activeSectionId: null, pasteText: '', pasteMode: 'auto', sheetRows: [], sel: null });
+            } else {
+              dispatch({ slotOpen: false, pasteText: '', pasteMode: 'auto', sheetRows: [], sel: null });
+            }
           }}
         />
       )}
@@ -1081,6 +1180,12 @@ function DeckView(props: {
   const cntUnknown = cardsAll.filter((c) => c.remainingCount > 0).length;
   const cntDone = cardsAll.filter((c) => c.memorized).length;
 
+  useEffect(() => {
+    if ((state.filter === 'unknown' && cntUnknown === 0) || (state.filter === 'done' && cntDone === 0)) {
+      dispatch({ filter: 'all', openRowId: null });
+    }
+  }, [state.filter, cntUnknown, cntDone, dispatch]);
+
   const cardGroup = (c: ProtoCard) => (c.memorized ? 'done' : 'learning');
 
   const segsFor = (c: ProtoCard) => {
@@ -1170,10 +1275,10 @@ function DeckView(props: {
     : studyCards.length > 0 ? `가림 ${studyCards.reduce((total, card) => total + card.remainingCount, 0)}개 시작`
     : visible.length > 0 ? '복습하기' : '카드 없음';
 
-  const chips: Array<{ key: 'all' | 'unknown' | 'done'; label: string }> = [
-    { key: 'all', label: `전체 ${cardsAll.length}` },
-    { key: 'unknown', label: `다시 ${cntUnknown}` },
-    { key: 'done', label: `완료 ${cntDone}` },
+  const chips: Array<{ key: 'all' | 'unknown' | 'done'; label: string; disabled: boolean }> = [
+    { key: 'all', label: `전체 ${cardsAll.length}`, disabled: false },
+    { key: 'unknown', label: `다시 ${cntUnknown}`, disabled: cntUnknown === 0 },
+    { key: 'done', label: `완료 ${cntDone}`, disabled: cntDone === 0 },
   ];
 
   return (
@@ -1231,7 +1336,7 @@ function DeckView(props: {
         {chips.map((chip) => {
           const active = state.filter === chip.key;
           return (
-            <button type="button" className="ui-button" key={chip.key} onClick={() => dispatch({ filter: chip.key, openRowId: null })} aria-pressed={active} style={{ flex: 1, height: 30, borderRadius: 7, display: 'grid', placeItems: 'center', background: active ? '#fff' : 'transparent', boxShadow: active ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', cursor: 'pointer', transition: 'background 0.15s' }}>
+            <button type="button" className="ui-button" key={chip.key} onClick={() => dispatch({ filter: chip.key, openRowId: null })} aria-pressed={active} disabled={chip.disabled} style={{ flex: 1, height: 30, borderRadius: 7, display: 'grid', placeItems: 'center', background: active ? '#fff' : 'transparent', boxShadow: active ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', cursor: chip.disabled ? 'default' : 'pointer', opacity: chip.disabled ? 0.42 : 1, transition: 'background 0.15s, opacity 0.15s' }}>
               <span style={{ fontSize: 12.5, fontWeight: active ? 700 : 600, color: active ? '#1d1d1f' : 'rgba(60,60,67,0.55)' }}>{chip.label}</span>
             </button>
           );
@@ -1324,8 +1429,8 @@ function DeckView(props: {
 function ContinuousAddView(props: {
   state: UIState; dispatch: (p: Patch) => void;
   renderTokenChips: (tokens: Token[], ri: number, fontSize: number, outlined?: boolean) => React.ReactNode;
-  onAddCards: (cards: NewCard[]) => void;
-  onUndoLast: () => number;
+  onAddCards: (cards: NewCard[]) => Promise<boolean>;
+  onUndoLast: () => Promise<number>;
   onClose: () => void;
 }) {
   const { state, dispatch } = props;
@@ -1333,7 +1438,7 @@ function ContinuousAddView(props: {
   const undoTimer = useRef<number | undefined>(undefined);
   const [addedCount, setAddedCount] = useState(0);
   const [lastAddedCount, setLastAddedCount] = useState(0);
-  const [undoVisible, setUndoVisible] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => () => window.clearTimeout(undoTimer.current), []);
 
@@ -1357,29 +1462,33 @@ function ContinuousAddView(props: {
   const blanks = tokenRows.reduce((n, r) => n + (r.kind === 'tokens' && r.tokens.some((t) => t.hidden) ? tokensToCard(r.tokens).a.length : 0), 0);
   const multi = state.sheetRows.length > 1;
 
-  const add = () => {
-    if (validRows.length === 0) return;
+  const add = async () => {
+    if (validRows.length === 0 || saving) return;
     const cards = validRows.map((r) => {
       if (r.kind === 'qa') return qaToNewCard(r.q, [r.a]);
       const { q, a } = tokensToCard(r.tokens);
       return qaToNewCard(q, a);
     });
-    props.onAddCards(cards);
+    setSaving(true);
+    const saved = await props.onAddCards(cards);
+    setSaving(false);
+    if (!saved) return;
     setAddedCount((count) => count + cards.length);
     setLastAddedCount(cards.length);
-    setUndoVisible(true);
     window.clearTimeout(undoTimer.current);
-    undoTimer.current = window.setTimeout(() => setUndoVisible(false), 4500);
+    undoTimer.current = window.setTimeout(() => setLastAddedCount(0), 4500);
     dispatch({ pasteText: '', pasteMode: 'auto', sheetRows: [], sel: null });
     window.requestAnimationFrame(() => inputRef.current?.focus());
   };
 
-  const undoLast = () => {
-    const undone = props.onUndoLast();
+  const undoLast = async () => {
+    if (saving) return;
+    setSaving(true);
+    const undone = await props.onUndoLast();
+    setSaving(false);
     if (undone === 0) return;
     setAddedCount((count) => Math.max(0, count - undone));
     setLastAddedCount(0);
-    setUndoVisible(false);
     window.clearTimeout(undoTimer.current);
     window.requestAnimationFrame(() => inputRef.current?.focus());
   };
@@ -1388,16 +1497,16 @@ function ContinuousAddView(props: {
     <div style={{ flex: 1, minHeight: 0, position: 'relative', display: 'flex', flexDirection: 'column', background: '#F2F2F7', paddingTop: 'env(safe-area-inset-top)' }}>
       <div style={{ height: 60, padding: '6px 16px 0', display: 'grid', gridTemplateColumns: '76px 1fr 76px', alignItems: 'center', flexShrink: 0 }}>
         <button type="button" className="ui-button" onClick={props.onClose} style={{ minWidth: 44, minHeight: 44, justifySelf: 'start', background: 'transparent', color: ACCENT, fontSize: 16.5, fontWeight: 600, cursor: 'pointer' }}>
-          취소
+          닫기
         </button>
         <div style={{ textAlign: 'center', fontSize: 18, fontWeight: 800, letterSpacing: '-0.02em' }}>카드 연속 추가</div>
-        <button type="button" className="ui-button" onClick={props.onClose} style={{ minWidth: 44, minHeight: 44, justifySelf: 'end', background: 'transparent', color: ACCENT, fontSize: 16.5, fontWeight: 700, cursor: 'pointer', textAlign: 'right' }}>
-          완료
-        </button>
+        <span />
       </div>
-      <div aria-live="polite" style={{ height: 34, display: 'grid', placeItems: 'center', color: 'rgba(60,60,67,0.55)', fontSize: 14, fontWeight: 600, flexShrink: 0 }}>
-        카드 {addedCount}개 추가됨
-      </div>
+      {addedCount > 0 && (
+        <div aria-live="polite" style={{ minHeight: 34, display: 'grid', placeItems: 'center', color: 'rgba(60,60,67,0.55)', fontSize: 14, fontWeight: 600, flexShrink: 0 }}>
+          카드 {addedCount}개 추가됨
+        </div>
+      )}
 
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '12px 16px 190px', display: 'flex', flexDirection: 'column', gap: 18 }}>
         <div style={{ background: '#fff', borderRadius: 14, padding: '18px 14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -1454,14 +1563,14 @@ function ContinuousAddView(props: {
 
       <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '10px 16px calc(env(safe-area-inset-bottom) + 18px)', background: '#F2F2F7', display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ minHeight: 54 }}>
-          {undoVisible && (
+          {lastAddedCount > 0 && (
             <div
               role="status"
               aria-live="polite"
               style={{ minHeight: 54, borderRadius: 12, background: '#fff', border: '1px solid rgba(60,60,67,0.1)', display: 'flex', alignItems: 'center', padding: '0 14px', animation: 'undoIn 0.18s ease-out' }}
             >
               <span style={{ flex: 1, fontSize: 14.5, fontWeight: 650 }}>추가했어요</span>
-              <button type="button" className="ui-button" onClick={undoLast} disabled={lastAddedCount === 0} style={{ minWidth: 64, minHeight: 44, background: 'transparent', color: '#6e6e73', fontSize: 14, fontWeight: 700, textAlign: 'right', cursor: 'pointer' }}>
+              <button type="button" className="ui-button" onClick={undoLast} disabled={lastAddedCount === 0 || saving} style={{ minWidth: 64, minHeight: 44, background: 'transparent', color: '#6e6e73', fontSize: 14, fontWeight: 700, textAlign: 'right', cursor: saving ? 'default' : 'pointer' }}>
                 되돌리기
               </button>
             </div>
@@ -1471,10 +1580,10 @@ function ContinuousAddView(props: {
           type="button"
           className="ui-button"
           onClick={add}
-          disabled={validRows.length === 0}
-          style={{ width: '100%', height: 54, borderRadius: 12, background: validRows.length > 0 ? ACCENT : 'rgba(0,122,255,0.24)', color: '#fff', display: 'grid', placeItems: 'center', cursor: validRows.length > 0 ? 'pointer' : 'default', fontSize: 16, fontWeight: 800, transition: 'background 0.15s, transform 0.12s' }}
+          disabled={validRows.length === 0 || saving}
+          style={{ width: '100%', height: 54, borderRadius: 12, background: validRows.length > 0 && !saving ? ACCENT : 'rgba(0,122,255,0.24)', color: '#fff', display: 'grid', placeItems: 'center', cursor: validRows.length > 0 && !saving ? 'pointer' : 'default', fontSize: 16, fontWeight: 800, transition: 'background 0.15s, transform 0.12s' }}
         >
-          {validRows.length > 1 ? `${validRows.length}개 추가하고 계속` : '추가하고 계속'}
+          {saving ? '추가 중…' : validRows.length > 1 ? `${validRows.length}개 추가하고 계속` : '추가하고 계속'}
         </button>
       </div>
     </div>
@@ -1625,9 +1734,10 @@ function StudyView(props: {
                     <button
                       key={answerIndex}
                       type="button"
+                      className="token-button"
                       aria-pressed={retry}
                       onClick={(e) => { e.stopPropagation(); toggleRetry(answerIndex); }}
-                      style={{ border: 0, borderLeft: `3px solid ${retry ? '#ff9500' : ACCENT}`, borderRadius: 0, padding: '2px 10px 2px 14px', background: retry ? 'rgba(255,149,0,0.12)' : 'transparent', color: retry ? '#8a4d00' : '#1d1d1f', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', animation: 'popIn 0.22s cubic-bezier(0.3,1.2,0.4,1)' }}
+                      style={{ border: 0, borderLeft: `3px solid ${retry ? '#ff9500' : 'rgba(120,120,128,0.32)'}`, borderRadius: 6, padding: '2px 10px 2px 14px', background: retry ? 'rgba(255,149,0,0.12)' : 'rgba(120,120,128,0.07)', color: retry ? '#8a4d00' : '#1d1d1f', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', animation: 'popIn 0.22s cubic-bezier(0.3,1.2,0.4,1)' }}
                     >
                       <span style={{ fontSize: 21, fontWeight: 700, wordBreak: 'keep-all', lineHeight: 1.45, whiteSpace: 'pre-line' }}>{answer}</span>
                       {retry && <RotateCcw size={15} strokeWidth={2.4} aria-hidden="true" />}
@@ -1651,9 +1761,10 @@ function StudyView(props: {
                     allRevealed && seg.target ? (
                       <button
                         type="button"
+                        className="token-button"
                         aria-pressed={retrySet.has(seg.answerIndex)}
                         onClick={(e) => { e.stopPropagation(); toggleRetry(seg.answerIndex); }}
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 7px', border: 0, borderBottom: `2px solid ${retrySet.has(seg.answerIndex) ? '#ff9500' : ACCENT}`, borderRadius: 6, background: retrySet.has(seg.answerIndex) ? 'rgba(255,149,0,0.12)' : 'transparent', color: retrySet.has(seg.answerIndex) ? '#8a4d00' : ACCENT_DEEP, font: 'inherit', fontWeight: 800, lineHeight: 'inherit', margin: '0 3px', cursor: 'pointer', animation: 'popIn 0.22s cubic-bezier(0.3,1.2,0.4,1)' }}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 7px', border: 0, borderBottom: `2px solid ${retrySet.has(seg.answerIndex) ? '#ff9500' : 'rgba(120,120,128,0.32)'}`, borderRadius: 6, background: retrySet.has(seg.answerIndex) ? 'rgba(255,149,0,0.12)' : 'rgba(120,120,128,0.07)', color: retrySet.has(seg.answerIndex) ? '#8a4d00' : '#1d1d1f', font: 'inherit', fontWeight: 800, lineHeight: 'inherit', margin: '0 3px', cursor: 'pointer', animation: 'popIn 0.22s cubic-bezier(0.3,1.2,0.4,1)' }}
                       >
                         {seg.answer}
                         {retrySet.has(seg.answerIndex) && <RotateCcw size={14} strokeWidth={2.4} aria-hidden="true" />}
@@ -1676,11 +1787,11 @@ function StudyView(props: {
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 9 }}>
-            <div style={{ textAlign: 'center', fontSize: 12, color: retrySet.size > 0 ? '#8a4d00' : 'rgba(60,60,67,0.5)', fontWeight: 600 }}>
-              {retrySet.size > 0 ? `다시 ${retrySet.size}개` : '몰랐던 답을 탭하세요'}
+            <div style={{ minHeight: 15, textAlign: 'center', fontSize: 12, color: 'rgba(60,60,67,0.5)', fontWeight: 600, visibility: retrySet.size > 0 ? 'hidden' : 'visible' }}>
+              몰랐던 답을 탭하세요
             </div>
             <button type="button" className="study-judge-button" onClick={props.onComplete} style={{ width: '100%', height: 50, padding: '0 16px', borderRadius: 12, border: 'none', background: ACCENT, color: '#fff', display: 'grid', placeItems: 'center', cursor: 'pointer', pointerEvents: 'auto', fontFamily: 'inherit', fontSize: 15.5, fontWeight: 800 }}>
-              다음
+              {retrySet.size > 0 ? `다음 · 다시 ${retrySet.size}개` : '다음'}
             </button>
           </div>
         )}
@@ -1735,16 +1846,25 @@ function EditSheet(props: {
       <div onClick={() => dispatch({ editSheetOpen: false })} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.28)', zIndex: 15 }} />
       <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, borderRadius: '20px 20px 0 0', background: '#fff', padding: '18px 20px 42px', display: 'flex', flexDirection: 'column', gap: 13, boxShadow: '0 -12px 40px rgba(0,0,0,0.16)', animation: 'sheetUp 0.32s cubic-bezier(0.3,0.9,0.4,1)', maxHeight: '82%', zIndex: 16 }}>
         <div style={{ width: 40, height: 5, borderRadius: 3, background: 'rgba(120,120,128,0.25)', alignSelf: 'center', flexShrink: 0 }} />
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-          <div onClick={goPrev} style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(120,120,128,0.1)', display: 'grid', placeItems: 'center', cursor: 'pointer', opacity: idx > 0 ? 1 : 0.25 }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1d1d1f" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
-          </div>
-          <div style={{ display: 'flex', gap: 6 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '64px 1fr 80px', alignItems: 'center', flexShrink: 0 }}>
+          <button type="button" className="ui-button" onClick={() => dispatch({ editSheetOpen: false })} style={{ minWidth: 44, minHeight: 40, justifySelf: 'start', background: 'transparent', color: '#6e6e73', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+            취소
+          </button>
+          <div style={{ display: 'flex', gap: 6, justifySelf: 'center' }}>
             <button type="button" className="ui-button" onClick={setQA} aria-pressed={state.editMode === 'qa'} style={{ padding: '8px 14px', borderRadius: 9, cursor: 'pointer', ...chip(state.editMode === 'qa') }}><span style={{ fontSize: 13.5, fontWeight: 700 }}>문답형</span></button>
             <button type="button" className="ui-button" onClick={setCloze} aria-pressed={state.editMode === 'tokens'} style={{ padding: '8px 14px', borderRadius: 9, cursor: 'pointer', ...chip(state.editMode === 'tokens') }}><span style={{ fontSize: 13.5, fontWeight: 700 }}>가림형</span></button>
           </div>
-          <div onClick={goNext} style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(120,120,128,0.1)', display: 'grid', placeItems: 'center', cursor: 'pointer', opacity: idx >= 0 && idx < cardsAll.length - 1 ? 1 : 0.25 }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1d1d1f" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6" /></svg>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4 }}>
+            {idx > 0 && (
+              <button type="button" className="ui-button" onClick={goPrev} aria-label="이전 카드" style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(120,120,128,0.1)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1d1d1f" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
+              </button>
+            )}
+            {idx >= 0 && idx < cardsAll.length - 1 && (
+              <button type="button" className="ui-button" onClick={goNext} aria-label="다음 카드" style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(120,120,128,0.1)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1d1d1f" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6" /></svg>
+              </button>
+            )}
           </div>
         </div>
 
@@ -1763,23 +1883,23 @@ function EditSheet(props: {
         ) : (
           <>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0 }}>
-              <span style={{ fontSize: 11.5, fontWeight: 700, color: '#6e6e73', letterSpacing: '0.03em' }}>내용 (여러 줄도 한 카드)</span>
+              <span style={{ fontSize: 11.5, fontWeight: 700, color: '#6e6e73', letterSpacing: '0.03em' }}>내용</span>
               <textarea rows={3} value={state.editText} onChange={onEditText} placeholder="문장 전체를 쓰세요" style={{ fontSize: 16.5, fontWeight: 600, border: 'none', background: 'transparent', color: '#000', padding: '2px 0', resize: 'none', lineHeight: 1.5 }} />
             </div>
             <div style={{ padding: '12px 14px', borderRadius: 10, background: 'rgba(120,120,128,0.08)', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '3px 2px', lineHeight: 1.9, overflowY: 'auto', minHeight: 0 }}>
               {props.renderTokenChips(state.editTokens, -100, 15)}
-              <span style={{ width: '100%', fontSize: 12.5, color: ACCENT_DEEP, fontWeight: 700, marginTop: 2 }}>가릴 부분을 탭하세요 · 누른 채 끌면 여러 단어가 한 가림막이 돼요</span>
+              <span style={{ width: '100%', fontSize: 12.5, color: ACCENT_DEEP, fontWeight: 700, marginTop: 2 }}>가릴 답을 탭하세요</span>
             </div>
           </>
         )}
 
         <div style={{ display: 'flex', gap: 10, marginTop: 4, flexShrink: 0 }}>
-          <div onClick={props.onDelete} style={{ height: 50, padding: '0 20px', borderRadius: 12, background: 'rgba(255,59,48,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <button type="button" className="ui-button" onClick={props.onDelete} style={{ height: 50, padding: '0 20px', borderRadius: 12, background: 'rgba(255,59,48,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
             <span style={{ fontSize: 16, fontWeight: 700, color: '#ff3b30' }}>삭제</span>
-          </div>
-          <div onClick={save} style={{ flex: 1, height: 50, borderRadius: 12, background: ACCENT, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          </button>
+          <button type="button" className="ui-button" onClick={save} style={{ flex: 1, height: 50, borderRadius: 12, background: ACCENT, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
             <span style={{ fontSize: 17, fontWeight: 700, color: '#fff' }}>저장</span>
-          </div>
+          </button>
         </div>
       </div>
     </>

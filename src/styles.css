@@ -43,6 +43,13 @@ textarea {
   border: 0;
   font-family: inherit;
   text-align: inherit;
+  transition: transform 120ms ease, filter 120ms ease;
+}
+
+.ui-button:active:not(:disabled),
+.token-button:active:not(:disabled) {
+  transform: scale(0.97);
+  filter: brightness(0.96);
 }
 
 .ui-button:focus-visible,
@@ -55,9 +62,10 @@ textarea {
   cursor: default;
 }
 
-input:focus,
-textarea:focus {
-  outline: none;
+input:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid rgba(0, 122, 255, 0.28);
+  outline-offset: 2px;
 }
 
 .primary-action-button {
