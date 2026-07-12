@@ -141,6 +141,14 @@ function toggleTokenAt(tokens: Token[], index: number): Token[] {
   return tokens.map((token, tokenIndex) => (tokenIndex === index ? { ...token, hidden: true, gid } : token));
 }
 
+function editSignature(mode: 'qa' | 'tokens', q: string, a: string, tokens: Token[]) {
+  if (mode === 'qa') {
+    return JSON.stringify(['qa', q.trim(), a.split(',').map((answer) => answer.trim()).filter(Boolean)]);
+  }
+  const card = tokensToCard(tokens);
+  return JSON.stringify(['tokens', card.q, card.a]);
+}
+
 function parsePaste(text: string, mode: 'auto' | 'one'): Row[] {
   if (mode === 'one') {
     const lines = text.replace(/\r/g, '').split('\n').map((x) => x.trim()).filter(Boolean);
@@ -238,6 +246,50 @@ function masterySummary(cards: ProtoCard[]) {
   }), { total: 0, known: 0 });
 }
 
+type HideState = 'known' | 'retry' | 'pending' | 'checked';
+
+function HideStateMap({ states, size = 'compact' }: { states: HideState[]; size?: 'compact' | 'regular' }) {
+  if (states.length === 0) return null;
+  const dense = states.length > 10;
+  const known = states.filter((state) => state === 'known').length;
+  const checked = states.filter((state) => state === 'checked').length;
+  const retry = states.filter((state) => state === 'retry').length;
+  const pending = states.filter((state) => state === 'pending').length;
+  const label = [
+    `완료 ${known}개`,
+    checked > 0 ? `방금 확인 ${checked}개` : '',
+    retry > 0 ? `다시 ${retry}개` : '',
+    pending > 0 ? `확인 전 ${pending}개` : '',
+  ].filter(Boolean).join(', ');
+  const colorOf = (state: HideState) => {
+    if (state === 'retry') return '#ff9500';
+    if (state === 'known') return '#34c759';
+    if (state === 'checked') return ACCENT;
+    return 'rgba(120,120,128,0.26)';
+  };
+  return (
+    <div role="img" aria-label={`가림 상태: ${label}`} style={{ display: 'flex', alignItems: 'center', gap: dense ? 2 : size === 'regular' ? 5 : 3, width: dense ? (size === 'regular' ? 92 : 64) : 'auto', flexShrink: 0 }}>
+      {states.map((state, index) => (
+        <span
+          key={index}
+          style={{
+            width: dense ? 'auto' : size === 'regular' ? 10 : 7,
+            minWidth: dense ? 2 : size === 'regular' ? 10 : 7,
+            flex: dense ? 1 : 'none',
+            height: size === 'regular' ? 10 : 7,
+            borderRadius: state === 'retry' ? 3 : 999,
+            border: state === 'retry' ? `2px solid ${colorOf(state)}` : 'none',
+            background: state === 'retry' ? 'rgba(255,149,0,0.1)' : colorOf(state),
+            boxSizing: 'border-box',
+            transition: 'background 160ms ease, border-color 160ms ease, transform 160ms ease',
+            transform: state === 'retry' ? 'scale(1.12)' : 'scale(1)',
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
 function qaToNewCard(q: string, a: string[], answerMastery = a.map(() => false)): NewCard {
   const isCloze = q.includes('___');
   const normalized = a.map((_, i) => Boolean(answerMastery[i]));
@@ -329,9 +381,11 @@ type UIState = {
   editA: string;
   editText: string;
   editTokens: Token[];
+  editInitialSignature: string;
   settingsOpen: boolean;
   toastMsg: string;
   toastVisible: boolean;
+  toastUndo: boolean;
 };
 
 const initialUI: UIState = {
@@ -339,8 +393,8 @@ const initialUI: UIState = {
   queue: [], sessionTotal: 0, sessionDone: 0, revealedIdx: [], retryAnswerIdx: [], review: false,
   openRowId: null, rowDrag: null, reorder: null, sel: null,
   slotOpen: false, pasteText: '', pasteMode: 'auto', sheetRows: [],
-  editSheetOpen: false, editIdx: null, editMode: 'qa', editQ: '', editA: '', editText: '', editTokens: [],
-  settingsOpen: false, toastMsg: '', toastVisible: false,
+  editSheetOpen: false, editIdx: null, editMode: 'qa', editQ: '', editA: '', editText: '', editTokens: [], editInitialSignature: '',
+  settingsOpen: false, toastMsg: '', toastVisible: false, toastUndo: false,
 };
 
 type Patch = Partial<UIState> | ((s: UIState) => Partial<UIState>);
@@ -467,6 +521,7 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
   const [draftList, setDraftList] = useState<{ name: string } | null>(null);
   const pendingSectionRenamesRef = useRef<Record<string, string>>({});
   const toastTimer = useRef<number | undefined>(undefined);
+  const toastUndoRef = useRef<(() => void) | null>(null);
   const lpTimer = useRef<number | undefined>(undefined);
   const rowStart = useRef<{ x: number; y: number; moved: boolean }>({ x: 0, y: 0, moved: false });
   const lastAddedSnapshotRef = useRef<{
@@ -478,10 +533,23 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
     createdDeck?: boolean;
   } | null>(null);
 
-  const toast = useCallback((msg: string) => {
+  const toast = useCallback((msg: string, undo?: () => void) => {
     window.clearTimeout(toastTimer.current);
-    dispatch({ toastMsg: msg, toastVisible: true });
-    toastTimer.current = window.setTimeout(() => dispatch({ toastVisible: false }), 1800);
+    toastUndoRef.current = undo ?? null;
+    dispatch({ toastMsg: msg, toastVisible: true, toastUndo: Boolean(undo) });
+    toastTimer.current = window.setTimeout(() => {
+      toastUndoRef.current = null;
+      dispatch({ toastVisible: false, toastUndo: false });
+    }, undo ? 4200 : 1800);
+  }, []);
+
+  const undoToast = useCallback(() => {
+    const action = toastUndoRef.current;
+    if (!action) return;
+    window.clearTimeout(toastTimer.current);
+    toastUndoRef.current = null;
+    dispatch({ toastVisible: false, toastUndo: false });
+    action();
   }, []);
 
   const commitSelection = useCallback(() => {
@@ -768,9 +836,24 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
     if (c.isGroup) toast('묶음 카드는 저장하면 일반 카드로 바뀌어요');
     if (c.q.includes('___') || c.isGroup) {
       const tokens = cardToTokens(c.q, c.a);
-      dispatch({ editSheetOpen: true, editIdx: idx, editMode: 'tokens', editTokens: tokens, editText: tokensToText(tokens) });
+      dispatch({
+        editSheetOpen: true,
+        editIdx: idx,
+        editMode: 'tokens',
+        editTokens: tokens,
+        editText: tokensToText(tokens),
+        editInitialSignature: editSignature('tokens', '', '', tokens),
+      });
     } else {
-      dispatch({ editSheetOpen: true, editIdx: idx, editMode: 'qa', editQ: c.q, editA: c.a.join(', ') });
+      const editA = c.a.join(', ');
+      dispatch({
+        editSheetOpen: true,
+        editIdx: idx,
+        editMode: 'qa',
+        editQ: c.q,
+        editA,
+        editInitialSignature: editSignature('qa', c.q, editA, []),
+      });
     }
   }, [activeList, toast]);
 
@@ -831,6 +914,8 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
     const card = list.cards.find((item) => item.id === target.cardId);
     if (!card) return;
     const retry = new Set(state.retryAnswerIdx);
+    const retryAnswerIdx = [...state.retryAnswerIdx];
+    const previousMastery = [...card.answerMastery];
     const nextMastery = [...card.answerMastery];
     target.answerIndexes.forEach((answerIndex) => { nextMastery[answerIndex] = !retry.has(answerIndex); });
     setAnswerMastery(list.deckId, card.id, nextMastery);
@@ -840,7 +925,17 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
       revealedIdx: [],
       retryAnswerIdx: [],
     }));
-  }, [activeList, state.queue, state.retryAnswerIdx, setAnswerMastery]);
+    toast('판정을 저장했어요', () => {
+      setAnswerMastery(list.deckId, card.id, previousMastery);
+      dispatch((st) => ({
+        view: 'study',
+        queue: [target, ...st.queue],
+        sessionDone: Math.max(0, st.sessionDone - target.answerIndexes.length),
+        revealedIdx: [...target.answerIndexes],
+        retryAnswerIdx,
+      }));
+    });
+  }, [activeList, state.queue, state.retryAnswerIdx, setAnswerMastery, toast]);
 
   // ---- token view descriptors
   const tokenViews = useCallback((tokens: Token[], ri: number) => {
@@ -931,10 +1026,13 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
           onHome={() => dispatch({ view: 'home', activeDeckId: null, activeSectionId: null, openRowId: null })}
           onRename={(name) => !activeList.synthetic && renameSection(activeList.deckId, activeList.id, name)}
           onDelete={(card) => {
-            const stored = storedCardsOf(activeList.deckId, activeList.id).filter((c) => c.id !== card.id);
-            commitSection(activeList.deckId, activeList.id, stored.map((c) => keepCard(c)));
+            const deckId = activeList.deckId;
+            const sectionId = activeList.id;
+            const before = storedCardsOf(deckId, sectionId);
+            const after = before.filter((c) => c.id !== card.id);
+            commitSection(deckId, sectionId, after.map((c) => keepCard(c)));
             dispatch({ openRowId: null });
-            toast('카드를 삭제했어요');
+            toast('카드를 삭제했어요', () => commitSection(deckId, sectionId, before.map((c) => keepCard(c))));
           }}
           onEdit={openEditFor}
           onMove={moveCard}
@@ -1034,10 +1132,13 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
           saveEditFrom={saveEditFrom} renderTokenChips={renderTokenChips}
           onDelete={() => {
             if (state.editIdx === null) return;
-            const stored = storedCardsOf(activeList.deckId, activeList.id).filter((_, i) => i !== state.editIdx);
-            commitSection(activeList.deckId, activeList.id, stored.map((c) => keepCard(c)));
+            const deckId = activeList.deckId;
+            const sectionId = activeList.id;
+            const before = storedCardsOf(deckId, sectionId);
+            const after = before.filter((_, i) => i !== state.editIdx);
+            commitSection(deckId, sectionId, after.map((c) => keepCard(c)));
             dispatch({ editSheetOpen: false });
-            toast('카드를 삭제했어요');
+            toast('카드를 삭제했어요', () => commitSection(deckId, sectionId, before.map((c) => keepCard(c))));
           }}
           openEditFor={openEditFor}
         />
@@ -1048,8 +1149,13 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
       )}
 
       {state.toastVisible && (
-        <div style={{ position: 'absolute', left: '50%', bottom: 130, transform: 'translateX(-50%)', padding: '11px 20px', borderRadius: 10, background: 'rgba(29,29,31,0.92)', color: '#fff', fontSize: 14, fontWeight: 600, whiteSpace: 'nowrap', animation: 'popIn 0.25s cubic-bezier(0.3,1.2,0.4,1)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)', zIndex: 20 }}>
-          {state.toastMsg}
+        <div role="status" aria-live="polite" style={{ position: 'absolute', left: '50%', bottom: 130, transform: 'translateX(-50%)', minHeight: 44, padding: state.toastUndo ? '0 8px 0 16px' : '0 18px', borderRadius: 11, background: 'rgba(29,29,31,0.92)', color: '#fff', display: 'flex', alignItems: 'center', gap: 14, fontSize: 14, fontWeight: 600, whiteSpace: 'nowrap', animation: 'popIn 0.25s cubic-bezier(0.3,1.2,0.4,1)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)', zIndex: 20 }}>
+          <span>{state.toastMsg}</span>
+          {state.toastUndo && (
+            <button type="button" className="ui-button" onClick={undoToast} style={{ minWidth: 64, minHeight: 36, padding: '0 10px', borderRadius: 8, background: 'rgba(255,255,255,0.14)', color: '#fff', display: 'grid', placeItems: 'center', cursor: 'pointer', fontSize: 13.5, fontWeight: 800 }}>
+              되돌리기
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -1389,9 +1495,9 @@ function DeckView(props: {
                     </span>
                   ))}
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0, paddingTop: 3, pointerEvents: 'none', color: c.memorized ? '#1e9e46' : '#6e6e73' }}>
-                  <span style={{ fontSize: 11.5, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{c.knownCount}/{c.a.length}</span>
-                  {c.memorized && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1e9e46" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>}
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5, flexShrink: 0, paddingTop: 3, pointerEvents: 'none', color: c.memorized ? '#1e9e46' : '#6e6e73' }}>
+                  <HideStateMap states={c.answerMastery.map((known) => known ? 'known' : 'retry')} />
+                  <span style={{ fontSize: 11, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{c.knownCount}/{c.a.length}</span>
                 </div>
               </div>
             </div>
@@ -1598,6 +1704,7 @@ function StudyView(props: {
 }) {
   const { list, state, dispatch } = props;
   const isPc = usePcHints();
+  const contentRef = useRef<HTMLDivElement | null>(null);
   const target = state.queue[0];
   const card = list && target ? list.cards.find((c) => c.id === target.cardId) : undefined;
   const qParts = card ? card.q.split('___') : [];
@@ -1639,10 +1746,27 @@ function StudyView(props: {
     return () => window.removeEventListener('keydown', onKey);
   });
 
+  useEffect(() => {
+    if (!card || targetIndexes.length <= 1) return;
+    const focusIndex = nextIdx >= 0 ? nextIdx : state.revealedIdx[state.revealedIdx.length - 1];
+    if (focusIndex === undefined) return;
+    const frame = window.requestAnimationFrame(() => {
+      const container = contentRef.current;
+      if (!container || container.scrollHeight <= container.clientHeight + 8) return;
+      const element = container.querySelector<HTMLElement>(`[data-study-answer-index="${focusIndex}"]`);
+      const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      element?.scrollIntoView({ block: 'center', behavior: reducedMotion ? 'auto' : 'smooth' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [card, targetIndexes.length, nextIdx, state.revealedIdx]);
+
   if (!card) {
     const progress = list ? masterySummary(list.cards) : { total: 0, known: 0 };
     const remaining = progress.total - progress.known;
     const allMemorized = progress.total > 0 && remaining === 0;
+    const resultStates: HideState[] = list
+      ? list.cards.flatMap((item) => item.answerMastery.map((known) => known ? 'known' : 'retry'))
+      : [];
     return (
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, paddingTop: 'env(safe-area-inset-top)', background: '#fff' }}>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 18, padding: '0 32px 100px' }}>
@@ -1655,6 +1779,7 @@ function StudyView(props: {
               {list ? (remaining === 0 ? `가림 ${progress.total}개 완료` : `가림 ${state.sessionTotal}개 확인 · 다시 ${remaining}개`) : ''}
             </div>
           </div>
+          <HideStateMap states={resultStates} size="regular" />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%', marginTop: 10 }}>
             {remaining > 0 && (
               <button type="button" className="ui-button" onClick={props.onRetryRemaining} style={{ height: 50, borderRadius: 12, background: ACCENT, display: 'grid', placeItems: 'center', cursor: 'pointer', fontSize: 15.5, fontWeight: 700, color: '#fff' }}>가림 {remaining}개 다시</button>
@@ -1691,6 +1816,11 @@ function StudyView(props: {
   const keyboardHint = targetIndexes.length > 1
     ? `스페이스를 누르면 다음 답 (${checkedInCard + 1}/${targetIndexes.length})`
     : '스페이스를 누르면 답이 보여요';
+  const liveHideStates: HideState[] = card.answerMastery.map((known, answerIndex) => {
+    if (retrySet.has(answerIndex)) return 'retry';
+    if (targetSet.has(answerIndex)) return state.revealedIdx.includes(answerIndex) ? 'checked' : 'pending';
+    return known ? 'known' : 'retry';
+  });
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, paddingTop: 'env(safe-area-inset-top)', background: '#fff' }}>
@@ -1712,10 +1842,11 @@ function StudyView(props: {
         onClick={() => { if (!allRevealed) revealNext(); }}
         style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, animation: 'cardIn 0.3s cubic-bezier(0.3,0.9,0.4,1)', touchAction: 'pan-y', cursor: allRevealed ? 'default' : 'pointer' }}
       >
-        <div style={{ padding: '26px 24px 0', display: 'flex', alignItems: 'center' }}>
+        <div style={{ padding: '26px 24px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <div style={{ fontSize: 11.5, fontWeight: 600, color: 'rgba(60,60,67,0.5)', letterSpacing: '0.03em' }}>{cardBadge}{list ? ` · ${list.name}` : ''}</div>
+          <HideStateMap states={liveHideStates} />
         </div>
-        <div aria-live="polite" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 26, padding: '14px 24px 150px', minHeight: 0, overflowY: 'auto' }}>
+        <div ref={contentRef} aria-live="polite" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 26, padding: '14px 24px 150px', minHeight: 0, overflowY: 'auto', scrollBehavior: 'smooth' }}>
           {!isCloze ? (
             <>
               <div style={{ fontSize: 25, fontWeight: 800, letterSpacing: '-0.015em', lineHeight: 1.4, wordBreak: 'keep-all', whiteSpace: 'pre-line' }}>{card.q}</div>
@@ -1724,10 +1855,10 @@ function StudyView(props: {
                   const isTarget = targetSet.has(answerIndex);
                   const revealed = !isTarget || state.revealedIdx.includes(answerIndex);
                   if (!revealed) {
-                    return <div key={answerIndex} style={{ height: 42, borderRadius: 10, background: answerIndex === nextIdx ? 'rgba(0,122,255,0.16)' : 'rgba(120,120,128,0.12)', width: `${Math.max(7, Math.min(answer.length + 1, 18))}em`, maxWidth: '100%', fontSize: 16 }} />;
+                    return <div key={answerIndex} data-study-answer-index={answerIndex} style={{ height: 42, borderRadius: 10, background: answerIndex === nextIdx ? 'rgba(0,122,255,0.16)' : 'rgba(120,120,128,0.12)', width: `${Math.max(7, Math.min(answer.length + 1, 18))}em`, maxWidth: '100%', fontSize: 16 }} />;
                   }
                   if (!allRevealed || !isTarget) {
-                    return <div key={answerIndex} style={{ borderLeft: `3px solid ${isTarget ? ACCENT : 'rgba(120,120,128,0.24)'}`, padding: '2px 0 2px 14px', color: isTarget ? '#1d1d1f' : 'rgba(60,60,67,0.62)', fontSize: 21, fontWeight: 700, wordBreak: 'keep-all', lineHeight: 1.45, whiteSpace: 'pre-line', animation: isTarget ? 'popIn 0.22s cubic-bezier(0.3,1.2,0.4,1)' : undefined }}>{answer}</div>;
+                    return <div key={answerIndex} data-study-answer-index={answerIndex} style={{ borderLeft: `3px solid ${isTarget ? ACCENT : 'rgba(120,120,128,0.24)'}`, padding: '2px 0 2px 14px', color: isTarget ? '#1d1d1f' : 'rgba(60,60,67,0.62)', fontSize: 21, fontWeight: 700, wordBreak: 'keep-all', lineHeight: 1.45, whiteSpace: 'pre-line', animation: isTarget ? 'popIn 0.22s cubic-bezier(0.3,1.2,0.4,1)' : undefined }}>{answer}</div>;
                   }
                   const retry = retrySet.has(answerIndex);
                   return (
@@ -1735,6 +1866,7 @@ function StudyView(props: {
                       key={answerIndex}
                       type="button"
                       className="token-button"
+                      data-study-answer-index={answerIndex}
                       aria-pressed={retry}
                       onClick={(e) => { e.stopPropagation(); toggleRetry(answerIndex); }}
                       style={{ border: 0, borderLeft: `3px solid ${retry ? '#ff9500' : 'rgba(120,120,128,0.32)'}`, borderRadius: 6, padding: '2px 10px 2px 14px', background: retry ? 'rgba(255,149,0,0.12)' : 'rgba(120,120,128,0.07)', color: retry ? '#8a4d00' : '#1d1d1f', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', animation: 'popIn 0.22s cubic-bezier(0.3,1.2,0.4,1)' }}
@@ -1752,16 +1884,17 @@ function StudyView(props: {
                 <span key={i}>
                   <span>{seg.text}</span>
                   {seg.kind === 'next' && (
-                    <span style={{ display: 'inline-block', minWidth: 68, height: 36, padding: '0 14px', borderRadius: 8, background: 'rgba(0,122,255,0.16)', verticalAlign: 'middle', margin: '0 3px' }} />
+                    <span data-study-answer-index={seg.answerIndex} style={{ display: 'inline-block', minWidth: 68, height: 36, padding: '0 14px', borderRadius: 8, background: 'rgba(0,122,255,0.16)', verticalAlign: 'middle', margin: '0 3px' }} />
                   )}
                   {seg.kind === 'waiting' && (
-                    <span style={{ display: 'inline-block', minWidth: 68, height: 36, padding: '0 14px', borderRadius: 8, background: 'rgba(120,120,128,0.12)', verticalAlign: 'middle', margin: '0 3px' }} />
+                    <span data-study-answer-index={seg.answerIndex} style={{ display: 'inline-block', minWidth: 68, height: 36, padding: '0 14px', borderRadius: 8, background: 'rgba(120,120,128,0.12)', verticalAlign: 'middle', margin: '0 3px' }} />
                   )}
                   {seg.kind === 'revealed' && (
                     allRevealed && seg.target ? (
                       <button
                         type="button"
                         className="token-button"
+                        data-study-answer-index={seg.answerIndex}
                         aria-pressed={retrySet.has(seg.answerIndex)}
                         onClick={(e) => { e.stopPropagation(); toggleRetry(seg.answerIndex); }}
                         style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 7px', border: 0, borderBottom: `2px solid ${retrySet.has(seg.answerIndex) ? '#ff9500' : 'rgba(120,120,128,0.32)'}`, borderRadius: 6, background: retrySet.has(seg.answerIndex) ? 'rgba(255,149,0,0.12)' : 'rgba(120,120,128,0.07)', color: retrySet.has(seg.answerIndex) ? '#8a4d00' : '#1d1d1f', font: 'inherit', fontWeight: 800, lineHeight: 'inherit', margin: '0 3px', cursor: 'pointer', animation: 'popIn 0.22s cubic-bezier(0.3,1.2,0.4,1)' }}
@@ -1770,7 +1903,7 @@ function StudyView(props: {
                         {retrySet.has(seg.answerIndex) && <RotateCcw size={14} strokeWidth={2.4} aria-hidden="true" />}
                       </button>
                     ) : (
-                      <span style={{ display: 'inline-block', padding: '0 2px', borderBottom: `2px solid ${seg.target ? ACCENT : 'rgba(120,120,128,0.24)'}`, color: seg.target ? ACCENT_DEEP : 'rgba(60,60,67,0.62)', fontWeight: 800, margin: '0 3px', animation: seg.target ? 'popIn 0.22s cubic-bezier(0.3,1.2,0.4,1)' : undefined }}>{seg.answer}</span>
+                      <span data-study-answer-index={seg.answerIndex} style={{ display: 'inline-block', padding: '0 2px', borderBottom: `2px solid ${seg.target ? ACCENT : 'rgba(120,120,128,0.24)'}`, color: seg.target ? ACCENT_DEEP : 'rgba(60,60,67,0.62)', fontWeight: 800, margin: '0 3px', animation: seg.target ? 'popIn 0.22s cubic-bezier(0.3,1.2,0.4,1)' : undefined }}>{seg.answer}</span>
                     )
                   )}
                 </span>
@@ -1810,6 +1943,7 @@ function EditSheet(props: {
   const { list, state, dispatch } = props;
   const cardsAll = list.cards;
   const idx = state.editIdx ?? -1;
+  const dirty = editSignature(state.editMode, state.editQ, state.editA, state.editTokens) !== state.editInitialSignature;
 
   const onEditText = (e: ChangeEvent<HTMLTextAreaElement>) => {
     const text = e.target.value;
@@ -1843,24 +1977,24 @@ function EditSheet(props: {
 
   return (
     <>
-      <div onClick={() => dispatch({ editSheetOpen: false })} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.28)', zIndex: 15 }} />
+      <div onClick={() => { if (!dirty) dispatch({ editSheetOpen: false }); }} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.28)', zIndex: 15 }} />
       <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, borderRadius: '20px 20px 0 0', background: '#fff', padding: '18px 20px 42px', display: 'flex', flexDirection: 'column', gap: 13, boxShadow: '0 -12px 40px rgba(0,0,0,0.16)', animation: 'sheetUp 0.32s cubic-bezier(0.3,0.9,0.4,1)', maxHeight: '82%', zIndex: 16 }}>
         <div style={{ width: 40, height: 5, borderRadius: 3, background: 'rgba(120,120,128,0.25)', alignSelf: 'center', flexShrink: 0 }} />
         <div style={{ display: 'grid', gridTemplateColumns: '64px 1fr 80px', alignItems: 'center', flexShrink: 0 }}>
           <button type="button" className="ui-button" onClick={() => dispatch({ editSheetOpen: false })} style={{ minWidth: 44, minHeight: 40, justifySelf: 'start', background: 'transparent', color: '#6e6e73', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
-            취소
+            {dirty ? '변경 취소' : '닫기'}
           </button>
           <div style={{ display: 'flex', gap: 6, justifySelf: 'center' }}>
             <button type="button" className="ui-button" onClick={setQA} aria-pressed={state.editMode === 'qa'} style={{ padding: '8px 14px', borderRadius: 9, cursor: 'pointer', ...chip(state.editMode === 'qa') }}><span style={{ fontSize: 13.5, fontWeight: 700 }}>문답형</span></button>
             <button type="button" className="ui-button" onClick={setCloze} aria-pressed={state.editMode === 'tokens'} style={{ padding: '8px 14px', borderRadius: 9, cursor: 'pointer', ...chip(state.editMode === 'tokens') }}><span style={{ fontSize: 13.5, fontWeight: 700 }}>가림형</span></button>
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4 }}>
-            {idx > 0 && (
+            {!dirty && idx > 0 && (
               <button type="button" className="ui-button" onClick={goPrev} aria-label="이전 카드" style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(120,120,128,0.1)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1d1d1f" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
               </button>
             )}
-            {idx >= 0 && idx < cardsAll.length - 1 && (
+            {!dirty && idx >= 0 && idx < cardsAll.length - 1 && (
               <button type="button" className="ui-button" onClick={goNext} aria-label="다음 카드" style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(120,120,128,0.1)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1d1d1f" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6" /></svg>
               </button>
@@ -1897,8 +2031,8 @@ function EditSheet(props: {
           <button type="button" className="ui-button" onClick={props.onDelete} style={{ height: 50, padding: '0 20px', borderRadius: 12, background: 'rgba(255,59,48,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
             <span style={{ fontSize: 16, fontWeight: 700, color: '#ff3b30' }}>삭제</span>
           </button>
-          <button type="button" className="ui-button" onClick={save} style={{ flex: 1, height: 50, borderRadius: 12, background: ACCENT, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-            <span style={{ fontSize: 17, fontWeight: 700, color: '#fff' }}>저장</span>
+          <button type="button" className="ui-button" onClick={save} disabled={!dirty} style={{ flex: 1, height: 50, borderRadius: 12, background: dirty ? ACCENT : 'rgba(120,120,128,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: dirty ? 'pointer' : 'default' }}>
+            <span style={{ fontSize: 17, fontWeight: 700, color: dirty ? '#fff' : 'rgba(60,60,67,0.35)' }}>저장</span>
           </button>
         </div>
       </div>
