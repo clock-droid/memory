@@ -1,16 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { ACCENT, ACCENT_DEEP } from '../constants';
 import { parsePaste, tokensToCard } from '../tokens';
-import type { Token } from '../tokens';
 import { qaToNewCard } from '../cards';
 import type { Patch, UIState } from '../uiState';
 import type { NewCard } from '../types';
+import { TokenChips } from './TokenChips';
 
 // 추가 중에는 목록 관리 UI를 모두 치우고 현재 입력에만 집중한다.
 // 저장 후 편집기를 닫지 않고 비운 뒤 다시 포커스해 연속 입력을 지원한다.
 export function ContinuousAddView(props: {
   state: UIState; dispatch: (p: Patch) => void;
-  renderTokenChips: (tokens: Token[], ri: number, fontSize: number, outlined?: boolean) => React.ReactNode;
   onAddCards: (cards: NewCard[]) => Promise<boolean>;
   onUndoLast: () => Promise<number>;
   onClose: () => void;
@@ -135,7 +134,7 @@ export function ContinuousAddView(props: {
             </div>
           ) : (
             <div key={ri} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '7px 4px', lineHeight: 1.9 }}>
-              {props.renderTokenChips(r.tokens, ri, 16, true)}
+              <TokenChips tokens={r.tokens} ri={ri} fontSize={16} outlined sel={state.sel} dispatch={dispatch} />
             </div>
           ))}
 

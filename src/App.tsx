@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { createFirebaseRepository } from './firebase';
 import { createLocalRepository } from './localRepository';
 import { createServerRepository } from './serverRepository';
-import { ACCENT, ROOM_KEY } from './constants';
-import { cardToTokens, editSignature, toggleTokenAt, tokensToCard, tokensToText } from './tokens';
+import { ROOM_KEY } from './constants';
+import { cardToTokens, editSignature, tokensToCard, tokensToText } from './tokens';
 import type { Token } from './tokens';
 import { deriveQA, emptyDeckCache, keepCard, normalizeAnswerMastery, qaToNewCard, remapAnswerMastery } from './cards';
 import type { DeckCacheEntry, OptimisticNewCard, ProtoCard, ProtoList } from './cards';
@@ -455,75 +454,6 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
     });
   }, [activeList, state.queue, state.retryAnswerIdx, setAnswerMastery, toast]);
 
-  // ---- token view descriptors
-  const tokenViews = useCallback((tokens: Token[], ri: number) => {
-    const sel = state.sel;
-    return tokens.map((t, ti) => {
-      if (t.nl) return { brk: true as const, key: ti };
-      const inSel = !!sel && sel.ri === ri && ti >= Math.min(sel.start, sel.end) && ti <= Math.max(sel.start, sel.end);
-      const marked = t.hidden || inSel;
-      return {
-        brk: false as const, key: ti, word: t.word, tail: t.tail, marked,
-        // plain words, blue cover on the marked ones — reads as "text with parts
-        // painted over", not a pile of buttons
-        bg: marked ? ACCENT : 'transparent', fg: marked ? '#fff' : '#1d1d1f', fw: marked ? 700 : 600, padX: marked ? 8 : 3,
-        bd: '1px solid transparent',
-        onDown: (e: ReactPointerEvent) => {
-          e.stopPropagation();
-          try { (e.target as Element).releasePointerCapture?.(e.pointerId); } catch { /* noop */ }
-          dispatch({ sel: { ri, start: ti, end: ti, wasHidden: t.hidden } });
-        },
-        onEnter: () => dispatch((st) => (st.sel && st.sel.ri === ri ? { sel: { ...st.sel, end: ti } } : {})),
-        onKeyDown: (e: ReactKeyboardEvent<HTMLButtonElement>) => {
-          if (e.key !== 'Enter' && e.key !== ' ') return;
-          e.preventDefault();
-          e.stopPropagation();
-          dispatch((st) => {
-            if (ri === -100) return { editTokens: toggleTokenAt(st.editTokens, ti), sel: null };
-            return {
-              sheetRows: st.sheetRows.map((row, rowIndex) =>
-                rowIndex === ri && row.kind === 'tokens' ? { ...row, tokens: toggleTokenAt(row.tokens, ti) } : row,
-              ),
-              sel: null,
-            };
-          });
-        },
-      };
-    });
-  }, [state.sel]);
-
-  const renderTokenChips = (tokens: Token[], ri: number, fontSize: number, outlined = false) => tokenViews(tokens, ri).map((tv) =>
-    tv.brk ? (
-      <span key={tv.key} style={{ width: '100%', height: 2 }} />
-    ) : (
-      <span key={tv.key} style={{ display: 'inline-flex', alignItems: 'baseline' }}>
-        <button
-          type="button"
-          className="token-button"
-          onPointerDown={tv.onDown}
-          onPointerEnter={tv.onEnter}
-          onKeyDown={tv.onKeyDown}
-          aria-pressed={tv.marked}
-          aria-label={`${tv.word}${tv.tail} ${tv.marked ? '가림 해제' : '가리기'}`}
-          style={outlined ? {
-            display: 'inline-flex', alignItems: 'center', minHeight: 46, padding: '8px 14px', borderRadius: 11,
-            background: tv.marked ? ACCENT : '#fff', color: tv.marked ? '#fff' : '#1d1d1f',
-            border: tv.marked ? '1px solid transparent' : '1px solid rgba(60,60,67,0.14)',
-            boxShadow: tv.marked ? '0 2px 5px rgba(0,122,255,0.18)' : '0 1px 2px rgba(0,0,0,0.02)',
-            boxSizing: 'border-box', fontSize, fontWeight: tv.marked ? 700 : 600, lineHeight: 1.3,
-            cursor: 'pointer', touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none',
-          } : {
-            display: 'inline-flex', alignItems: 'center', minHeight: 36, padding: `5px ${tv.padX + 2}px`, borderRadius: 8,
-            background: tv.bg, color: tv.fg, border: tv.bd, boxSizing: 'border-box', fontSize, fontWeight: tv.fw,
-            lineHeight: 1.35, cursor: 'pointer', touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none',
-          }}
-        >
-          {tv.word}{outlined && !tv.marked ? tv.tail : ''}
-        </button>
-        {(!outlined || tv.marked) && <span style={{ fontSize, fontWeight: 600 }}>{tv.tail}</span>}
-      </span>
-    ));
-
   // ============================================================ render
   return (
     <div style={{ height: '100dvh', width: '100%', maxWidth: 480, margin: '0 auto', position: 'relative', background: '#F2F2F7', color: '#000', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -568,7 +498,6 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
         <ContinuousAddView
           state={state}
           dispatch={dispatch}
-          renderTokenChips={renderTokenChips}
           onAddCards={async (cards) => {
             if (draftList) return createDraftListWithCards(cards);
             if (!activeList) return false;
@@ -647,7 +576,7 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
       {state.editSheetOpen && activeList && (
         <EditSheet
           list={activeList} state={state} dispatch={dispatch}
-          saveEditFrom={saveEditFrom} renderTokenChips={renderTokenChips}
+          saveEditFrom={saveEditFrom}
           onDelete={() => {
             if (state.editIdx === null) return;
             const deckId = activeList.deckId;

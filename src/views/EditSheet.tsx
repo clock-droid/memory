@@ -1,14 +1,13 @@
 import type { ChangeEvent } from 'react';
 import { ACCENT, ACCENT_DEEP } from '../constants';
 import { editSignature, tokenizeText, tokensToText } from '../tokens';
-import type { Token } from '../tokens';
 import type { ProtoCard, ProtoList } from '../cards';
 import type { Patch, UIState } from '../uiState';
+import { TokenChips } from './TokenChips';
 
 export function EditSheet(props: {
   list: ProtoList; state: UIState; dispatch: (p: Patch) => void;
   saveEditFrom: (st: UIState, close: boolean) => boolean;
-  renderTokenChips: (tokens: Token[], ri: number, fontSize: number) => React.ReactNode;
   onDelete: () => void; openEditFor: (card: ProtoCard) => void;
 }) {
   const { list, state, dispatch } = props;
@@ -92,7 +91,7 @@ export function EditSheet(props: {
               <textarea rows={3} value={state.editText} onChange={onEditText} placeholder="문장 전체를 쓰세요" style={{ fontSize: 16.5, fontWeight: 600, border: 'none', background: 'transparent', color: '#000', padding: '2px 0', resize: 'none', lineHeight: 1.5 }} />
             </div>
             <div style={{ padding: '12px 14px', borderRadius: 10, background: 'rgba(120,120,128,0.08)', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '3px 2px', lineHeight: 1.9, overflowY: 'auto', minHeight: 0 }}>
-              {props.renderTokenChips(state.editTokens, -100, 15)}
+              <TokenChips tokens={state.editTokens} ri={-100} fontSize={15} sel={state.sel} dispatch={dispatch} />
               <span style={{ width: '100%', fontSize: 12.5, color: ACCENT_DEEP, fontWeight: 700, marginTop: 2 }}>가릴 답을 탭하세요</span>
             </div>
           </>
