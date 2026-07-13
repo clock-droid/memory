@@ -176,12 +176,13 @@ export function createServerRepository(roomCode: string): Repository | null {
       await emitCards(deckId);
     },
     async setSectionContent(deckId, sectionId, sourceText, cards: NewCard[]) {
-      await request(roomCode, `/decks/${encodeURIComponent(deckId)}/sections/${encodeURIComponent(sectionId)}/content`, {
+      const created = await request<Card[]>(roomCode, `/decks/${encodeURIComponent(deckId)}/sections/${encodeURIComponent(sectionId)}/content`, {
         method: 'PUT',
         body: JSON.stringify({ sourceText, cards }),
       });
       await emitSections(deckId);
       await emitCards(deckId);
+      return created;
     },
     async toggleCardStar(deckId, cardId, starred) {
       await request(roomCode, `/decks/${encodeURIComponent(deckId)}/cards/${encodeURIComponent(cardId)}`, {

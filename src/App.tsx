@@ -217,7 +217,20 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
       });
       return { ...cur, [deckId]: { ...prev, cards: [...others, ...optimistic], cardsLoaded: true } };
     });
-    repository.setSectionContent(deckId, sectionId, sourceText, payload).catch(() => toast('저장에 실패했어요'));
+    repository.setSectionContent(deckId, sectionId, sourceText, payload)
+      .then((saved) => {
+        // Reconcile the optimistic cache to the server's real card ids. The
+        // content write regenerates ids, so without this the cache keeps dead
+        // tmp_ ids and later per-hide mastery writes (setCardAnswerMastery)
+        // target an id that no longer exists and are silently dropped.
+        setDeckDataById((cur) => {
+          const prev = cur[deckId];
+          if (!prev) return cur;
+          const others = prev.cards.filter((c) => (c.sectionId ?? 'default') !== sectionId);
+          return { ...cur, [deckId]: { ...prev, cards: [...others, ...saved], cardsLoaded: true } };
+        });
+      })
+      .catch(() => toast('저장에 실패했어요'));
   }, [repository, toast]);
 
   const setAnswerMastery = useCallback((deckId: string, cardId: string, answerMastery: boolean[]) => {
@@ -269,18 +282,14 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
       }
       sectionId = await repository.addSection(deckId, draftList.name);
       const sourceText = cards.map((card) => card.rawText).join('\n');
-      await repository.setSectionContent(deckId, sectionId, sourceText, cards);
+      // Seed the optimistic cache from the persisted cards (real server ids),
+      // not minted tmp_ ids — otherwise this new-list path leaves stale ids in
+      // the cache and per-hide mastery writes are lost on reload.
+      const saved = await repository.setSectionContent(deckId, sectionId, sourceText, cards);
 
       const now = Date.now();
       const resolvedDeckId = deckId;
       const resolvedSectionId = sectionId;
-      const optimisticCards: Card[] = cards.map((card, index) => ({
-        ...card,
-        id: `tmp_${now}_${index}`,
-        sectionId: resolvedSectionId,
-        createdAt: now,
-        updatedAt: now,
-      }));
       setDecks((current) => current.some((deck) => deck.id === resolvedDeckId)
         ? current
         : [...current, { id: resolvedDeckId, name: '일반', createdAt: now, updatedAt: now }]);
@@ -291,7 +300,7 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
           ...current,
           [resolvedDeckId]: {
             ...previous,
-            cards: [...previous.cards.filter((card) => (card.sectionId ?? 'default') !== resolvedSectionId), ...optimisticCards],
+            cards: [...previous.cards.filter((card) => (card.sectionId ?? 'default') !== resolvedSectionId), ...saved],
             sections: [...previous.sections.filter((item) => item.id !== resolvedSectionId), section],
             cardsLoaded: true,
             sectionsLoaded: true,

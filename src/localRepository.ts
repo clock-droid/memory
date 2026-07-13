@@ -158,6 +158,7 @@ export function createLocalRepository(roomCode: string): Repository {
         ...nextCards,
       ];
       write(roomCode, state);
+      return nextCards;
     },
     async toggleCardStar(deckId, cardId, starred) {
       const state = read(roomCode);

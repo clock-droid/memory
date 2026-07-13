@@ -63,7 +63,7 @@ export type Repository = {
   addSection: (deckId: string, name: string) => Promise<string>;
   renameSection: (deckId: string, sectionId: string, name: string) => Promise<void>;
   deleteSection: (deckId: string, sectionId: string) => Promise<void>;
-  setSectionContent: (deckId: string, sectionId: string, sourceText: string, cards: NewCard[]) => Promise<void>;
+  setSectionContent: (deckId: string, sectionId: string, sourceText: string, cards: NewCard[]) => Promise<Card[]>;
   toggleCardStar: (deckId: string, cardId: string, starred: boolean) => Promise<void>;
   setCardAnswerMastery: (deckId: string, cardId: string, answerMastery: boolean[]) => Promise<void>;
 };

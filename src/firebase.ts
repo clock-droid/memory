@@ -119,9 +119,11 @@ export function createFirebaseRepository(roomCode: string): Repository | null {
           .filter((cardDoc) => ((cardDoc.data() as Card).sectionId ?? 'default') === sectionId)
           .map((cardDoc) => deleteDoc(cardDoc.ref)),
       );
+      const created: Card[] = [];
       await Promise.all(
         cards.map((card) => {
           const cardRef = doc(cardsPath);
+          created.push({ ...card, id: cardRef.id, sectionId, createdAt: now, updatedAt: now });
           return setDoc(cardRef, { ...card, sectionId, createdAt: now, updatedAt: now });
         }),
       );
@@ -130,6 +132,7 @@ export function createFirebaseRepository(roomCode: string): Repository | null {
         { sourceText, updatedAt: now },
         { merge: true },
       );
+      return created;
     },
     async toggleCardStar(deckId, cardId, starred) {
       await updateDoc(doc(db, 'rooms', roomCode, 'decks', deckId, 'cards', cardId), {

@@ -106,11 +106,14 @@ export function applyRoomRequest({ room, method, parts, body }) {
       room.sectionsByDeck[deckId] = room.sectionsByDeck[deckId].map((section) =>
         section.id === sectionId ? { ...section, sourceText, updatedAt: now } : section,
       );
+      const created = cards.map((card) => ({ ...card, sectionId, id: id('card'), createdAt: now, updatedAt: now }));
       room.cardsByDeck[deckId] = [
         ...room.cardsByDeck[deckId].filter((card) => (card.sectionId ?? 'default') !== sectionId),
-        ...cards.map((card) => ({ ...card, sectionId, id: id('card'), createdAt: now, updatedAt: now })),
+        ...created,
       ];
-      return { status: 200, body: { ok: true }, write: true };
+      // return the persisted cards (with real ids) so the client can reconcile
+      // its optimistic cache instead of keeping dead tmp_ ids
+      return { status: 200, body: created, write: true };
     }
   }
 
