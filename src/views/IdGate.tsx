@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ACCENT } from '../constants';
 import { createRoomCode, normalizeRoomCode } from '../roomCode';
+import { ClozeFlowGraphic } from './ClozeFlowGraphic';
 
 export function IdGate({ onSubmit }: { onSubmit: (code: string) => void }) {
   const [showExisting, setShowExisting] = useState(false);
@@ -18,11 +19,15 @@ export function IdGate({ onSubmit }: { onSubmit: (code: string) => void }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ fontSize: 29, fontWeight: 800, letterSpacing: '-0.035em' }}>시험암기</div>
           <div style={{ maxWidth: 360, fontSize: 16, color: '#5f5f65', lineHeight: 1.65, wordBreak: 'keep-all' }}>
-            암기할 내용을 적고, 원하는 부분을 여러 곳 가려서 하나씩 외워요.
+            암기할 내용에서 여러 곳을 가리고, <span style={{ fontWeight: 700, color: '#1d1d1f' }}>몰랐던 부분만 다시</span> 외워요.
           </div>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 34 }}>
+        <div style={{ marginTop: 24, display: 'flex', justifyContent: 'center' }}>
+          <ClozeFlowGraphic />
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 30 }}>
           <button
             type="button"
             className="ui-button"
