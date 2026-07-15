@@ -4,8 +4,8 @@
   "description": "PC와 아이폰에서 실시간으로 공유하는 빈칸 암기 도구",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f5f3ea",
-  "theme_color": "#18332f",
+  "background_color": "#f2f2f7",
+  "theme_color": "#f2f2f7",
   "icons": [
     {
       "src": "/icon.svg",

@@ -2,6 +2,7 @@ import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { ACCENT } from '../constants';
 import { masterySummary } from '../cards';
 import type { ProtoList } from '../cards';
+import { ClozeFlowGraphic } from './ClozeFlowGraphic';
 
 function EmptyStateAction(props: { label: string; onClick: () => void }) {
   return (
@@ -45,8 +46,9 @@ export function HomeView(props: {
           <div style={{ padding: '44px 20px', textAlign: 'center', color: 'rgba(60,60,67,0.45)', fontSize: 15 }}>불러오는 중…</div>
         )}
         {decksState === 'ready' && lists.length === 0 && (
-          <div style={{ padding: '38px 20px', textAlign: 'center', color: 'rgba(60,60,67,0.58)', fontSize: 15, lineHeight: 1.6, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
-            <div>아직 암기장이 없어요.<br />첫 암기장에 외울 카드를 추가해보세요.</div>
+          <div style={{ padding: '24px 0 38px', textAlign: 'center', color: 'rgba(60,60,67,0.62)', fontSize: 15, lineHeight: 1.55, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 18 }}>
+            <ClozeFlowGraphic />
+            <div>외울 문장에서 가릴 부분을 고르면<br />모르는 가림만 다시 학습할 수 있어요.</div>
             <EmptyStateAction label="첫 암기장 만들기" onClick={props.onNewList} />
           </div>
         )}
