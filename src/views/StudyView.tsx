@@ -1,34 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { RotateCcw } from 'lucide-react';
-import { ACCENT, ACCENT_DEEP, JUDGE_HINT_KEY } from '../constants';
+import { ACCENT, ACCENT_DEEP } from '../constants';
 import { masterySummary } from '../cards';
 import type { ProtoList } from '../cards';
 import type { Patch, UIState } from '../uiState';
 import { usePcHints } from '../usePcHints';
+import { readJudgeHintEnabled, writeJudgeHintEnabled } from '../judgeHint';
 import { HideStateMap } from './HideStateMap';
 import type { HideState } from './HideStateMap';
-
-// The "탭하세요" judgment hint is emphasized until the user demonstrably learns it
-// (taps a retry once, or passes 3 judgment screens). Persisted per device.
-const JUDGE_HINT_LEARNED = 3;
-
-function readJudgeHintProgress(): number {
-  try {
-    const raw = localStorage.getItem(JUDGE_HINT_KEY);
-    const parsed = raw ? parseInt(raw, 10) : 0;
-    return Number.isFinite(parsed) ? parsed : 0;
-  } catch {
-    return 0;
-  }
-}
-
-function writeJudgeHintProgress(value: number): void {
-  try {
-    localStorage.setItem(JUDGE_HINT_KEY, String(value));
-  } catch {
-    // storage unavailable — hint simply stays in its default emphasized state
-  }
-}
 
 export function StudyView(props: {
   list: ProtoList | undefined; state: UIState; dispatch: (p: Patch) => void;
@@ -38,25 +17,11 @@ export function StudyView(props: {
   const { list, state, dispatch } = props;
   const isPc = usePcHints();
   const contentRef = useRef<HTMLDivElement | null>(null);
-  const [judgeHintProgress, setJudgeHintProgress] = useState(readJudgeHintProgress);
-  const judgeHintLearned = judgeHintProgress >= JUDGE_HINT_LEARNED;
-
-  // Tapping a retry proves the interaction is understood — retire the emphasis at once.
-  const learnJudgeHint = () => {
-    if (judgeHintProgress >= JUDGE_HINT_LEARNED) return;
-    setJudgeHintProgress(JUDGE_HINT_LEARNED);
-    writeJudgeHintProgress(JUDGE_HINT_LEARNED);
+  const [judgeHintEnabled, setJudgeHintEnabled] = useState(readJudgeHintEnabled);
+  const dismissJudgeHint = () => {
+    setJudgeHintEnabled(false);
+    writeJudgeHintEnabled(false);
   };
-  // Passing a judgment screen without tapping nudges the counter toward "learned".
-  const advanceJudgeHint = () => {
-    setJudgeHintProgress((prev) => {
-      if (prev >= JUDGE_HINT_LEARNED) return prev;
-      const next = prev + 1;
-      writeJudgeHintProgress(next);
-      return next;
-    });
-  };
-  const completeJudgment = () => { advanceJudgeHint(); props.onComplete(); };
   const target = state.queue[0];
   const card = list && target ? list.cards.find((c) => c.id === target.cardId) : undefined;
   const qParts = card ? card.q.split('___') : [];
@@ -73,7 +38,6 @@ export function StudyView(props: {
 
   const revealNext = () => { if (nextIdx >= 0) dispatch((st) => ({ revealedIdx: [...st.revealedIdx, nextIdx] })); };
   const toggleRetry = (answerIndex: number) => {
-    learnJudgeHint();
     dispatch((st) => ({
       retryAnswerIdx: st.retryAnswerIdx.includes(answerIndex)
         ? st.retryAnswerIdx.filter((i) => i !== answerIndex)
@@ -91,7 +55,7 @@ export function StudyView(props: {
       if (e.key === ' ' || e.key === 'Enter') {
         e.preventDefault();
         if (nextIdx >= 0) revealNext();
-        else completeJudgment();
+        else props.onComplete();
         return;
       }
     };
@@ -273,13 +237,27 @@ export function StudyView(props: {
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 9 }}>
-            <div
-              className={judgeHintLearned ? undefined : 'judge-hint-emphasis'}
-              style={{ minHeight: 15, textAlign: 'center', fontSize: judgeHintLearned ? 12 : 14, color: judgeHintLearned ? 'rgba(60,60,67,0.5)' : '#1d1d1f', fontWeight: judgeHintLearned ? 600 : 700, visibility: retrySet.size > 0 ? 'hidden' : 'visible' }}
-            >
-              몰랐던 답을 탭하세요
+            <div style={{ minHeight: 15, display: 'flex', alignItems: 'center', gap: 6, visibility: retrySet.size > 0 ? 'hidden' : 'visible' }}>
+              <span
+                className={judgeHintEnabled ? 'judge-hint-emphasis' : undefined}
+                style={{ textAlign: 'center', fontSize: judgeHintEnabled ? 14 : 12, color: judgeHintEnabled ? '#1d1d1f' : 'rgba(60,60,67,0.5)', fontWeight: judgeHintEnabled ? 700 : 600 }}
+              >
+                몰랐던 답을 탭하세요
+              </span>
+              {judgeHintEnabled && (
+                <button
+                  type="button"
+                  className="ui-button"
+                  onClick={dismissJudgeHint}
+                  aria-label="이 안내 그만 강조하기"
+                  title="이 안내 그만 강조하기"
+                  style={{ width: 22, height: 22, borderRadius: 999, background: 'rgba(120,120,128,0.14)', display: 'grid', placeItems: 'center', cursor: 'pointer', pointerEvents: 'auto', flexShrink: 0 }}
+                >
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="rgba(60,60,67,0.6)" strokeWidth="3" strokeLinecap="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+                </button>
+              )}
             </div>
-            <button type="button" className="study-judge-button" onClick={completeJudgment} style={{ width: '100%', height: 50, padding: '0 16px', borderRadius: 12, border: 'none', background: ACCENT, color: '#fff', display: 'grid', placeItems: 'center', cursor: 'pointer', pointerEvents: 'auto', fontFamily: 'inherit', fontSize: 15.5, fontWeight: 800 }}>
+            <button type="button" className="study-judge-button" onClick={props.onComplete} style={{ width: '100%', height: 50, padding: '0 16px', borderRadius: 12, border: 'none', background: ACCENT, color: '#fff', display: 'grid', placeItems: 'center', cursor: 'pointer', pointerEvents: 'auto', fontFamily: 'inherit', fontSize: 15.5, fontWeight: 800 }}>
               {retrySet.size > 0 ? `다음 · 다시 ${retrySet.size}개` : '다음'}
             </button>
           </div>

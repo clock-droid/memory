@@ -1,11 +1,18 @@
 import { useState } from 'react';
 import { ACCENT } from '../constants';
 import { normalizeRoomCode } from '../roomCode';
+import { readJudgeHintEnabled, writeJudgeHintEnabled } from '../judgeHint';
 
 export function SettingsSheet(props: { roomCode: string; onClose: () => void; onChangeRoom: (code: string) => void }) {
   const [value, setValue] = useState(props.roomCode);
   const [copied, setCopied] = useState(false);
+  const [judgeHintEnabled, setJudgeHintEnabled] = useState(readJudgeHintEnabled);
   const changed = normalizeRoomCode(value) && normalizeRoomCode(value) !== props.roomCode;
+  const toggleJudgeHint = () => {
+    const next = !judgeHintEnabled;
+    setJudgeHintEnabled(next);
+    writeJudgeHintEnabled(next);
+  };
   const copy = () => {
     try { navigator.clipboard?.writeText(props.roomCode); } catch { /* clipboard blocked (e.g. sandbox) */ }
     setCopied(true);
@@ -29,6 +36,22 @@ export function SettingsSheet(props: { roomCode: string; onClose: () => void; on
           <button type="button" className="ui-button" onClick={props.onClose} style={{ flex: 1, height: 48, borderRadius: 11, background: 'rgba(120,120,128,0.12)', display: 'grid', placeItems: 'center', cursor: 'pointer', fontSize: 16, fontWeight: 700, color: '#48484a' }}>닫기</button>
           <button type="button" className="ui-button" onClick={() => { if (changed) props.onChangeRoom(normalizeRoomCode(value)); }} disabled={!changed} style={{ flex: 1, height: 48, borderRadius: 11, background: changed ? ACCENT : 'rgba(120,120,128,0.12)', display: 'grid', placeItems: 'center', cursor: changed ? 'pointer' : 'default', fontSize: 16, fontWeight: 700, color: changed ? '#fff' : 'rgba(60,60,67,0.55)' }}>바꾸기</button>
         </div>
+        <div style={{ height: 0.5, background: 'rgba(60,60,67,0.1)', margin: '2px 0' }} />
+        <button
+          type="button"
+          className="ui-button"
+          onClick={toggleJudgeHint}
+          aria-pressed={judgeHintEnabled}
+          style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'transparent', cursor: 'pointer', textAlign: 'left' }}
+        >
+          <span style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <span style={{ fontSize: 15, fontWeight: 700, color: '#1d1d1f' }}>판정 안내 강조</span>
+            <span style={{ fontSize: 12.5, color: '#6e6e73', lineHeight: 1.45 }}>학습 중 &apos;몰랐던 답을 탭하세요&apos;를 눈에 띄게 보여줘요.</span>
+          </span>
+          <span style={{ flexShrink: 0, width: 46, height: 27, borderRadius: 999, background: judgeHintEnabled ? ACCENT : 'rgba(120,120,128,0.28)', position: 'relative', transition: 'background 0.15s' }}>
+            <span style={{ position: 'absolute', top: 2, left: judgeHintEnabled ? 21 : 2, width: 23, height: 23, borderRadius: 999, background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.2)', transition: 'left 0.15s cubic-bezier(0.3,0.9,0.4,1)' }} />
+          </span>
+        </button>
       </div>
     </>
   );
