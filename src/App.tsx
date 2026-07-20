@@ -3,9 +3,14 @@ import { createFirebaseRepository } from './firebase';
 import { createLocalRepository } from './localRepository';
 import { createServerRepository } from './serverRepository';
 import { ROOM_KEY } from './constants';
+import { deriveSyncHealth, isSyncReadOnly } from './syncHealth';
+import type { SyncResourceState } from './syncHealth';
+import { KeyedMutationQueue } from './mutationQueue';
+import type { EnqueuedMutation } from './mutationQueue';
+import { CardIdAliases, applyAnswerMastery, applySectionName, replaceSectionCards } from './mutationState';
 import { cardToTokens, editSignature, tokensToCard, tokensToText } from './tokens';
 import type { Token } from './tokens';
-import { deriveQA, emptyDeckCache, keepCard, normalizeAnswerMastery, qaToNewCard, remapAnswerMastery } from './cards';
+import { cardNeedsRepair, deriveQA, emptyDeckCache, keepCard, normalizeAnswerMastery, protoCardSourceSignature, qaToNewCard, reconcileStudyTargets, remapAnswerMastery, resolveEditedCardId } from './cards';
 import type { DeckCacheEntry, OptimisticNewCard, ProtoCard, ProtoList } from './cards';
 import { initialUI, uiReducer } from './uiState';
 import type { StudyTarget, UIState } from './uiState';
@@ -25,22 +30,50 @@ export default function App() {
   return <Room key={roomCode} roomCode={roomCode} onChangeRoom={(code) => { localStorage.setItem(ROOM_KEY, code); setRoomCode(code); }} />;
 }
 
+function rejectedMutation(): EnqueuedMutation {
+  return { accepted: false, version: 0, done: Promise.resolve(false) };
+}
+
+function canonicalBlankCount(prompt: string) {
+  return prompt.match(/___/g)?.length ?? 0;
+}
+
+function newOperationId() {
+  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function contentFingerprint(value: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
 function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (code: string) => void }) {
   const repository = useMemo<Repository | null>(() => {
     if (!roomCode) return null;
-    return createFirebaseRepository(roomCode) ?? createServerRepository(roomCode) ?? createLocalRepository(roomCode);
+    // The revisioned sync endpoint is the authoritative production backend.
+    // Keep legacy adapters only as fallbacks for environments without it;
+    // preferring Firebase would bypass conflict checks and idempotent writes.
+    return createServerRepository(roomCode) ?? createFirebaseRepository(roomCode) ?? createLocalRepository(roomCode);
   }, [roomCode]);
 
   const [decks, setDecks] = useState<Deck[]>([]);
-  const [decksState, setDecksState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [syncGeneration, setSyncGeneration] = useState(0);
+  const [syncResources, setSyncResources] = useState<Record<string, SyncResourceState>>({});
   const [deckDataById, setDeckDataById] = useState<Record<string, DeckCacheEntry>>({});
+  const [mutationQueue] = useState(() => new KeyedMutationQueue());
   const [state, dispatch] = useReducer(uiReducer, initialUI);
-  const [draftList, setDraftList] = useState<{ name: string } | null>(null);
-  const pendingSectionRenamesRef = useRef<Record<string, string>>({});
+  const [draftList, setDraftList] = useState<{ name: string; operationId: string } | null>(null);
+  const confirmedDeckDataByIdRef = useRef<Record<string, DeckCacheEntry>>({});
+  const cardIdAliasesRef = useRef(new CardIdAliases());
   const toastTimer = useRef<number | undefined>(undefined);
   const toastUndoRef = useRef<(() => void) | null>(null);
   const lpTimer = useRef<number | undefined>(undefined);
   const rowStart = useRef<{ x: number; y: number; moved: boolean }>({ x: 0, y: 0, moved: false });
+  const studySaveKeyRef = useRef<string | null>(null);
   const lastAddedSnapshotRef = useRef<{
     deckId: string;
     sectionId: string;
@@ -69,6 +102,84 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
     action();
   }, []);
 
+  const markSyncPending = useCallback((keys: string[]) => {
+    setSyncResources((current) => {
+      const next = { ...current };
+      let changed = false;
+      for (const key of keys) {
+        const previous = current[key];
+        if (previous?.pending && !previous.failed) continue;
+        next[key] = {
+          hasData: previous?.hasData ?? false,
+          pending: true,
+          failed: false,
+        };
+        changed = true;
+      }
+      return changed ? next : current;
+    });
+  }, []);
+
+  const markSyncSuccess = useCallback((key: string) => {
+    setSyncResources((current) => {
+      const previous = current[key];
+      if (previous?.hasData && !previous.pending && !previous.failed) return current;
+      return {
+        ...current,
+        [key]: { hasData: true, pending: false, failed: false },
+      };
+    });
+  }, []);
+
+  const markSyncFailure = useCallback((key: string) => {
+    setSyncResources((current) => {
+      const previous = current[key];
+      if (previous?.failed && !previous.pending) return current;
+      return {
+        ...current,
+        [key]: {
+          hasData: previous?.hasData ?? false,
+          pending: false,
+          failed: true,
+        },
+      };
+    });
+  }, []);
+
+  const confirmCards = useCallback((deckId: string, cards: Card[]) => {
+    const previous = confirmedDeckDataByIdRef.current[deckId] ?? emptyDeckCache();
+    confirmedDeckDataByIdRef.current = {
+      ...confirmedDeckDataByIdRef.current,
+      [deckId]: { ...previous, cards, cardsLoaded: true },
+    };
+  }, []);
+
+  const confirmSections = useCallback((deckId: string, sections: Section[]) => {
+    const previous = confirmedDeckDataByIdRef.current[deckId] ?? emptyDeckCache();
+    confirmedDeckDataByIdRef.current = {
+      ...confirmedDeckDataByIdRef.current,
+      [deckId]: { ...previous, sections, sectionsLoaded: true },
+    };
+  }, []);
+
+  const restoreConfirmedCards = useCallback((deckId: string) => {
+    const confirmed = confirmedDeckDataByIdRef.current[deckId];
+    if (!confirmed?.cardsLoaded) return;
+    setDeckDataById((current) => {
+      const previous = current[deckId] ?? emptyDeckCache();
+      return { ...current, [deckId]: { ...previous, cards: confirmed.cards, cardsLoaded: true } };
+    });
+  }, []);
+
+  const restoreConfirmedSections = useCallback((deckId: string) => {
+    const confirmed = confirmedDeckDataByIdRef.current[deckId];
+    if (!confirmed?.sectionsLoaded) return;
+    setDeckDataById((current) => {
+      const previous = current[deckId] ?? emptyDeckCache();
+      return { ...current, [deckId]: { ...previous, sections: confirmed.sections, sectionsLoaded: true } };
+    });
+  }, []);
+
   const commitSelection = useCallback(() => {
     dispatch((st) => {
       const sel = st.sel;
@@ -94,39 +205,100 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
   // ---- subscriptions
   useEffect(() => {
     if (!repository) return;
-    setDecksState('loading');
+    markSyncPending(['decks']);
     repository.ensureDefaultDeck().catch(() => {});
     const unsub = repository.subscribeDecks(
-      (next) => { setDecksState('ready'); setDecks(next); },
-      (error) => { setDecksState('error'); toast(error.message || '서버에 연결할 수 없습니다.'); },
+      (next) => {
+        const activeDeckIds = new Set(next.map((deck) => deck.id));
+        for (const deckId of Object.keys(confirmedDeckDataByIdRef.current)) {
+          if (!activeDeckIds.has(deckId)) cardIdAliasesRef.current.clearDeck(deckId);
+        }
+        confirmedDeckDataByIdRef.current = Object.fromEntries(
+          Object.entries(confirmedDeckDataByIdRef.current).filter(([deckId]) => activeDeckIds.has(deckId)),
+        );
+        setDecks(next);
+        setSyncResources((current) => {
+          const kept = Object.fromEntries(
+            Object.entries(current).filter(([key]) => {
+              if (key === 'decks') return true;
+              const separator = key.indexOf(':');
+              return separator >= 0 && activeDeckIds.has(key.slice(separator + 1));
+            }),
+          );
+          return { ...kept, decks: { hasData: true, pending: false, failed: false } };
+        });
+      },
+      () => {
+        markSyncFailure('decks');
+      },
     );
     return unsub;
-  }, [repository, toast]);
+  }, [repository, syncGeneration, markSyncPending, markSyncFailure]);
 
   const deckIdsKey = decks.map((d) => d.id).join(',');
   useEffect(() => {
     if (!repository) return;
     const unsubs: Array<() => void> = [];
+    const resourceKeys = decks.flatMap((deck) => [`cards:${deck.id}`, `sections:${deck.id}`]);
+    markSyncPending(resourceKeys);
     for (const deck of decks) {
       const deckId = deck.id;
-      unsubs.push(repository.subscribeCards(deckId, (cards) => {
-        setDeckDataById((cur) => ({ ...cur, [deckId]: { ...(cur[deckId] ?? emptyDeckCache()), cards, cardsLoaded: true } }));
-      }));
-      unsubs.push(repository.subscribeSections(deckId, (sections) => {
-        const pending = pendingSectionRenamesRef.current;
-        setDeckDataById((cur) => ({
-          ...cur,
-          [deckId]: {
-            ...(cur[deckId] ?? emptyDeckCache()),
-            sections: sections.map((s) => (pending[`${deckId}:${s.id}`] ? { ...s, name: pending[`${deckId}:${s.id}`] } : s)),
-            sectionsLoaded: true,
-          },
-        }));
-      }));
+      unsubs.push(repository.subscribeCards(
+        deckId,
+        (cards) => {
+          const resourceKey = `cards:${deckId}`;
+          confirmCards(deckId, cards);
+          if (!mutationQueue.hasPending(resourceKey)) {
+            cardIdAliasesRef.current.clearDeck(deckId);
+            setDeckDataById((cur) => ({ ...cur, [deckId]: { ...(cur[deckId] ?? emptyDeckCache()), cards, cardsLoaded: true } }));
+          }
+          mutationQueue.resume(resourceKey);
+          markSyncSuccess(resourceKey);
+        },
+        () => {
+          markSyncFailure(`cards:${deckId}`);
+        },
+      ));
+      unsubs.push(repository.subscribeSections(
+        deckId,
+        (sections) => {
+          const resourceKey = `sections:${deckId}`;
+          confirmSections(deckId, sections);
+          if (!mutationQueue.hasPending(resourceKey)) {
+            setDeckDataById((cur) => ({
+              ...cur,
+              [deckId]: { ...(cur[deckId] ?? emptyDeckCache()), sections, sectionsLoaded: true },
+            }));
+          }
+          mutationQueue.resume(resourceKey);
+          markSyncSuccess(resourceKey);
+        },
+        () => {
+          markSyncFailure(`sections:${deckId}`);
+        },
+      ));
     }
     return () => unsubs.forEach((u) => u());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repository, deckIdsKey]);
+  }, [repository, deckIdsKey, syncGeneration, mutationQueue, confirmCards, confirmSections, markSyncPending, markSyncSuccess, markSyncFailure]);
+
+  const requiredSyncKeys = useMemo(
+    () => ['decks', ...decks.flatMap((deck) => [`cards:${deck.id}`, `sections:${deck.id}`])],
+    [decks],
+  );
+  const syncHealth = useMemo(
+    () => deriveSyncHealth(requiredSyncKeys, syncResources),
+    [requiredSyncKeys, syncResources],
+  );
+  const retrySync = useCallback(() => {
+    markSyncPending(requiredSyncKeys);
+    setSyncGeneration((current) => current + 1);
+  }, [markSyncPending, requiredSyncKeys]);
+
+  // There is no offline write queue. A stale snapshot renders the read-only
+  // Home surface, while the interrupted add/edit state stays in memory. Once a
+  // fresh snapshot arrives, the user returns to the exact unsaved draft rather
+  // than losing it because of a transient failure.
 
   // ---- window pointer up (commit selections / cancel drags)
   useEffect(() => {
@@ -152,8 +324,11 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
       const cards = data?.cards ?? [];
       const seen = new Set<string>();
       const toProto = (c: Card): ProtoCard => {
-        const { q, a } = deriveQA(c);
-        const answerMastery = normalizeAnswerMastery(c, a.length);
+        const needsRepair = cardNeedsRepair(c);
+        const { q, a } = needsRepair && c.type === 'group'
+          ? { q: c.prompt, a: c.rawText.trim() ? [c.rawText] : [] }
+          : deriveQA(c);
+        const answerMastery = needsRepair ? [] : normalizeAnswerMastery(c, a.length);
         const knownCount = answerMastery.filter(Boolean).length;
         return {
           id: c.id,
@@ -161,8 +336,9 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
           a,
           answerMastery,
           knownCount,
-          remainingCount: a.length - knownCount,
-          memorized: a.length > 0 && knownCount === a.length,
+          remainingCount: needsRepair ? 0 : a.length - knownCount,
+          memorized: !needsRepair && a.length > 0 && knownCount === a.length,
+          needsRepair,
           isGroup: c.type === 'group',
           source: c,
         };
@@ -197,45 +373,132 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
   const activeList = lists.find((l) => l.deckId === state.activeDeckId && l.id === state.activeSectionId);
   const weakFirst = useCallback((cards: ProtoCard[]) => [...cards].sort((x, y) => y.remainingCount - x.remainingCount), []);
 
+  useEffect(() => {
+    if (
+      syncHealth.status !== 'ready'
+      || state.view === 'home'
+      || state.activeDeckId === null
+      || state.activeSectionId === null
+      || activeList
+      || draftList
+    ) return;
+    lastAddedSnapshotRef.current = null;
+    dispatch({
+      view: 'home',
+      activeDeckId: null,
+      activeSectionId: null,
+      queue: [],
+      revealedIdx: [],
+      retryAnswerIdx: [],
+      openRowId: null,
+      slotOpen: false,
+      editSheetOpen: false,
+    });
+    toast('다른 기기에서 이 암기장이 삭제되어 홈으로 이동했어요');
+  }, [syncHealth.status, state.view, state.activeDeckId, state.activeSectionId, activeList, draftList, toast]);
+
+  useEffect(() => {
+    if (syncHealth.status !== 'ready' || state.view !== 'study' || !activeList) return;
+    const reconciliation = reconcileStudyTargets(state.queue, activeList.cards);
+    if (reconciliation.removedCount === 0) return;
+    dispatch((current) => ({
+      queue: reconciliation.queue,
+      sessionTotal: Math.max(current.sessionDone, current.sessionTotal - reconciliation.removedCount),
+      ...(reconciliation.currentChanged ? { revealedIdx: [], retryAnswerIdx: [] } : {}),
+    }));
+    toast('다른 기기에서 변경된 가림은 이번 학습에서 제외했어요');
+  }, [syncHealth.status, state.view, state.queue, activeList, toast]);
+
   const storedCardsOf = useCallback((deckId: string, sectionId: string): Card[] => {
     const cards = deckDataById[deckId]?.cards ?? [];
     return cards.filter((c) => (c.sectionId ?? 'default') === sectionId);
   }, [deckDataById]);
 
   // ---- mutations
-  const commitSection = useCallback((deckId: string, sectionId: string, newCards: OptimisticNewCard[]) => {
-    if (!repository) return;
+  const commitSection = useCallback((deckId: string, sectionId: string, newCards: OptimisticNewCard[], operationId?: string) => {
+    if (!repository || syncHealth.status !== 'ready') return rejectedMutation();
+    const resourceKey = `cards:${deckId}`;
     const payload: NewCard[] = newCards.map(({ optimisticId: _ignored, ...card }) => card);
     const sourceText = payload.map((c) => c.rawText).join('\n');
     const now = Date.now();
+    const optimistic = newCards.map((candidate, index) => {
+      const { optimisticId, ...card } = candidate;
+      return {
+        ...card,
+        id: optimisticId ?? `tmp_${now}_${index}_${Math.random().toString(36).slice(2, 8)}`,
+        sectionId,
+        createdAt: now,
+        updatedAt: now,
+      } as Card;
+    });
+    const queued = mutationQueue.enqueue(
+      resourceKey,
+      () => repository.setSectionContent(deckId, sectionId, sourceText, payload, operationId),
+      {
+        onSuccess: (saved, context) => {
+          cardIdAliasesRef.current.recordReplacement(deckId, optimistic, saved);
+          const confirmed = confirmedDeckDataByIdRef.current[deckId] ?? emptyDeckCache();
+          const nextCards = replaceSectionCards(confirmed.cards, sectionId, saved);
+          confirmCards(deckId, nextCards);
+          if (!context.isLatest) return;
+          setDeckDataById((current) => {
+            const previous = current[deckId] ?? emptyDeckCache();
+            return { ...current, [deckId]: { ...previous, cards: nextCards, cardsLoaded: true } };
+          });
+          cardIdAliasesRef.current.clearDeck(deckId);
+        },
+        onFailure: () => {
+          restoreConfirmedCards(deckId);
+          markSyncFailure(resourceKey);
+          toast('저장하지 못했어요. 연결을 복구한 뒤 다시 시도해 주세요');
+        },
+      },
+    );
+    if (!queued.accepted) {
+      toast('연결을 복구한 뒤 다시 시도해 주세요');
+      return queued;
+    }
     setDeckDataById((cur) => {
       const prev = cur[deckId] ?? emptyDeckCache();
-      const others = prev.cards.filter((c) => (c.sectionId ?? 'default') !== sectionId);
-      const optimistic = newCards.map((c, i) => {
-        const { optimisticId, ...card } = c;
-        return { ...card, id: optimisticId ?? `tmp_${now}_${i}`, sectionId, createdAt: now, updatedAt: now } as Card;
-      });
-      return { ...cur, [deckId]: { ...prev, cards: [...others, ...optimistic], cardsLoaded: true } };
+      return { ...cur, [deckId]: { ...prev, cards: replaceSectionCards(prev.cards, sectionId, optimistic), cardsLoaded: true } };
     });
-    repository.setSectionContent(deckId, sectionId, sourceText, payload)
-      .then((saved) => {
-        // Reconcile the optimistic cache to the server's real card ids. The
-        // content write regenerates ids, so without this the cache keeps dead
-        // tmp_ ids and later per-hide mastery writes (setCardAnswerMastery)
-        // target an id that no longer exists and are silently dropped.
-        setDeckDataById((cur) => {
-          const prev = cur[deckId];
-          if (!prev) return cur;
-          const others = prev.cards.filter((c) => (c.sectionId ?? 'default') !== sectionId);
-          return { ...cur, [deckId]: { ...prev, cards: [...others, ...saved], cardsLoaded: true } };
-        });
-      })
-      .catch(() => toast('저장에 실패했어요'));
-  }, [repository, toast]);
+    return queued;
+  }, [repository, syncHealth.status, mutationQueue, confirmCards, restoreConfirmedCards, markSyncFailure, toast]);
 
   const setAnswerMastery = useCallback((deckId: string, cardId: string, answerMastery: boolean[]) => {
-    if (!repository) return;
-    const mastered = answerMastery.length > 0 && answerMastery.every(Boolean);
+    if (!repository || syncHealth.status !== 'ready') return rejectedMutation();
+    const resourceKey = `cards:${deckId}`;
+    const queued = mutationQueue.enqueue(
+      resourceKey,
+      async () => {
+        const resolvedCardId = cardIdAliasesRef.current.resolve(deckId, cardId);
+        const confirmed = confirmedDeckDataByIdRef.current[deckId];
+        if (!confirmed?.cards.some((card) => card.id === resolvedCardId)) {
+          throw new Error('Confirmed card id is unavailable');
+        }
+        await repository.setCardAnswerMastery(deckId, resolvedCardId, answerMastery);
+        return resolvedCardId;
+      },
+      {
+        onSuccess: (resolvedCardId, context) => {
+          const confirmed = confirmedDeckDataByIdRef.current[deckId] ?? emptyDeckCache();
+          const nextCards = applyAnswerMastery(confirmed.cards, resolvedCardId, answerMastery);
+          confirmCards(deckId, nextCards);
+          if (!context.isLatest) return;
+          setDeckDataById((current) => {
+            const previous = current[deckId] ?? emptyDeckCache();
+            return { ...current, [deckId]: { ...previous, cards: nextCards, cardsLoaded: true } };
+          });
+          cardIdAliasesRef.current.clearDeck(deckId);
+        },
+        onFailure: () => {
+          restoreConfirmedCards(deckId);
+          markSyncFailure(resourceKey);
+          toast('학습 상태를 저장하지 못했어요. 연결을 복구해 주세요');
+        },
+      },
+    );
+    if (!queued.accepted) return queued;
     setDeckDataById((cur) => {
       const prev = cur[deckId];
       if (!prev) return cur;
@@ -243,59 +506,98 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
         ...cur,
         [deckId]: {
           ...prev,
-          cards: prev.cards.map((c) => (c.id === cardId ? { ...c, answerMastery, mastered, starred: mastered ? false : c.starred } : c)),
+          cards: applyAnswerMastery(prev.cards, cardId, answerMastery),
         },
       };
     });
-    repository.setCardAnswerMastery(deckId, cardId, answerMastery).catch(() => toast('학습 상태 저장에 실패했어요'));
-  }, [repository, toast]);
+    return queued;
+  }, [repository, syncHealth.status, mutationQueue, confirmCards, restoreConfirmedCards, markSyncFailure, toast]);
 
   const renameSection = useCallback((deckId: string, sectionId: string, name: string) => {
-    if (!repository) return;
-    pendingSectionRenamesRef.current[`${deckId}:${sectionId}`] = name;
+    if (!repository || syncHealth.status !== 'ready') return false;
+    // Section name and content share one server revision. Serialize them with
+    // card/content writes so a normal rename + save sequence cannot conflict
+    // with itself while still reporting failures against the sections feed.
+    const mutationKey = `cards:${deckId}`;
+    const resourceKey = `sections:${deckId}`;
+    const queued = mutationQueue.enqueue(
+      mutationKey,
+      () => repository.renameSection(deckId, sectionId, name),
+      {
+        onSuccess: (_value, context) => {
+          const confirmed = confirmedDeckDataByIdRef.current[deckId] ?? emptyDeckCache();
+          const nextSections = applySectionName(confirmed.sections, sectionId, name);
+          confirmSections(deckId, nextSections);
+          if (!context.isLatest) return;
+          setDeckDataById((current) => {
+            const previous = current[deckId] ?? emptyDeckCache();
+            return { ...current, [deckId]: { ...previous, sections: nextSections, sectionsLoaded: true } };
+          });
+        },
+        onFailure: () => {
+          restoreConfirmedSections(deckId);
+          markSyncFailure(resourceKey);
+          toast('이름을 저장하지 못했어요. 연결을 복구해 주세요');
+        },
+      },
+    );
+    if (!queued.accepted) return false;
     setDeckDataById((cur) => {
       const prev = cur[deckId];
       if (!prev) return cur;
-      return { ...cur, [deckId]: { ...prev, sections: prev.sections.map((s) => (s.id === sectionId ? { ...s, name } : s)) } };
+      return { ...cur, [deckId]: { ...prev, sections: applySectionName(prev.sections, sectionId, name) } };
     });
-    repository.renameSection(deckId, sectionId, name)
-      .then(() => { delete pendingSectionRenamesRef.current[`${deckId}:${sectionId}`]; })
-      .catch(() => toast('이름 저장에 실패했어요'));
-  }, [repository, toast]);
+    return true;
+  }, [repository, syncHealth.status, mutationQueue, confirmSections, restoreConfirmedSections, markSyncFailure, toast]);
 
   const newList = useCallback(() => {
-    if (!repository) return;
+    if (!repository || syncHealth.status !== 'ready') return;
     lastAddedSnapshotRef.current = null;
-    setDraftList({ name: '새 암기장' });
-    dispatch({ view: 'deck', activeDeckId: null, activeSectionId: null, slotOpen: true, pasteText: '', sheetRows: [] });
-  }, [repository]);
+    setDraftList({ name: '새 암기장', operationId: newOperationId() });
+    dispatch({ view: 'deck', activeDeckId: null, activeSectionId: null, slotOpen: true, pasteText: '', sheetRows: [], addOperationId: newOperationId() });
+  }, [repository, syncHealth.status]);
 
   const createDraftListWithCards = useCallback(async (cards: NewCard[]): Promise<boolean> => {
-    if (!repository || !draftList) return false;
-    let deckId = decks.find((deck) => deck.name === '일반')?.id;
+    if (!repository || !draftList || syncHealth.status !== 'ready') return false;
+    const deckOperationId = `${draftList.operationId}-deck`;
+    const existingDeck = decks.find((deck) => deck.name === '일반');
+    let deckId = existingDeck?.id;
     let sectionId: string | undefined;
-    let createdDeck = false;
+    let createdDeck = existingDeck?.clientOperationId === deckOperationId;
     try {
       if (!deckId) {
-        deckId = await repository.addDeck('일반');
+        deckId = await repository.addDeck('일반', deckOperationId);
         createdDeck = true;
       }
-      sectionId = await repository.addSection(deckId, draftList.name);
+      sectionId = await repository.addSection(deckId, draftList.name, `${draftList.operationId}-section`);
       const sourceText = cards.map((card) => card.rawText).join('\n');
       // Seed the optimistic cache from the persisted cards (real server ids),
       // not minted tmp_ ids — otherwise this new-list path leaves stale ids in
       // the cache and per-hide mastery writes are lost on reload.
-      const saved = await repository.setSectionContent(deckId, sectionId, sourceText, cards);
+      const payloadFingerprint = contentFingerprint(JSON.stringify([sourceText, cards]));
+      const saved = await repository.setSectionContent(
+        deckId,
+        sectionId,
+        sourceText,
+        cards,
+        `${draftList.operationId}-content-${payloadFingerprint}`,
+      );
 
       const now = Date.now();
       const resolvedDeckId = deckId;
       const resolvedSectionId = sectionId;
+      const section: Section = { id: resolvedSectionId, name: draftList.name, sourceText, createdAt: now, updatedAt: now };
+      const confirmed = confirmedDeckDataByIdRef.current[resolvedDeckId] ?? emptyDeckCache();
+      confirmCards(resolvedDeckId, replaceSectionCards(confirmed.cards, resolvedSectionId, saved));
+      confirmSections(
+        resolvedDeckId,
+        [...confirmed.sections.filter((item) => item.id !== resolvedSectionId), section],
+      );
       setDecks((current) => current.some((deck) => deck.id === resolvedDeckId)
         ? current
         : [...current, { id: resolvedDeckId, name: '일반', createdAt: now, updatedAt: now }]);
       setDeckDataById((current) => {
         const previous = current[resolvedDeckId] ?? emptyDeckCache();
-        const section: Section = { id: resolvedSectionId, name: draftList.name, sourceText, createdAt: now, updatedAt: now };
         return {
           ...current,
           [resolvedDeckId]: {
@@ -319,14 +621,19 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
       dispatch({ activeDeckId: resolvedDeckId, activeSectionId: resolvedSectionId });
       return true;
     } catch {
-      try {
-        if (sectionId && deckId) await repository.deleteSection(deckId, sectionId);
-        if (createdDeck && deckId) await repository.deleteDeck(deckId);
-      } catch { /* best-effort cleanup */ }
+      // Creation calls carry stable operation ids. A timed-out response may
+      // still have committed, so deleting here could destroy a successful
+      // list or create duplicates. Keep the draft and retry the same operation;
+      // every backend will return/rewrite the same resources idempotently.
+      markSyncFailure('decks');
+      if (deckId) {
+        markSyncFailure(`cards:${deckId}`);
+        markSyncFailure(`sections:${deckId}`);
+      }
       toast('암기장을 만들지 못했어요');
       return false;
     }
-  }, [repository, draftList, decks, toast]);
+  }, [repository, draftList, decks, syncHealth.status, confirmCards, confirmSections, markSyncFailure, toast]);
 
   const moveCard = useCallback((draggedId: string, targetId: string) => {
     if (!activeList) return;
@@ -341,31 +648,38 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
   }, [activeList, storedCardsOf, commitSection]);
 
   const deleteList = useCallback(async () => {
-    if (!repository || !activeList || activeList.synthetic) return;
+    if (!repository || !activeList || activeList.synthetic || syncHealth.status !== 'ready') return;
+    if (mutationQueue.hasPending(`cards:${activeList.deckId}`) || mutationQueue.hasPending(`sections:${activeList.deckId}`)) {
+      toast('저장이 끝난 뒤 암기장을 삭제해 주세요');
+      return;
+    }
     const label = activeList.cards.length > 0 ? `카드 ${activeList.cards.length}개가 함께 삭제돼요.` : '';
     if (!window.confirm(`"${activeList.name}" 암기장을 삭제할까요? ${label}`)) return;
-    const remaining = (deckDataById[activeList.deckId]?.sections ?? []).filter((s) => s.id !== activeList.id);
     dispatch({ view: 'home', activeDeckId: null, activeSectionId: null, openRowId: null });
     try {
       await repository.deleteSection(activeList.deckId, activeList.id);
-      if (remaining.length === 0) await repository.deleteDeck(activeList.deckId);
       toast('암기장을 삭제했어요');
     } catch {
+      markSyncFailure(`sections:${activeList.deckId}`);
+      markSyncFailure(`cards:${activeList.deckId}`);
       toast('삭제에 실패했어요');
     }
-  }, [repository, activeList, deckDataById, toast]);
+  }, [repository, activeList, syncHealth.status, mutationQueue, markSyncFailure, toast]);
 
   const openEditFor = useCallback((c: ProtoCard) => {
     if (!activeList) return;
     const idx = activeList.cards.findIndex((cc) => cc.id === c.id);
     if (idx < 0) return;
     if (c.isGroup) toast('묶음 카드는 저장하면 일반 카드로 바뀌어요');
-    if (c.q.includes('___') || c.isGroup) {
+    if (c.q.includes('___')) {
       const tokens = cardToTokens(c.q, c.a);
       dispatch({
         editSheetOpen: true,
         editIdx: idx,
+        editCardId: c.id,
+        editSourceSignature: protoCardSourceSignature(c),
         editMode: 'tokens',
+        editSingleAnswer: false,
         editTokens: tokens,
         editText: tokensToText(tokens),
         editInitialSignature: editSignature('tokens', '', '', tokens),
@@ -375,7 +689,10 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
       dispatch({
         editSheetOpen: true,
         editIdx: idx,
+        editCardId: c.id,
+        editSourceSignature: protoCardSourceSignature(c),
         editMode: 'qa',
+        editSingleAnswer: c.a.length === 1,
         editQ: c.q,
         editA,
         editInitialSignature: editSignature('qa', c.q, editA, []),
@@ -383,37 +700,61 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
     }
   }, [activeList, toast]);
 
-  const saveEditFrom = useCallback((st: UIState, close: boolean) => {
-    if (!activeList || st.editIdx === null) return true;
+  const saveEditFrom = useCallback(async (st: UIState, close: boolean) => {
+    if (!activeList || st.editCardId === null) return true;
     let q: string;
     let a: string[];
     if (st.editMode === 'qa') {
       q = st.editQ.trim();
-      a = st.editA.split(',').map((x) => x.trim()).filter(Boolean);
+      a = st.editSingleAnswer
+        ? [st.editA.trim()].filter(Boolean)
+        : st.editA.split(',').map((x) => x.trim()).filter(Boolean);
       if (!q) { if (close) toast('질문을 입력하세요'); return false; }
+      if (a.length === 0) { if (close) toast('답을 입력하세요'); return false; }
+      const blankCount = canonicalBlankCount(q);
+      if (blankCount > 0 && blankCount !== a.length) {
+        if (close) toast(`가림 ${blankCount}곳에 맞게 답 ${blankCount}개를 입력하세요`);
+        return false;
+      }
     } else {
       if (!st.editTokens.some((t) => t.hidden)) { if (close) toast('가릴 단어를 선택하세요'); return false; }
       const r = tokensToCard(st.editTokens);
       q = r.q; a = r.a;
     }
     const stored = storedCardsOf(activeList.deckId, activeList.id);
-    if (st.editIdx >= stored.length) return true;
+    const targetId = resolveEditedCardId(activeList.cards, st.editCardId, st.editSourceSignature);
+    const targetIndex = targetId ? stored.findIndex((card) => card.id === targetId) : -1;
+    if (targetIndex < 0) {
+      toast('다른 기기에서 이 카드가 변경되었어요. 초안을 복사한 뒤 다시 열어 주세요');
+      return false;
+    }
     const rebuilt = stored.map((c, i) =>
-      i === st.editIdx ? { ...qaToNewCard(q, a, remapAnswerMastery(c, a)), optimisticId: c.id } : keepCard(c),
+      i === targetIndex ? { ...qaToNewCard(q, a, remapAnswerMastery(c, a)), optimisticId: c.id } : keepCard(c),
     );
-    commitSection(activeList.deckId, activeList.id, rebuilt);
-    return true;
+    const queued = commitSection(activeList.deckId, activeList.id, rebuilt);
+    return queued.accepted ? queued.done : false;
   }, [activeList, storedCardsOf, commitSection, toast]);
 
   const startStudy = useCallback((deckId: string, sectionId: string, cardIds?: string[]) => {
+    if (mutationQueue.hasPending(`cards:${deckId}`)) {
+      toast('카드 저장이 끝난 뒤 학습을 시작해 주세요');
+      return;
+    }
     const list = lists.find((l) => l.deckId === deckId && l.id === sectionId);
     if (!list) return;
     if (list.cards.length === 0) { dispatch({ view: 'deck', activeDeckId: deckId, activeSectionId: sectionId }); return; }
     let cards = cardIds
       ? cardIds.map((id) => list.cards.find((card) => card.id === id)).filter((card): card is ProtoCard => Boolean(card))
-      : weakFirst(list.cards.filter((card) => card.remainingCount > 0));
+      : weakFirst(list.cards.filter((card) => !card.needsRepair && card.remainingCount > 0));
+    cards = cards.filter((card) => !card.needsRepair);
+    const eligibleCards = list.cards.filter((card) => !card.needsRepair);
+    if (cards.length === 0 && eligibleCards.length === 0) {
+      dispatch({ view: 'deck', activeDeckId: deckId, activeSectionId: sectionId });
+      toast('답이 없는 카드를 먼저 수정해 주세요');
+      return;
+    }
     let review = false;
-    if (cards.length === 0) { cards = list.cards; review = true; }
+    if (cards.length === 0) { cards = eligibleCards; review = true; }
     else if (cards.every((card) => card.remainingCount === 0)) review = true;
     let queue: StudyTarget[] = cards.map((card) => {
       const remaining = card.answerMastery.flatMap((known, i) => (known ? [] : [i]));
@@ -431,44 +772,59 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
       view: 'study', activeDeckId: deckId, activeSectionId: sectionId, queue, sessionTotal, sessionDone: 0,
       revealedIdx: [], retryAnswerIdx: [], openRowId: null, review,
     });
-  }, [lists, weakFirst, state.shuffle]);
+  }, [lists, weakFirst, state.shuffle, mutationQueue, toast]);
 
-  const completeStudyTarget = useCallback(() => {
+  const completeStudyTarget = useCallback(async () => {
     const list = activeList;
     const target = state.queue[0];
     if (!list || !target) return;
     const card = list.cards.find((item) => item.id === target.cardId);
     if (!card) return;
+    const saveKey = `${list.deckId}:${card.id}:${target.answerIndexes.join(',')}`;
+    if (studySaveKeyRef.current !== null) return;
+    studySaveKeyRef.current = saveKey;
     const retry = new Set(state.retryAnswerIdx);
     const retryAnswerIdx = [...state.retryAnswerIdx];
     const previousMastery = [...card.answerMastery];
     const nextMastery = [...card.answerMastery];
     target.answerIndexes.forEach((answerIndex) => { nextMastery[answerIndex] = !retry.has(answerIndex); });
-    setAnswerMastery(list.deckId, card.id, nextMastery);
-    dispatch((st) => ({
-      queue: st.queue.slice(1),
-      sessionDone: st.sessionDone + target.answerIndexes.length,
-      revealedIdx: [],
-      retryAnswerIdx: [],
-    }));
-    toast('판정을 저장했어요', () => {
-      setAnswerMastery(list.deckId, card.id, previousMastery);
+    try {
+      const queued = setAnswerMastery(list.deckId, card.id, nextMastery);
+      if (!queued.accepted || !(await queued.done)) return;
       dispatch((st) => ({
-        view: 'study',
-        queue: [target, ...st.queue],
-        sessionDone: Math.max(0, st.sessionDone - target.answerIndexes.length),
-        revealedIdx: [...target.answerIndexes],
-        retryAnswerIdx,
+        queue: st.queue[0]?.cardId === target.cardId ? st.queue.slice(1) : st.queue,
+        sessionDone: st.queue[0]?.cardId === target.cardId
+          ? st.sessionDone + target.answerIndexes.length
+          : st.sessionDone,
+        revealedIdx: [],
+        retryAnswerIdx: [],
       }));
-    });
+      toast('판정을 저장했어요', () => { void (async () => {
+        const undo = setAnswerMastery(list.deckId, card.id, previousMastery);
+        if (!undo.accepted || !(await undo.done)) return;
+        dispatch((st) => ({
+          view: 'study',
+          queue: [target, ...st.queue],
+          sessionDone: Math.max(0, st.sessionDone - target.answerIndexes.length),
+          revealedIdx: [...target.answerIndexes],
+          retryAnswerIdx,
+        }));
+      })(); });
+    } finally {
+      if (studySaveKeyRef.current === saveKey) studySaveKeyRef.current = null;
+    }
   }, [activeList, state.queue, state.retryAnswerIdx, setAnswerMastery, toast]);
 
   // ============================================================ render
+  const syncReadOnly = isSyncReadOnly(syncHealth.status);
   return (
-    <div style={{ height: '100dvh', width: '100%', maxWidth: 480, margin: '0 auto', position: 'relative', background: '#F2F2F7', color: '#000', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      {state.view === 'home' && (
+    <div style={{ height: '100dvh', width: '100%', maxWidth: 480, margin: '0 auto', position: 'relative', background: '#F2F2F7', color: '#000', display: 'flex', flexDirection: 'column', overflow: 'clip' }}>
+      {(state.view === 'home' || syncReadOnly) && (
         <HomeView
-          lists={lists} decksState={decksState}
+          lists={lists}
+          decksState={syncHealth.status}
+          syncPending={syncHealth.pending}
+          onRetry={retrySync}
           onOpenList={(list) => dispatch({ view: 'deck', activeDeckId: list.deckId, activeSectionId: list.id, openRowId: null, filter: 'all' })}
           onContinue={(list) => startStudy(list.deckId, list.id)}
           onNewList={newList}
@@ -476,7 +832,7 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
         />
       )}
 
-      {state.view === 'deck' && activeList && !state.slotOpen && (
+      {!syncReadOnly && state.view === 'deck' && activeList && !state.slotOpen && (
         <DeckView
           list={activeList} state={state} dispatch={dispatch} weakFirst={weakFirst}
           lpTimer={lpTimer} rowStart={rowStart}
@@ -487,7 +843,7 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
             const sectionId = activeList.id;
             const before = storedCardsOf(deckId, sectionId);
             const after = before.filter((c) => c.id !== card.id);
-            commitSection(deckId, sectionId, after.map((c) => keepCard(c)));
+            if (!commitSection(deckId, sectionId, after.map((c) => keepCard(c))).accepted) return;
             dispatch({ openRowId: null });
             toast('카드를 삭제했어요', () => commitSection(deckId, sectionId, before.map((c) => keepCard(c))));
           }}
@@ -497,17 +853,18 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
           onStart={(ids) => startStudy(activeList.deckId, activeList.id, ids)}
           onOpenAdd={() => {
             lastAddedSnapshotRef.current = null;
-            dispatch({ slotOpen: true, pasteText: '', pasteMode: 'auto', sheetRows: [], openRowId: null });
+            dispatch({ slotOpen: true, pasteText: '', pasteMode: 'auto', sheetRows: [], addOperationId: newOperationId(), openRowId: null });
           }}
           toast={toast}
         />
       )}
 
-      {state.view === 'deck' && state.slotOpen && (activeList || draftList) && (
+      {!syncReadOnly && state.view === 'deck' && state.slotOpen && (activeList || draftList) && (
         <ContinuousAddView
           state={state}
           dispatch={dispatch}
-          onAddCards={async (cards) => {
+          operationSeed={state.addOperationId}
+          onAddCards={async (cards, operationId) => {
             if (draftList) return createDraftListWithCards(cards);
             if (!activeList) return false;
             const stored = storedCardsOf(activeList.deckId, activeList.id).map((card) => keepCard(card));
@@ -517,16 +874,23 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
               cards: stored,
               addedCount: cards.length,
             };
-            commitSection(activeList.deckId, activeList.id, [...stored, ...cards]);
-            return true;
+            const queued = commitSection(activeList.deckId, activeList.id, [...stored, ...cards], operationId);
+            const saved = queued.accepted ? await queued.done : false;
+            if (!saved) lastAddedSnapshotRef.current = null;
+            return saved;
           }}
           onUndoLast={async () => {
+            if (syncHealth.status !== 'ready') return 0;
             const snapshot = lastAddedSnapshotRef.current;
             if (!snapshot) return 0;
             if (snapshot.createdList) {
+              let failedResourceKeys = [`sections:${snapshot.deckId}`, `cards:${snapshot.deckId}`];
               try {
                 await repository?.deleteSection(snapshot.deckId, snapshot.sectionId);
-                if (snapshot.createdDeck) await repository?.deleteDeck(snapshot.deckId);
+                if (snapshot.createdDeck) {
+                  failedResourceKeys = ['decks'];
+                  await repository?.deleteDeck(snapshot.deckId);
+                }
                 setDeckDataById((current) => {
                   const previous = current[snapshot.deckId];
                   if (!previous) return current;
@@ -545,17 +909,19 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
                   };
                 });
                 if (snapshot.createdDeck) setDecks((current) => current.filter((deck) => deck.id !== snapshot.deckId));
-                setDraftList({ name: '새 암기장' });
+                setDraftList({ name: '새 암기장', operationId: newOperationId() });
                 dispatch({ activeDeckId: null, activeSectionId: null });
                 lastAddedSnapshotRef.current = null;
                 return snapshot.addedCount;
               } catch {
+                failedResourceKeys.forEach(markSyncFailure);
                 toast('되돌리지 못했어요');
                 return 0;
               }
             }
             if (!activeList || snapshot.deckId !== activeList.deckId || snapshot.sectionId !== activeList.id) return 0;
-            commitSection(snapshot.deckId, snapshot.sectionId, snapshot.cards);
+            const queued = commitSection(snapshot.deckId, snapshot.sectionId, snapshot.cards);
+            if (!queued.accepted || !(await queued.done)) return 0;
             lastAddedSnapshotRef.current = null;
             return snapshot.addedCount;
           }}
@@ -563,15 +929,15 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
             lastAddedSnapshotRef.current = null;
             if (draftList) {
               setDraftList(null);
-              dispatch({ view: 'home', slotOpen: false, activeDeckId: null, activeSectionId: null, pasteText: '', pasteMode: 'auto', sheetRows: [], sel: null });
+              dispatch({ view: 'home', slotOpen: false, activeDeckId: null, activeSectionId: null, pasteText: '', pasteMode: 'auto', sheetRows: [], addOperationId: '', sel: null });
             } else {
-              dispatch({ slotOpen: false, pasteText: '', pasteMode: 'auto', sheetRows: [], sel: null });
+              dispatch({ slotOpen: false, pasteText: '', pasteMode: 'auto', sheetRows: [], addOperationId: '', sel: null });
             }
           }}
         />
       )}
 
-      {state.view === 'study' && (
+      {!syncReadOnly && state.view === 'study' && (
         <StudyView
           list={activeList} state={state} dispatch={dispatch}
           onComplete={completeStudyTarget}
@@ -582,17 +948,22 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
       )}
 
       {/* ---- edit sheet ---- */}
-      {state.editSheetOpen && activeList && (
+      {!syncReadOnly && !state.settingsOpen && state.editSheetOpen && activeList && (
         <EditSheet
           list={activeList} state={state} dispatch={dispatch}
           saveEditFrom={saveEditFrom}
           onDelete={() => {
-            if (state.editIdx === null) return;
+            if (state.editCardId === null) return;
             const deckId = activeList.deckId;
             const sectionId = activeList.id;
             const before = storedCardsOf(deckId, sectionId);
-            const after = before.filter((_, i) => i !== state.editIdx);
-            commitSection(deckId, sectionId, after.map((c) => keepCard(c)));
+            const targetId = resolveEditedCardId(activeList.cards, state.editCardId, state.editSourceSignature);
+            if (!targetId || !before.some((card) => card.id === targetId)) {
+              toast('다른 기기에서 이 카드가 변경되었어요. 다시 열어 주세요');
+              return;
+            }
+            const after = before.filter((card) => card.id !== targetId);
+            if (!commitSection(deckId, sectionId, after.map((c) => keepCard(c))).accepted) return;
             dispatch({ editSheetOpen: false });
             toast('카드를 삭제했어요', () => commitSection(deckId, sectionId, before.map((c) => keepCard(c))));
           }}
@@ -605,8 +976,8 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
       )}
 
       {state.toastVisible && (
-        <div role="status" aria-live="polite" style={{ position: 'absolute', left: '50%', bottom: 130, transform: 'translateX(-50%)', minHeight: 44, padding: state.toastUndo ? '0 8px 0 16px' : '0 18px', borderRadius: 11, background: 'rgba(29,29,31,0.92)', color: '#fff', display: 'flex', alignItems: 'center', gap: 14, fontSize: 14, fontWeight: 600, whiteSpace: 'nowrap', animation: 'popIn 0.25s cubic-bezier(0.3,1.2,0.4,1)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)', zIndex: 20 }}>
-          <span>{state.toastMsg}</span>
+        <div role="status" aria-live="polite" style={{ position: 'absolute', left: '50%', bottom: 130, transform: 'translateX(-50%)', maxWidth: 'calc(100% - 32px)', minHeight: 44, padding: state.toastUndo ? '0 8px 0 16px' : '0 18px', borderRadius: 11, background: 'rgba(29,29,31,0.92)', color: '#fff', display: 'flex', alignItems: 'center', gap: 14, fontSize: 14, fontWeight: 600, lineHeight: 1.4, whiteSpace: 'normal', animation: 'popIn 0.25s cubic-bezier(0.3,1.2,0.4,1)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)', zIndex: 20 }}>
+          <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{state.toastMsg}</span>
           {state.toastUndo && (
             <button type="button" className="ui-button" onClick={undoToast} style={{ minWidth: 64, minHeight: 36, padding: '0 10px', borderRadius: 8, background: 'rgba(255,255,255,0.14)', color: '#fff', display: 'grid', placeItems: 'center', cursor: 'pointer', fontSize: 13.5, fontWeight: 800 }}>
               되돌리기

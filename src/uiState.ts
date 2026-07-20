@@ -23,9 +23,13 @@ export type UIState = {
   pasteText: string;
   pasteMode: 'auto' | 'one';
   sheetRows: Row[];
+  addOperationId: string;
   editSheetOpen: boolean;
   editIdx: number | null;
+  editCardId: string | null;
+  editSourceSignature: string;
   editMode: 'qa' | 'tokens';
+  editSingleAnswer: boolean;
   editQ: string;
   editA: string;
   editText: string;
@@ -41,8 +45,8 @@ export const initialUI: UIState = {
   view: 'home', activeDeckId: null, activeSectionId: null, shuffle: false, filter: 'all',
   queue: [], sessionTotal: 0, sessionDone: 0, revealedIdx: [], retryAnswerIdx: [], review: false,
   openRowId: null, rowDrag: null, reorder: null, sel: null,
-  slotOpen: false, pasteText: '', pasteMode: 'auto', sheetRows: [],
-  editSheetOpen: false, editIdx: null, editMode: 'qa', editQ: '', editA: '', editText: '', editTokens: [], editInitialSignature: '',
+  slotOpen: false, pasteText: '', pasteMode: 'auto', sheetRows: [], addOperationId: '',
+  editSheetOpen: false, editIdx: null, editCardId: null, editSourceSignature: '', editMode: 'qa', editSingleAnswer: false, editQ: '', editA: '', editText: '', editTokens: [], editInitialSignature: '',
   settingsOpen: false, toastMsg: '', toastVisible: false, toastUndo: false,
 };
 

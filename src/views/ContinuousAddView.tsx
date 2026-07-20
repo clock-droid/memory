@@ -6,20 +6,41 @@ import type { Patch, UIState } from '../uiState';
 import type { NewCard } from '../types';
 import { TokenChips } from './TokenChips';
 
+function qaHasMatchingBlanks(question: string) {
+  const blankCount = question.match(/___/g)?.length ?? 0;
+  return blankCount === 0 || blankCount === 1;
+}
+
+function newDraftOperationId() {
+  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function draftFingerprint(value: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
 // 추가 중에는 목록 관리 UI를 모두 치우고 현재 입력에만 집중한다.
 // 저장 후 편집기를 닫지 않고 비운 뒤 다시 포커스해 연속 입력을 지원한다.
 export function ContinuousAddView(props: {
   state: UIState; dispatch: (p: Patch) => void;
-  onAddCards: (cards: NewCard[]) => Promise<boolean>;
+  operationSeed: string;
+  onAddCards: (cards: NewCard[], operationId: string) => Promise<boolean>;
   onUndoLast: () => Promise<number>;
   onClose: () => void;
 }) {
   const { state, dispatch } = props;
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const undoTimer = useRef<number | undefined>(undefined);
+  const savingRef = useRef(false);
   const [addedCount, setAddedCount] = useState(0);
   const [lastAddedCount, setLastAddedCount] = useState(0);
   const [saving, setSaving] = useState(false);
+  const close = () => { if (!savingRef.current) props.onClose(); };
 
   useEffect(() => () => window.clearTimeout(undoTimer.current), []);
 
@@ -37,36 +58,56 @@ export function ContinuousAddView(props: {
     return { pasteText: text, pasteMode: mode, sheetRows: rows };
   };
 
-  const validRows = state.sheetRows.filter((r) => r.kind === 'qa' || r.tokens.some((t) => t.hidden));
+  const invalidQaBlanks = state.sheetRows.filter((r) => r.kind === 'qa' && !qaHasMatchingBlanks(r.q)).length;
+  const validRows = state.sheetRows.filter((r) =>
+    r.kind === 'qa' ? qaHasMatchingBlanks(r.q) : r.tokens.some((t) => t.hidden),
+  );
   const tokenRows = state.sheetRows.filter((r) => r.kind === 'tokens');
   const incomplete = tokenRows.filter((r) => r.kind === 'tokens' && !r.tokens.some((t) => t.hidden)).length;
   const blanks = tokenRows.reduce((n, r) => n + (r.kind === 'tokens' && r.tokens.some((t) => t.hidden) ? tokensToCard(r.tokens).a.length : 0), 0);
   const multi = state.sheetRows.length > 1;
 
   const add = async () => {
-    if (validRows.length === 0 || saving) return;
+    if (validRows.length === 0 || savingRef.current) return;
     const cards = validRows.map((r) => {
       if (r.kind === 'qa') return qaToNewCard(r.q, [r.a]);
       const { q, a } = tokensToCard(r.tokens);
       return qaToNewCard(q, a);
     });
+    const operationId = `${props.operationSeed}-append-${draftFingerprint(JSON.stringify(cards))}`;
+    const submittedDraft = JSON.stringify([state.pasteText, state.pasteMode, state.sheetRows]);
+    savingRef.current = true;
     setSaving(true);
-    const saved = await props.onAddCards(cards);
-    setSaving(false);
+    let saved = false;
+    try {
+      saved = await props.onAddCards(cards, operationId);
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
     if (!saved) return;
+    const nextOperationId = newDraftOperationId();
     setAddedCount((count) => count + cards.length);
     setLastAddedCount(cards.length);
     window.clearTimeout(undoTimer.current);
     undoTimer.current = window.setTimeout(() => setLastAddedCount(0), 4500);
-    dispatch({ pasteText: '', pasteMode: 'auto', sheetRows: [], sel: null });
+    dispatch((current) => JSON.stringify([current.pasteText, current.pasteMode, current.sheetRows]) === submittedDraft
+      ? { pasteText: '', pasteMode: 'auto', sheetRows: [], addOperationId: nextOperationId, sel: null }
+      : { addOperationId: nextOperationId });
     window.requestAnimationFrame(() => inputRef.current?.focus());
   };
 
   const undoLast = async () => {
-    if (saving) return;
+    if (savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
-    const undone = await props.onUndoLast();
-    setSaving(false);
+    let undone = 0;
+    try {
+      undone = await props.onUndoLast();
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
     if (undone === 0) return;
     setAddedCount((count) => Math.max(0, count - undone));
     setLastAddedCount(0);
@@ -77,8 +118,8 @@ export function ContinuousAddView(props: {
   return (
     <div style={{ flex: 1, minHeight: 0, position: 'relative', display: 'flex', flexDirection: 'column', background: '#F2F2F7', paddingTop: 'env(safe-area-inset-top)' }}>
       <div style={{ height: 60, padding: '6px 16px 0', display: 'grid', gridTemplateColumns: '76px 1fr 76px', alignItems: 'center', flexShrink: 0 }}>
-        <button type="button" className="ui-button" onClick={props.onClose} style={{ minWidth: 44, minHeight: 44, justifySelf: 'start', background: 'transparent', color: ACCENT, fontSize: 16.5, fontWeight: 600, cursor: 'pointer' }}>
-          닫기
+        <button type="button" className="ui-button" onClick={close} disabled={saving} style={{ minWidth: 44, minHeight: 44, justifySelf: 'start', background: 'transparent', color: ACCENT, fontSize: 16.5, fontWeight: 600, cursor: saving ? 'default' : 'pointer' }}>
+          {saving ? '저장 중…' : '닫기'}
         </button>
         <div style={{ textAlign: 'center', fontSize: 18, fontWeight: 800, letterSpacing: '-0.02em' }}>카드 연속 추가</div>
         <span />
@@ -97,9 +138,10 @@ export function ContinuousAddView(props: {
               ref={inputRef}
               id="new-memory-content"
               autoFocus
+              disabled={saving}
               rows={Math.min(6, Math.max(4, state.pasteText.split('\n').length))}
               value={state.pasteText}
-              onChange={(e) => dispatch(reparse(e.target.value, state.pasteMode))}
+              onChange={(e) => { if (!savingRef.current) dispatch(reparse(e.target.value, state.pasteMode)); }}
               placeholder={'내용을 입력하거나 붙여넣으세요\n예: 대한민국의 수도는 서울이다'}
               style={{ width: '100%', minHeight: 124, border: 'none', background: 'transparent', color: '#000', fontSize: 17, fontWeight: 600, lineHeight: 1.55, resize: 'none', display: 'block' }}
             />
@@ -113,7 +155,7 @@ export function ContinuousAddView(props: {
               <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(60,60,67,0.55)' }}>{state.sheetRows.length}줄</span>
               <div style={{ display: 'flex', padding: 2, borderRadius: 8, background: 'rgba(120,120,128,0.12)' }}>
                 {([['auto', '줄마다 추가'], ['one', '한 카드로']] as const).map(([mode, label]) => (
-                  <button type="button" className="ui-button" key={mode} onClick={() => dispatch(reparse(state.pasteText, mode))} aria-pressed={state.pasteMode === mode} style={{ minHeight: 34, padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: state.pasteMode === mode ? '#fff' : 'transparent', color: state.pasteMode === mode ? '#1d1d1f' : '#6e6e73', boxShadow: state.pasteMode === mode ? '0 1px 2px rgba(0,0,0,0.1)' : 'none' }}>{label}</button>
+                  <button type="button" className="ui-button" key={mode} onClick={() => { if (!savingRef.current) dispatch(reparse(state.pasteText, mode)); }} disabled={saving} aria-pressed={state.pasteMode === mode} style={{ minHeight: 34, padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: saving ? 'default' : 'pointer', background: state.pasteMode === mode ? '#fff' : 'transparent', color: state.pasteMode === mode ? '#1d1d1f' : '#6e6e73', boxShadow: state.pasteMode === mode ? '0 1px 2px rgba(0,0,0,0.1)' : 'none' }}>{label}</button>
                 ))}
               </div>
             </div>
@@ -126,6 +168,11 @@ export function ContinuousAddView(props: {
                 : blanks > 0 ? `가림 ${blanks}곳 선택됨` : '가릴 부분을 탭하세요'}
             </div>
           )}
+          {invalidQaBlanks > 0 && (
+            <div role="alert" style={{ color: '#8a4d00', fontSize: 13.5, fontWeight: 650 }}>
+              가림 수와 답 수가 다른 문답 {invalidQaBlanks}줄은 빠져요
+            </div>
+          )}
 
           {state.sheetRows.map((r, ri) => r.kind === 'qa' ? (
             <div key={ri} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 12px', borderRadius: 10, background: 'rgba(120,120,128,0.07)' }}>
@@ -134,7 +181,7 @@ export function ContinuousAddView(props: {
             </div>
           ) : (
             <div key={ri} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '7px 4px', lineHeight: 1.9 }}>
-              <TokenChips tokens={r.tokens} ri={ri} fontSize={16} outlined sel={state.sel} dispatch={dispatch} />
+              <TokenChips tokens={r.tokens} ri={ri} fontSize={16} outlined disabled={saving} sel={state.sel} dispatch={dispatch} />
             </div>
           ))}
 

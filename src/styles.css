@@ -68,6 +68,90 @@ textarea:focus-visible {
   outline-offset: 2px;
 }
 
+.card-row-action:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 3px solid rgba(0, 122, 255, 0.28);
+  outline-offset: -3px;
+}
+
+.edit-sheet-header {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) 80px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.edit-sheet-modes {
+  display: flex;
+  gap: 6px;
+  justify-self: center;
+}
+
+.edit-sheet-nav {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.modal-sheet {
+  --modal-sheet-padding: 18px 20px max(42px, calc(20px + env(safe-area-inset-bottom)));
+  --modal-sheet-gap: 14px;
+}
+
+@media (max-height: 480px) {
+  .modal-sheet {
+    --modal-sheet-padding: 8px 12px max(12px, env(safe-area-inset-bottom));
+    --modal-sheet-gap: 8px;
+  }
+
+  .modal-sheet-handle {
+    display: none;
+  }
+}
+
+@media (max-width: 300px) {
+  .edit-sheet-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "close nav"
+      "modes modes";
+    gap: 6px 8px;
+  }
+
+  .edit-sheet-close {
+    grid-area: close;
+  }
+
+  .edit-sheet-modes {
+    grid-area: modes;
+    width: 100%;
+  }
+
+  .edit-sheet-mode-button {
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    justify-content: center;
+  }
+
+  .edit-sheet-nav {
+    grid-area: nav;
+  }
+}
+
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
 .primary-action-button {
   width: 100%;
   max-width: 320px;
@@ -105,8 +189,14 @@ textarea:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .judge-hint-emphasis {
-    animation: none;
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-delay: 0ms !important;
+    transition-duration: 0.01ms !important;
   }
 }
 

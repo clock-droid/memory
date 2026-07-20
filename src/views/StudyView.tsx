@@ -11,13 +11,15 @@ import type { HideState } from './HideStateMap';
 
 export function StudyView(props: {
   list: ProtoList | undefined; state: UIState; dispatch: (p: Patch) => void;
-  onComplete: () => void;
+  onComplete: () => Promise<void>;
   onDeck: () => void; onRetryRemaining: () => void; onReviewAll: () => void;
 }) {
   const { list, state, dispatch } = props;
   const isPc = usePcHints();
   const contentRef = useRef<HTMLDivElement | null>(null);
+  const savingRef = useRef(false);
   const [judgeHintEnabled, setJudgeHintEnabled] = useState(readJudgeHintEnabled);
+  const [saving, setSaving] = useState(false);
   const dismissJudgeHint = () => {
     setJudgeHintEnabled(false);
     writeJudgeHintEnabled(false);
@@ -35,9 +37,21 @@ export function StudyView(props: {
     if (!state.revealedIdx.includes(answerIndex)) { nextIdx = answerIndex; break; }
   }
   const allRevealed = !!card && targetIndexes.length > 0 && nextIdx === -1;
+  const complete = async () => {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      await props.onComplete();
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  };
 
   const revealNext = () => { if (nextIdx >= 0) dispatch((st) => ({ revealedIdx: [...st.revealedIdx, nextIdx] })); };
   const toggleRetry = (answerIndex: number) => {
+    if (savingRef.current) return;
     dispatch((st) => ({
       retryAnswerIdx: st.retryAnswerIdx.includes(answerIndex)
         ? st.retryAnswerIdx.filter((i) => i !== answerIndex)
@@ -49,13 +63,13 @@ export function StudyView(props: {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (document.activeElement?.tagName || '').toLowerCase();
-      if (e.key === 'Escape') { props.onDeck(); return; }
+      if (e.key === 'Escape') { if (!saving) props.onDeck(); return; }
       if (tag === 'input' || tag === 'textarea' || tag === 'button' || tag === 'select') return;
       if (!card) return;
       if (e.key === ' ' || e.key === 'Enter') {
         e.preventDefault();
         if (nextIdx >= 0) revealNext();
-        else props.onComplete();
+        else void complete();
         return;
       }
     };
@@ -142,7 +156,7 @@ export function StudyView(props: {
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, paddingTop: 'env(safe-area-inset-top)', background: '#fff' }}>
       <div style={{ padding: '14px 20px 0', display: 'flex', alignItems: 'center', gap: 14 }}>
-        <button type="button" className="ui-button" onClick={props.onDeck} aria-label="닫기" title="닫기" style={{ width: 44, height: 44, marginLeft: -14, borderRadius: 999, background: 'transparent', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+        <button type="button" className="ui-button" onClick={props.onDeck} disabled={saving} aria-label="닫기" title="닫기" style={{ width: 44, height: 44, marginLeft: -14, borderRadius: 999, background: 'transparent', display: 'grid', placeItems: 'center', cursor: saving ? 'default' : 'pointer' }}>
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="rgba(60,60,67,0.6)" strokeWidth="2.4" strokeLinecap="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
         </button>
         <div style={{ flex: 1, height: 3, borderRadius: 2, background: 'rgba(120,120,128,0.16)', overflow: 'hidden' }}>
@@ -185,8 +199,9 @@ export function StudyView(props: {
                       className="token-button"
                       data-study-answer-index={answerIndex}
                       aria-pressed={retry}
+                      disabled={saving}
                       onClick={(e) => { e.stopPropagation(); toggleRetry(answerIndex); }}
-                      style={{ border: 0, borderLeft: `3px solid ${retry ? '#ff9500' : 'rgba(120,120,128,0.32)'}`, borderRadius: 6, padding: '2px 10px 2px 14px', background: retry ? 'rgba(255,149,0,0.12)' : 'rgba(120,120,128,0.07)', color: retry ? '#8a4d00' : '#1d1d1f', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', animation: 'popIn 0.22s cubic-bezier(0.3,1.2,0.4,1)' }}
+                      style={{ minHeight: 44, border: 0, borderLeft: `3px solid ${retry ? '#ff9500' : 'rgba(120,120,128,0.32)'}`, borderRadius: 6, padding: '4px 10px 4px 14px', background: retry ? 'rgba(255,149,0,0.12)' : 'rgba(120,120,128,0.07)', color: retry ? '#8a4d00' : '#1d1d1f', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', animation: 'popIn 0.22s cubic-bezier(0.3,1.2,0.4,1)' }}
                     >
                       <span style={{ fontSize: 21, fontWeight: 700, wordBreak: 'keep-all', lineHeight: 1.45, whiteSpace: 'pre-line' }}>{answer}</span>
                       {retry && <RotateCcw size={15} strokeWidth={2.4} aria-hidden="true" />}
@@ -213,8 +228,9 @@ export function StudyView(props: {
                         className="token-button"
                         data-study-answer-index={seg.answerIndex}
                         aria-pressed={retrySet.has(seg.answerIndex)}
+                        disabled={saving}
                         onClick={(e) => { e.stopPropagation(); toggleRetry(seg.answerIndex); }}
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 7px', border: 0, borderBottom: `2px solid ${retrySet.has(seg.answerIndex) ? '#ff9500' : 'rgba(120,120,128,0.32)'}`, borderRadius: 6, background: retrySet.has(seg.answerIndex) ? 'rgba(255,149,0,0.12)' : 'rgba(120,120,128,0.07)', color: retrySet.has(seg.answerIndex) ? '#8a4d00' : '#1d1d1f', font: 'inherit', fontWeight: 800, lineHeight: 'inherit', margin: '0 3px', cursor: 'pointer', animation: 'popIn 0.22s cubic-bezier(0.3,1.2,0.4,1)' }}
+                        style={{ minHeight: 44, display: 'inline-flex', alignItems: 'center', verticalAlign: 'middle', gap: 5, padding: '4px 9px', border: 0, borderBottom: `2px solid ${retrySet.has(seg.answerIndex) ? '#ff9500' : 'rgba(120,120,128,0.32)'}`, borderRadius: 6, background: retrySet.has(seg.answerIndex) ? 'rgba(255,149,0,0.12)' : 'rgba(120,120,128,0.07)', color: retrySet.has(seg.answerIndex) ? '#8a4d00' : '#1d1d1f', font: 'inherit', fontWeight: 800, lineHeight: 'inherit', margin: '0 3px', cursor: 'pointer', animation: 'popIn 0.22s cubic-bezier(0.3,1.2,0.4,1)' }}
                       >
                         {seg.answer}
                         {retrySet.has(seg.answerIndex) && <RotateCcw size={14} strokeWidth={2.4} aria-hidden="true" />}
@@ -251,14 +267,16 @@ export function StudyView(props: {
                   onClick={dismissJudgeHint}
                   aria-label="이 안내 그만 강조하기"
                   title="이 안내 그만 강조하기"
-                  style={{ width: 22, height: 22, borderRadius: 999, background: 'rgba(120,120,128,0.14)', display: 'grid', placeItems: 'center', cursor: 'pointer', pointerEvents: 'auto', flexShrink: 0 }}
+                  style={{ width: 44, height: 44, margin: '-11px', borderRadius: 999, background: 'transparent', display: 'grid', placeItems: 'center', cursor: 'pointer', pointerEvents: 'auto', flexShrink: 0 }}
                 >
-                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="rgba(60,60,67,0.6)" strokeWidth="3" strokeLinecap="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+                  <span aria-hidden="true" style={{ width: 22, height: 22, borderRadius: 999, background: 'rgba(120,120,128,0.14)', display: 'grid', placeItems: 'center' }}>
+                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="rgba(60,60,67,0.6)" strokeWidth="3" strokeLinecap="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+                  </span>
                 </button>
               )}
             </div>
-            <button type="button" className="study-judge-button" onClick={props.onComplete} style={{ width: '100%', height: 50, padding: '0 16px', borderRadius: 12, border: 'none', background: ACCENT, color: '#fff', display: 'grid', placeItems: 'center', cursor: 'pointer', pointerEvents: 'auto', fontFamily: 'inherit', fontSize: 15.5, fontWeight: 800 }}>
-              {retrySet.size > 0 ? `다음 · 다시 ${retrySet.size}개` : '다음'}
+            <button type="button" className="study-judge-button" onClick={() => { void complete(); }} disabled={saving} style={{ width: '100%', height: 50, padding: '0 16px', borderRadius: 12, border: 'none', background: saving ? 'rgba(0,122,255,0.55)' : ACCENT, color: '#fff', display: 'grid', placeItems: 'center', cursor: saving ? 'default' : 'pointer', pointerEvents: 'auto', fontFamily: 'inherit', fontSize: 15.5, fontWeight: 800 }}>
+              {saving ? '판정 저장 중…' : retrySet.size > 0 ? `다음 · 다시 ${retrySet.size}개` : '다음'}
             </button>
           </div>
         )}
