@@ -2,10 +2,19 @@ import { build } from 'esbuild';
 import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import {
+  ASSET_NAME_TEMPLATE,
+  CHUNK_NAME_TEMPLATE,
+  ENTRY_NAME_TEMPLATE,
+  injectRuntimeAssets,
+  resolveBuildOutputs,
+} from './build-output.mjs';
+import { writeServiceWorker } from './service-worker.mjs';
 
 const root = process.cwd();
 const dist = path.join(root, 'dist');
 const assets = path.join(dist, 'assets');
+const entryPoint = path.join(root, 'src/main.tsx');
 
 function readEnvFile(fileName) {
   const filePath = path.join(root, fileName);
@@ -39,13 +48,17 @@ await rm(dist, { recursive: true, force: true });
 await mkdir(assets, { recursive: true });
 await cp(path.join(root, 'public'), dist, { recursive: true });
 
-await build({
-  entryPoints: [path.join(root, 'src/main.tsx')],
+const buildResult = await build({
+  entryPoints: [entryPoint],
   bundle: true,
-  outfile: path.join(assets, 'main.js'),
+  outdir: dist,
+  entryNames: ENTRY_NAME_TEMPLATE,
+  chunkNames: CHUNK_NAME_TEMPLATE,
+  assetNames: ASSET_NAME_TEMPLATE,
   format: 'esm',
   target: ['chrome107', 'edge107', 'firefox104', 'safari16'],
   minify: true,
+  metafile: true,
   sourcemap: false,
   loader: {
     '.ts': 'ts',
@@ -57,13 +70,23 @@ await build({
   ),
 });
 
+const buildOutputs = resolveBuildOutputs({
+  metafile: buildResult.metafile,
+  root,
+  dist,
+  entryPoint,
+});
+
 const html = await readFile(path.join(root, 'index.html'), 'utf8');
 await writeFile(
   path.join(dist, 'index.html'),
-  html.replace(
-    '<script type="module" src="/src/main.tsx"></script>',
-    '<link rel="stylesheet" href="/assets/main.css" />\n    <script type="module" src="/assets/main.js"></script>',
-  ),
+  injectRuntimeAssets(html, buildOutputs),
 );
 
-console.log('Built dist with esbuild.');
+const serviceWorker = await writeServiceWorker({
+  root,
+  dist,
+  builtAssetFiles: buildOutputs.assetFiles,
+});
+
+console.log(`Built dist with esbuild (app shell ${serviceWorker.version}).`);
