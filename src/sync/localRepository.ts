@@ -1,4 +1,5 @@
-import type { Card, Deck, NewCard, Repository, Section } from './types';
+import type { Card, Deck, NewCard, Section } from '../domain/types';
+import type { Repository } from './repository';
 
 type RoomState = {
   decks: Deck[];

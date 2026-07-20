@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { PC_HINT_QUERY } from './constants';
+import { PC_HINT_QUERY } from '../constants';
 
 export function usePcHints() {
   const [isPc, setIsPc] = useState(() => (

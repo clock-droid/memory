@@ -1,8 +1,8 @@
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { ACCENT } from '../constants';
-import { masterySummary } from '../cards';
-import type { ProtoList } from '../cards';
-import type { SyncStatus } from '../syncHealth';
+import { masterySummary } from '../domain/cards';
+import type { ProtoList } from '../domain/cards';
+import type { SyncStatus } from '../sync/syncHealth';
 import { ClozeFlowGraphic } from './ClozeFlowGraphic';
 
 function EmptyStateAction(props: { label: string; onClick: () => void; disabled?: boolean }) {

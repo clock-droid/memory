@@ -1,12 +1,12 @@
 import { useCallback, useRef } from 'react';
 import type { Dispatch } from 'react';
-import type { ProtoList } from '../cards';
-import { hideMastery, hideSchedules, rateHides } from '../hides';
+import type { ProtoList } from '../domain/cards';
+import { hideMastery, hideSchedules, rateHides } from '../domain/hides';
 import type { Patch } from '../state/patchState';
 import type { RouteState, SessionState } from '../state/uiSlices';
 import type { SessionRun } from '../state/useRoomUi';
-import { countHides, planCheckupSession, planStudySession, shuffleTargets } from '../studySession';
-import type { StudyPlan } from '../studySession';
+import { countHides, planCheckupSession, planStudySession, shuffleTargets } from '../domain/studySession';
+import type { StudyPlan } from '../domain/studySession';
 import type { RoomStore } from '../sync/useRoomStore';
 import type { Toast } from './useToast';
 

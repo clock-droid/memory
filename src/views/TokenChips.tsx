@@ -1,6 +1,6 @@
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { ACCENT } from '../constants';
-import type { Token } from '../tokens';
+import type { Token } from '../domain/tokens';
 
 /**
  * Renders a run of tokens as tap/drag-selectable chips.

@@ -3,11 +3,11 @@ import type { MutableRefObject } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { DeckView } from './DeckView';
-import { rateAnswer } from '../answerSchedule';
-import { toProtoCard } from '../cards';
-import type { ProtoCard, ProtoList } from '../cards';
+import { rateAnswer } from '../domain/answerSchedule';
+import { toProtoCard } from '../domain/cards';
+import type { ProtoCard, ProtoList } from '../domain/cards';
 import { initialDeckUi } from '../state/uiSlices';
-import type { AnswerSchedule, Card } from '../types';
+import type { AnswerSchedule, Card } from '../domain/types';
 
 const DAY = 86_400_000;
 const NOW = Date.now();

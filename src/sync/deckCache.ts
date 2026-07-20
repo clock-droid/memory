@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
-import { emptyDeckCache } from '../cards';
-import type { DeckCacheEntry } from '../cards';
-import { CardIdAliases } from '../mutationState';
+import { emptyDeckCache } from '../domain/cards';
+import type { DeckCacheEntry } from '../domain/cards';
+import { CardIdAliases } from './mutationState';
 
 export type DeckCacheSlice = 'cards' | 'sections';
 

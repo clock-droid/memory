@@ -2,12 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import type { Dispatch } from 'react';
 import { RotateCcw } from 'lucide-react';
 import { ACCENT, ACCENT_DEEP } from '../constants';
-import { masterySummary } from '../cards';
-import type { ProtoList } from '../cards';
+import { masterySummary } from '../domain/cards';
+import type { ProtoList } from '../domain/cards';
 import type { Patch } from '../state/patchState';
 import type { SessionState } from '../state/uiSlices';
-import { usePcHints } from '../usePcHints';
-import { readJudgeHintEnabled, writeJudgeHintEnabled } from '../judgeHint';
+import { usePcHints } from './usePcHints';
+import { readJudgeHintEnabled, writeJudgeHintEnabled } from './judgeHint';
 import { HideStateMap } from './HideStateMap';
 import type { HideState } from './HideStateMap';
 

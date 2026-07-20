@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import type { Dispatch, MutableRefObject } from 'react';
 import type { Patch } from '../state/patchState';
 import type { ComposerState, DeckUiState, EditorState } from '../state/uiSlices';
-import { applyHideSelection } from '../tokens';
+import { applyHideSelection } from '../domain/tokens';
 
 export type PointerReleaseOptions = {
   setComposer: Dispatch<Patch<ComposerState>>;

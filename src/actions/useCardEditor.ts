@@ -1,12 +1,12 @@
 import { useCallback } from 'react';
 import type { Dispatch } from 'react';
-import { keepCard, protoCardSourceSignature, qaToNewCard, remapAnswerMastery, remapAnswerSchedule, resolveEditedCardId } from '../cards';
-import type { ProtoCard, ProtoList } from '../cards';
-import { hideTexts } from '../hides';
+import { keepCard, protoCardSourceSignature, qaToNewCard, remapAnswerMastery, remapAnswerSchedule, resolveEditedCardId } from '../domain/cards';
+import type { ProtoCard, ProtoList } from '../domain/cards';
+import { hideTexts } from '../domain/hides';
 import type { Patch } from '../state/patchState';
 import type { EditorState } from '../state/uiSlices';
 import type { RoomStore } from '../sync/useRoomStore';
-import { cardToTokens, editSignature, tokensToCard, tokensToText } from '../tokens';
+import { cardToTokens, editSignature, tokensToCard, tokensToText } from '../domain/tokens';
 import type { CommitSection } from './useCardActions';
 import type { Toast } from './useToast';
 

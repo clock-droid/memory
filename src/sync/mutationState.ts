@@ -1,4 +1,4 @@
-import type { AnswerSchedule, Card, Section } from './types';
+import type { AnswerSchedule, Card, Section } from '../domain/types';
 
 export function replaceSectionCards(cards: Card[], sectionId: string, replacement: Card[]) {
   return [

@@ -32,17 +32,17 @@ npm run dev
 브라우저에서 `http://localhost:5173`을 엽니다. 같은 와이파이의 아이폰에서는 PC의 `http://<PC-IP>:5173` 주소를 Safari에서 열면 접속할 수 있습니다.
 
 - `npm run build` — 타입 검사(`tsc --noEmit`) 후 esbuild 번들 생성
-- `npm test` — 순수 로직(tokens·cards·parser) 단위 테스트(vitest)
+- `npm test` — 순수 로직(domain) 단위 테스트(vitest)
 
 빌드 스택은 Vite가 아니라 **esbuild**(`scripts/build.mjs`) + **Node 동기화 서버**(`scripts/serve.mjs`)입니다. 환경변수의 `VITE_` 접두사는 관례로 유지됩니다.
 
 ## 저장·동기화
 
-앱은 `Repository` 인터페이스([`src/types.ts`](./src/types.ts)) 하나에 세 구현을 두고, 사용 가능한 것을 순서대로 고릅니다.
+앱은 `Repository` 인터페이스([`src/sync/repository.ts`](./src/sync/repository.ts)) 하나에 세 구현을 두고, 사용 가능한 것을 순서대로 고릅니다.
 
-1. **Firebase**(`src/firebase.ts`) — `.env`에 Firebase 설정값이 있으면 사용. Firestore 실시간 동기화.
-2. **서버 동기화**(`src/serverRepository.ts`) — `/.netlify/functions/sync`를 통해 공유 코드별 방(room)에 저장. 공용 로직은 [`shared/roomLogic.mjs`](./shared/roomLogic.mjs)이고, 개발 시 `scripts/serve.mjs`, 배포 시 `netlify/functions/sync.mjs`가 감쌉니다. **로컬 개발 기본값**이며 배포 주소도 이 경로로 동작합니다.
-3. **로컬 저장**(`src/localRepository.ts`) — 위 둘이 모두 불가하면 브라우저 `localStorage`로 폴백.
+1. **Firebase**(`src/sync/firebase.ts`) — `.env`에 Firebase 설정값이 있으면 사용. Firestore 실시간 동기화.
+2. **서버 동기화**(`src/sync/serverRepository.ts`) — `/.netlify/functions/sync`를 통해 공유 코드별 방(room)에 저장. 공용 로직은 [`shared/roomLogic.mjs`](./shared/roomLogic.mjs)이고, 개발 시 `scripts/serve.mjs`, 배포 시 `netlify/functions/sync.mjs`가 감쌉니다. **로컬 개발 기본값**이며 배포 주소도 이 경로로 동작합니다.
+3. **로컬 저장**(`src/sync/localRepository.ts`) — 위 둘이 모두 불가하면 브라우저 `localStorage`로 폴백.
 
 세 구현 모두 같은 공유 코드를 입력하면 같은 카드 데이터를 봅니다. 카드 저장 시 서버가 카드 id를 새로 발급하므로, 클라이언트는 저장 응답으로 받은 실제 id로 낙관적 캐시를 맞춰 가림별 숙련도(`answerMastery`)가 세션을 넘어 보존됩니다.
 
@@ -55,29 +55,21 @@ npm run dev
 
 ## 코드 구조
 
-화면·상태·도메인 로직을 `src/` 아래로 나눴습니다(`App.tsx`는 조립·오케스트레이션만 담당).
+`src/`는 의존이 한 방향으로만 흐르는 네 계층으로 나뉩니다. 어디에 무엇을 넣는지는
+[`ARCHITECTURE.md`](./ARCHITECTURE.md)에 정리되어 있습니다.
 
-**진입점**
+```text
+views/    화면 (각자 자기 상태 조각만 받음)
+actions/  사용자 의도 (카드 삭제, 학습 시작 …)
+state/    화면 상태 6조각 (route·deck·session·composer·editor·shell)
+sync/     방과의 통신 (저장소 3구현 + 구독 + 낙관적 쓰기)
+domain/   제품 규칙 (React 없음, 전부 순수 함수 + 테스트)
+```
 
-- [`src/App.tsx`](./src/App.tsx) — `App`(공유 코드 게이트) + `Room`(저장소 구독·상태 배선·화면 전환).
-- `src/main.tsx` — React 렌더 진입점.
+핵심은 `domain/hides.ts`의 **`Hide`** 타입입니다. 학습 단위는 카드가 아니라 가림이고,
+진행률·세션·점검은 모두 가림 목록을 요약한 결과입니다.
 
-**도메인·상태** (`src/*.ts`)
-
-- `types.ts` — `Deck`(암기장)·`Section`·`Card`(카드)와 `Repository` 인터페이스. 가림별 숙련도는 `answerMastery: boolean[]`.
-- `tokens.ts` — 원문 ↔ `Token`/`Row` 토큰화, `[ ]`·`A:B`·`A->B` 해석.
-- `parser.ts` — 원문 줄을 카드로 파싱, cloze 분해.
-- `cards.ts` — 카드→화면용 뷰모델(`ProtoCard`), 가림 단위 진행률·숙련도 집계, 낙관적 캐시 헬퍼.
-- `uiState.ts` — 화면 상태(`UIState`)·리듀서.
-- `constants.ts` / `roomCode.ts` / `usePcHints.ts` — 상수, 공유 코드 정규화·생성, PC 힌트 훅.
-
-**화면·시트** (`src/views/*.tsx`)
-
-- `IdGate` · `HomeView` · `DeckView` · `ContinuousAddView` · `StudyView` · `EditSheet` · `SettingsSheet` · `HideStateMap`(가림별 상태 시각화) · `TokenChips`(가림 칩 선택).
-
-**저장·동기화** — `firebase.ts` / `serverRepository.ts` / `localRepository.ts` + 공용 `shared/roomLogic.mjs` (위 "저장·동기화" 참고).
-
-순수 로직 모듈(tokens·cards·parser)은 `src/*.test.ts`로 테스트됩니다.
+`App.tsx`는 조립과 화면 전환만 합니다.
 
 ## 입력 형식
 

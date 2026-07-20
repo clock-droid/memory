@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ACCENT } from '../constants';
-import { createRoomCode, normalizeRoomCode } from '../roomCode';
+import { createRoomCode, normalizeRoomCode } from '../domain/roomCode';
 import { ClozeFlowGraphic } from './ClozeFlowGraphic';
 
 export function IdGate({ onSubmit }: { onSubmit: (code: string) => void }) {

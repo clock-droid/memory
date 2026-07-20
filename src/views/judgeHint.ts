@@ -1,4 +1,4 @@
-import { JUDGE_HINT_KEY } from './constants';
+import { JUDGE_HINT_KEY } from '../constants';
 
 // The "탭하세요" judgment hint starts emphasized. Only an explicit user action
 // (the inline dismiss in StudyView, or the settings toggle) turns it off — never inferred.

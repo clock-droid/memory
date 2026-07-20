@@ -1,5 +1,5 @@
-import type { Row, Token } from '../tokens';
-import type { SessionMode, StudyTarget } from '../types';
+import type { Row, Token } from '../domain/tokens';
+import type { SessionMode, StudyTarget } from '../domain/types';
 
 /**
  * Screen state, split by the surface that owns it. A screen receives only its

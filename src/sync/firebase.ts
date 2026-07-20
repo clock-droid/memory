@@ -12,7 +12,8 @@ import {
   setDoc,
   updateDoc,
 } from 'firebase/firestore';
-import type { Card, Deck, NewCard, Repository, Section } from './types';
+import type { Card, Deck, NewCard, Section } from '../domain/types';
+import type { Repository } from './repository';
 
 const config = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,

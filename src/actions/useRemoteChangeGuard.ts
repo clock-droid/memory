@@ -1,10 +1,10 @@
 import { useEffect } from 'react';
 import type { Dispatch } from 'react';
-import { reconcileStudyTargets } from '../cards';
-import type { ProtoList } from '../cards';
+import { reconcileStudyTargets } from '../domain/cards';
+import type { ProtoList } from '../domain/cards';
 import type { Patch } from '../state/patchState';
 import type { RouteState, SessionState } from '../state/uiSlices';
-import type { SyncHealth } from '../syncHealth';
+import type { SyncHealth } from '../sync/syncHealth';
 import type { Toast } from './useToast';
 
 export type RemoteChangeGuardOptions = {

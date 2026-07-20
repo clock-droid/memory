@@ -1,8 +1,8 @@
 import { useCallback } from 'react';
 import type { Dispatch } from 'react';
-import { keepCard } from '../cards';
-import type { OptimisticNewCard, ProtoCard, ProtoList } from '../cards';
-import type { EnqueuedMutation } from '../mutationQueue';
+import { keepCard } from '../domain/cards';
+import type { OptimisticNewCard, ProtoCard, ProtoList } from '../domain/cards';
+import type { EnqueuedMutation } from '../sync/mutationQueue';
 import type { Patch } from '../state/patchState';
 import type { DeckUiState } from '../state/uiSlices';
 import type { RoomStore } from '../sync/useRoomStore';

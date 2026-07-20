@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import type { SyncResourceState } from '../syncHealth';
+import type { SyncResourceState } from './syncHealth';
 
 /**
  * Every subscribed feed is tracked under a resource key. Keys are built here

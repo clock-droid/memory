@@ -3,12 +3,12 @@ import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerE
 import { RotateCcw } from 'lucide-react';
 import type { Dispatch } from 'react';
 import { ACCENT, ACCENT_DEEP } from '../constants';
-import { masterySummary, weakestFirst } from '../cards';
-import { dueHides, hideTexts } from '../hides';
-import type { ProtoCard, ProtoList } from '../cards';
+import { masterySummary, weakestFirst } from '../domain/cards';
+import { dueHides, hideTexts } from '../domain/hides';
+import type { ProtoCard, ProtoList } from '../domain/cards';
 import type { Patch } from '../state/patchState';
 import type { DeckUiState } from '../state/uiSlices';
-import { usePcHints } from '../usePcHints';
+import { usePcHints } from './usePcHints';
 import { HideStateMap } from './HideStateMap';
 
 export function DeckView(props: {

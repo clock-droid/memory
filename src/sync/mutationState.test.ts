@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CardIdAliases, applyAnswerMastery, replaceSectionCards } from './mutationState';
-import type { Card } from './types';
+import type { Card } from '../domain/types';
 
 function card(id: string, sectionId = 's1'): Card {
   return {

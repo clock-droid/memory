@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Dispatch } from 'react';
 import { ACCENT, ACCENT_DEEP } from '../constants';
-import { parsePaste, toggleTokenAt, tokensToCard } from '../tokens';
-import { qaToNewCard } from '../cards';
-import { contentFingerprint, newOperationId } from '../operationId';
+import { parsePaste, toggleTokenAt, tokensToCard } from '../domain/tokens';
+import { qaToNewCard } from '../domain/cards';
+import { contentFingerprint, newOperationId } from '../sync/operationId';
 import type { Patch } from '../state/patchState';
 import type { ComposerState } from '../state/uiSlices';
-import type { NewCard } from '../types';
+import type { NewCard } from '../domain/types';
 import { TokenChips } from './TokenChips';
 
 function qaHasMatchingBlanks(question: string) {

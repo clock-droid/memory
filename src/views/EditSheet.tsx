@@ -1,9 +1,9 @@
 import { useRef, useState } from 'react';
 import type { ChangeEvent, Dispatch } from 'react';
 import { ACCENT, ACCENT_DEEP } from '../constants';
-import { editSignature, toggleTokenAt, tokenizeText, tokensToText } from '../tokens';
-import { resolveEditedCardId } from '../cards';
-import type { ProtoCard, ProtoList } from '../cards';
+import { editSignature, toggleTokenAt, tokenizeText, tokensToText } from '../domain/tokens';
+import { resolveEditedCardId } from '../domain/cards';
+import type { ProtoCard, ProtoList } from '../domain/cards';
 import type { Patch } from '../state/patchState';
 import type { EditorState } from '../state/uiSlices';
 import { ModalSheet } from './ModalSheet';

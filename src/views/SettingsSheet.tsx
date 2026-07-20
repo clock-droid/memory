@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ACCENT } from '../constants';
-import { normalizeRoomCode } from '../roomCode';
-import { readJudgeHintEnabled, writeJudgeHintEnabled } from '../judgeHint';
+import { normalizeRoomCode } from '../domain/roomCode';
+import { readJudgeHintEnabled, writeJudgeHintEnabled } from './judgeHint';
 import { ModalSheet } from './ModalSheet';
 
 type CopyStatus = 'idle' | 'copying' | 'success' | 'error';

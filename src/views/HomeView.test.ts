@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { HomeView } from './HomeView';
-import { toProtoCard } from '../cards';
+import { toProtoCard } from '../domain/cards';
 
 function renderHome(overrides: Partial<Parameters<typeof HomeView>[0]> = {}) {
   return renderToStaticMarkup(createElement(HomeView, {

@@ -1,13 +1,13 @@
 import { useCallback, useRef, useState } from 'react';
 import type { Dispatch } from 'react';
-import { keepCard } from '../cards';
-import type { OptimisticNewCard, ProtoList } from '../cards';
-import { newOperationId } from '../operationId';
+import { keepCard } from '../domain/cards';
+import type { OptimisticNewCard, ProtoList } from '../domain/cards';
+import { newOperationId } from '../sync/operationId';
 import type { Patch } from '../state/patchState';
 import { initialComposer } from '../state/uiSlices';
 import type { ComposerState, DeckUiState, RouteState } from '../state/uiSlices';
 import type { CreatedList, RoomStore } from '../sync/useRoomStore';
-import type { NewCard } from '../types';
+import type { NewCard } from '../domain/types';
 import type { CommitSection } from './useCardActions';
 import type { Toast } from './useToast';
 
