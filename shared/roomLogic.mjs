@@ -110,10 +110,28 @@ function isValidAnswerScheduleEntry(entry) {
   return ANSWER_SCHEDULE_FIELDS.every((field) => Number.isFinite(entry[field]));
 }
 
-function isValidAnswerScheduleList(value, expectedLength) {
-  return Array.isArray(value)
+// Every per-hide array (mastery, schedule) is only valid when it lines up with
+// the card's answers. A null expectedLength means the card has no usable answer
+// list, which no per-hide array can match.
+function isValidHideList(value, expectedLength, isValidEntry) {
+  return expectedLength !== null
+    && Array.isArray(value)
     && value.length === expectedLength
-    && value.every(isValidAnswerScheduleEntry);
+    && value.every(isValidEntry);
+}
+
+function isValidMasteryList(value, expectedLength) {
+  return isValidHideList(value, expectedLength, (known) => typeof known === 'boolean');
+}
+
+function isValidScheduleList(value, expectedLength) {
+  return isValidHideList(value, expectedLength, isValidAnswerScheduleEntry);
+}
+
+// A quarantined card has no study target, so zero is its only valid hide count.
+function hideCountOf(card) {
+  if (card.needsRepair === true) return 0;
+  return Array.isArray(card.answers) ? card.answers.length : null;
 }
 
 // Persist only the known numeric fields so a hand-crafted request cannot smuggle
@@ -170,10 +188,10 @@ function isValidCardInput(card) {
       || !requiresRepair(card)
       || !card.answers.every((answer) => typeof answer === 'string')
     ) return false;
-    if (!Array.isArray(card.answerMastery) || card.answerMastery.length !== 0 || card.mastered !== false) return false;
+    if (!isValidMasteryList(card.answerMastery, 0) || card.mastered !== false) return false;
     if (
       Object.prototype.hasOwnProperty.call(card, 'answerSchedule')
-      && !isValidAnswerScheduleList(card.answerSchedule, 0)
+      && !isValidScheduleList(card.answerSchedule, 0)
     ) return false;
     if (Object.prototype.hasOwnProperty.call(card, 'starred') && typeof card.starred !== 'boolean') return false;
     if (
@@ -189,13 +207,11 @@ function isValidCardInput(card) {
   ) return false;
   if (
     Object.prototype.hasOwnProperty.call(card, 'answerMastery')
-    && (!Array.isArray(card.answerMastery)
-      || card.answerMastery.length !== card.answers.length
-      || !card.answerMastery.every((known) => typeof known === 'boolean'))
+    && !isValidMasteryList(card.answerMastery, card.answers.length)
   ) return false;
   if (
     Object.prototype.hasOwnProperty.call(card, 'answerSchedule')
-    && !isValidAnswerScheduleList(card.answerSchedule, card.answers.length)
+    && !isValidScheduleList(card.answerSchedule, card.answers.length)
   ) return false;
   if (Object.prototype.hasOwnProperty.call(card, 'mastered') && typeof card.mastered !== 'boolean') return false;
   if (Object.prototype.hasOwnProperty.call(card, 'starred') && typeof card.starred !== 'boolean') return false;
@@ -349,23 +365,13 @@ export function applyRoomRequest({ room, method, parts, body }) {
       if (!hasStarred && !hasMastered && !hasAnswerMastery) {
         return { status: 400, body: { error: 'Invalid card patch' }, write: false };
       }
+      const hideCount = hideCountOf(currentCard);
       if (
         (hasStarred && typeof body.starred !== 'boolean')
         || (hasMastered && typeof body.mastered !== 'boolean')
         || (currentCard.needsRepair === true && hasMastered && body.mastered !== false)
-        || (hasAnswerMastery
-          && (!Array.isArray(body.answerMastery)
-            || (currentCard.needsRepair === true
-              ? body.answerMastery.length !== 0
-              : !Array.isArray(currentCard.answers) || body.answerMastery.length !== currentCard.answers.length)
-            || !body.answerMastery.every((known) => typeof known === 'boolean')))
-        || (hasAnswerSchedule
-          && !isValidAnswerScheduleList(
-            body.answerSchedule,
-            currentCard.needsRepair === true
-              ? 0
-              : Array.isArray(currentCard.answers) ? currentCard.answers.length : -1,
-          ))
+        || (hasAnswerMastery && !isValidMasteryList(body.answerMastery, hideCount))
+        || (hasAnswerSchedule && !isValidScheduleList(body.answerSchedule, hideCount))
       ) {
         return { status: 400, body: { error: 'Invalid card patch' }, write: false };
       }

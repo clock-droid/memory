@@ -727,4 +727,29 @@ describe('per-hide schedule', () => {
 
     expect(room.cardsByDeck['deck-1'][0]).toMatchObject({ needsRepair: true, answerMastery: [], answerSchedule: [] });
   });
+  it('rejects per-hide patches for a stored card with no usable answer list', () => {
+    const room = roomWithSection();
+    room.cardsByDeck['deck-1'] = [{
+      id: 'card-1', sectionId: 'section-1', type: 'pair', prompt: '질문',
+      rawText: '질문:답', revision: 0, createdAt: 1, updatedAt: 1,
+    }];
+
+    const mastery = request(
+      room,
+      'PATCH',
+      ['decks', 'deck-1', 'cards', 'card-1'],
+      { answerMastery: [true], expectedRevision: 0 },
+    );
+    const scheduled = request(
+      room,
+      'PATCH',
+      ['decks', 'deck-1', 'cards', 'card-1'],
+      { answerMastery: [true], answerSchedule: [scheduleEntry(2000)], expectedRevision: 0 },
+    );
+
+    expect(mastery).toMatchObject({ status: 400, write: false });
+    expect(scheduled).toMatchObject({ status: 400, write: false });
+    expect(room.cardsByDeck['deck-1'][0].answerMastery).toBeUndefined();
+    expect(room.cardsByDeck['deck-1'][0].answerSchedule).toBeUndefined();
+  });
 });
