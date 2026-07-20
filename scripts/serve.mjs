@@ -1,8 +1,9 @@
 import { createServer } from 'node:http';
 import { createReadStream, existsSync } from 'node:fs';
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { stat } from 'node:fs/promises';
 import path from 'node:path';
 import { applyRoomRequest, emptyRoom as createEmptyRoom, ensureRoom as ensureSharedRoom } from '../shared/roomLogic.mjs';
+import { readJsonFileOrDefault, writeJsonFileAtomic } from './local-store.mjs';
 
 const root = process.cwd();
 const dist = path.join(root, 'dist');
@@ -10,6 +11,7 @@ const dataDir = path.join(root, 'data');
 const dataFile = path.join(dataDir, 'rooms.json');
 const port = Number(process.env.PORT ?? 5173);
 const host = process.env.HOST ?? '0.0.0.0';
+let syncRequestTail = Promise.resolve();
 
 const mimeTypes = new Map([
   ['.css', 'text/css; charset=utf-8'],
@@ -31,16 +33,11 @@ function emptyStore() {
 }
 
 async function readStore() {
-  try {
-    return JSON.parse(await readFile(dataFile, 'utf8'));
-  } catch {
-    return emptyStore();
-  }
+  return readJsonFileOrDefault(dataFile, emptyStore);
 }
 
 async function writeStore(store) {
-  await mkdir(dataDir, { recursive: true });
-  await writeFile(dataFile, JSON.stringify(store, null, 2), 'utf8');
+  await writeJsonFileAtomic(dataFile, store);
 }
 
 async function readBody(request) {
@@ -58,6 +55,18 @@ function sendJson(response, value, status = 200) {
   response.end(JSON.stringify(value));
 }
 
+function isNavigationRequest(request) {
+  return request.method === 'GET' && String(request.headers.accept ?? '').includes('text/html');
+}
+
+function sendNotFound(response) {
+  response.writeHead(404, {
+    'Content-Type': 'text/plain; charset=utf-8',
+    'Cache-Control': 'no-store',
+  });
+  response.end('Not found');
+}
+
 // The client talks to the same `/.netlify/functions/sync` endpoint in every
 // mode; request handling is shared with the deployed function via roomLogic.mjs.
 async function handleSync(request, response, url) {
@@ -69,7 +78,17 @@ async function handleSync(request, response, url) {
 
   const method = request.method ?? 'GET';
   const parts = requestPath.split('/').filter(Boolean).map(decodeURIComponent);
-  const body = method === 'GET' || method === 'DELETE' ? {} : await readBody(request).catch(() => ({}));
+  let body = {};
+  if (method !== 'GET') {
+    try {
+      body = await readBody(request);
+    } catch {
+      return sendJson(response, { error: 'Invalid JSON body' }, 400);
+    }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return sendJson(response, { error: 'Invalid JSON body' }, 400);
+    }
+  }
   const store = await readStore();
   store.rooms ??= {};
   const room = ensureSharedRoom(store.rooms[roomCode] ?? createEmptyRoom());
@@ -77,23 +96,37 @@ async function handleSync(request, response, url) {
   const result = applyRoomRequest({ room, method, parts, body });
 
   if (result.write) {
+    room.revision += 1;
     await writeStore(store);
   }
   return sendJson(response, result.body, result.status);
+}
+
+function serializeSyncRequest(operation) {
+  const current = syncRequestTail.then(operation, operation);
+  syncRequestTail = current.catch(() => {});
+  return current;
 }
 
 const server = createServer(async (request, response) => {
   try {
     const url = new URL(request.url ?? '/', `http://${request.headers.host ?? '127.0.0.1'}`);
     if (url.pathname === '/.netlify/functions/sync') {
-      await handleSync(request, response, url);
+      // Match the deployed blob store's compare-and-swap semantics: local
+      // concurrent writes must observe the previous committed revision rather
+      // than both mutating independent stale snapshots.
+      await serializeSyncRequest(() => handleSync(request, response, url));
       return;
     }
 
     const requested = safePath(request.url ?? '/');
-    const filePath = existsSync(requested) && (await stat(requested)).isFile()
-      ? requested
-      : path.join(dist, 'index.html');
+    const requestedFileExists = existsSync(requested) && (await stat(requested)).isFile();
+    if (!requestedFileExists && !isNavigationRequest(request)) {
+      sendNotFound(response);
+      return;
+    }
+
+    const filePath = requestedFileExists ? requested : path.join(dist, 'index.html');
     const ext = path.extname(filePath);
 
     response.writeHead(200, {

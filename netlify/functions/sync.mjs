@@ -25,7 +25,20 @@ export default async function sync(request) {
 
   const parts = path.split('/').filter(Boolean).map(decodeURIComponent);
   const method = request.method;
-  const body = method === 'GET' || method === 'DELETE' ? {} : await request.json().catch(() => ({}));
+  let body = {};
+  if (method !== 'GET') {
+    const rawBody = await request.text();
+    if (rawBody.trim()) {
+      try {
+        body = JSON.parse(rawBody);
+      } catch {
+        return json({ error: 'Invalid JSON body' }, 400);
+      }
+      if (!body || typeof body !== 'object' || Array.isArray(body)) {
+        return json({ error: 'Invalid JSON body' }, 400);
+      }
+    }
+  }
   const store = getStore('exam-memorizer-rooms');
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
@@ -33,6 +46,7 @@ export default async function sync(request) {
     const room = ensureRoom(entry?.data ?? emptyRoom());
     const result = applyRoomRequest({ room, method, parts, body });
     if (!result.write) return json(result.body, result.status);
+    room.revision += 1;
 
     const write = entry?.etag
       ? await store.setJSON(roomCode, room, { onlyIfMatch: entry.etag })
