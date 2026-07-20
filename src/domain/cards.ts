@@ -128,18 +128,17 @@ export function deriveQA(card: Card): { q: string; a: string[] } {
   return { q: card.prompt, a: card.answers };
 }
 
-export function remapAnswerMastery(card: Card, nextAnswers: string[]): boolean[] {
+/**
+ * The hides a card keeps once its answers are edited. A hide whose text changed
+ * is a new memory item — neither the judgment nor the FSRS history describes
+ * what the user must now recall — so it restarts unrated.
+ */
+export function remapHides(card: Card, nextAnswers: string[]): Hide[] {
   const previous = deriveQA(card);
-  const previousMastery = normalizeAnswerMastery(card, previous.a.length);
-  return nextAnswers.map((answer, i) => previous.a[i] === answer && Boolean(previousMastery[i]));
-}
-
-// A hide whose answer text changed is a new memory item: its FSRS history no
-// longer describes what the user must recall, so it restarts unscheduled.
-export function remapAnswerSchedule(card: Card, nextAnswers: string[]): Array<AnswerSchedule | null> {
-  const previous = deriveQA(card);
-  const previousSchedule = normalizeAnswerSchedule(card, previous.a.length);
-  return nextAnswers.map((answer, i) => (previous.a[i] === answer ? previousSchedule[i] : null));
+  const kept = buildHides(card, previous.a);
+  const restarted = unratedHides(card, nextAnswers);
+  return nextAnswers.map((text, index) =>
+    previous.a[index] === text ? kept[index] : restarted[index]);
 }
 
 /** Stored card -> the hide-level view model every screen reads. */
@@ -252,22 +251,18 @@ export function reconcileStudyTargets(
   return { queue: changed ? nextQueue : queue, removedCount, currentChanged };
 }
 
-export function qaToNewCard(
-  q: string,
-  a: string[],
-  answerMastery = a.map(() => false),
-  answerSchedule: Array<AnswerSchedule | null> = a.map(() => null),
-): NewCard {
+/** Builds a card from edited text, carrying over the hides it kept. */
+export function qaToNewCard(q: string, a: string[], hides?: Hide[]): NewCard {
   const isCloze = q.includes('___');
-  const normalized = a.map((_, i) => Boolean(answerMastery[i]));
+  const mastery = a.map((_, i) => Boolean(hides?.[i]?.known));
   return {
     type: isCloze ? 'cloze' : 'pair',
     prompt: q,
     answers: a,
     rawText: isCloze ? q : `${q}: ${a.join(', ')}`,
-    answerMastery: normalized,
-    answerSchedule: a.map((_, i) => answerSchedule[i] ?? null),
-    mastered: normalized.length > 0 && normalized.every(Boolean),
+    answerMastery: mastery,
+    answerSchedule: a.map((_, i) => hides?.[i]?.schedule ?? null),
+    mastered: mastery.length > 0 && mastery.every(Boolean),
   };
 }
 

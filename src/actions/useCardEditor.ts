@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import type { Dispatch } from 'react';
-import { keepCard, protoCardSourceSignature, qaToNewCard, remapAnswerMastery, remapAnswerSchedule, resolveEditedCardId } from '../domain/cards';
+import { keepCard, protoCardSourceSignature, qaToNewCard, remapHides, resolveEditedCardId } from '../domain/cards';
 import type { ProtoCard, ProtoList } from '../domain/cards';
 import { hideTexts } from '../domain/hides';
 import type { Patch } from '../state/patchState';
@@ -107,7 +107,7 @@ export function useCardEditor({ store, activeList, commitSection, setEditor, toa
     }
     const rebuilt = stored.map((card, index) => index === targetIndex
       ? {
-          ...qaToNewCard(draft.q, draft.a, remapAnswerMastery(card, draft.a), remapAnswerSchedule(card, draft.a)),
+          ...qaToNewCard(draft.q, draft.a, remapHides(card, draft.a)),
           optimisticId: card.id,
         }
       : keepCard(card));

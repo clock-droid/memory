@@ -1,3 +1,4 @@
+import { hideMastery, hideSchedules } from '../domain/hides';
 import type { Card, Deck, NewCard, Section } from '../domain/types';
 import type { Repository } from './repository';
 
@@ -499,14 +500,18 @@ export function createServerRepository(roomCode: string): Repository | null {
         refreshSubscriptions(cardSubs.get(deckId));
       });
     },
-    async setCardAnswerMastery(deckId, cardId, answerMastery, answerSchedule) {
+    async setCardHides(deckId, cardId, hides) {
       return withWriteRecovery(async () => {
         await waitForRoomRefresh();
         const key = cardKey(deckId, cardId);
         const expectedRevision = cardRevisions.get(key) ?? 0;
         const result = await request<{ revision: number; sectionId?: string; sectionRevision?: number }>(roomCode, `/decks/${encodeURIComponent(deckId)}/cards/${encodeURIComponent(cardId)}`, {
           method: 'PATCH',
-          body: JSON.stringify({ answerMastery, ...(answerSchedule ? { answerSchedule } : {}), expectedRevision }),
+          body: JSON.stringify({
+            answerMastery: hideMastery(hides),
+            answerSchedule: hideSchedules(hides),
+            expectedRevision,
+          }),
         });
         rememberCardPatch(deckId, cardId, result);
         refreshSubscriptions(cardSubs.get(deckId));

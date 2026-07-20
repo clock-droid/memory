@@ -1,3 +1,4 @@
+import { hideMastery, hideSchedules } from '../domain/hides';
 import type { Card, Deck, NewCard, Section } from '../domain/types';
 import type { Repository } from './repository';
 
@@ -198,15 +199,16 @@ export function createLocalRepository(roomCode: string): Repository {
       );
       write(roomCode, state);
     },
-    async setCardAnswerMastery(deckId, cardId, answerMastery, answerSchedule) {
+    async setCardHides(deckId, cardId, hides) {
       const state = read(roomCode);
+      const answerMastery = hideMastery(hides);
       const mastered = answerMastery.length > 0 && answerMastery.every(Boolean);
       state.cardsByDeck[deckId] = (state.cardsByDeck[deckId] ?? []).map((card) =>
         card.id === cardId
           ? {
               ...card,
               answerMastery,
-              ...(answerSchedule ? { answerSchedule } : {}),
+              answerSchedule: hideSchedules(hides),
               mastered,
               starred: mastered ? false : card.starred,
               updatedAt: Date.now(),

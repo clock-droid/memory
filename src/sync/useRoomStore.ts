@@ -6,11 +6,12 @@ import { withCards, withSections } from '../domain/cards';
 import type { DeckCacheEntry, OptimisticNewCard } from '../domain/cards';
 import { KeyedMutationQueue, rejectedMutation } from './mutationQueue';
 import type { EnqueuedMutation } from './mutationQueue';
-import { applyAnswerMastery, applySectionName, replaceSectionCards } from './mutationState';
+import { applyHides, applySectionName, replaceSectionCards } from './mutationState';
 import { contentFingerprint } from './operationId';
 import { deriveSyncHealth } from './syncHealth';
 import type { SyncHealth } from './syncHealth';
-import type { AnswerSchedule, Card, Deck, NewCard, Section } from '../domain/types';
+import type { Hide } from '../domain/hides';
+import type { Card, Deck, NewCard, Section } from '../domain/types';
 import type { Repository } from './repository';
 import { useDeckCache } from './deckCache';
 import type { DeckCacheSlice } from './deckCache';
@@ -59,13 +60,7 @@ export type RoomStore = {
     cards: OptimisticNewCard[],
     options?: WriteCallbacks & { operationId?: string },
   ) => EnqueuedMutation;
-  saveAnswerMastery: (
-    deckId: string,
-    cardId: string,
-    answerMastery: boolean[],
-    answerSchedule: Array<AnswerSchedule | null> | undefined,
-    options?: WriteCallbacks,
-  ) => EnqueuedMutation;
+  saveHides: (deckId: string, cardId: string, hides: Hide[], options?: WriteCallbacks) => EnqueuedMutation;
   renameSection: (deckId: string, sectionId: string, name: string, options?: WriteCallbacks) => boolean;
   createListWithCards: (name: string, operationId: string, cards: NewCard[]) => Promise<CreatedList | null>;
   deleteSection: (deckId: string, sectionId: string) => Promise<boolean>;
@@ -243,11 +238,10 @@ export function useRoomStore(roomCode: string): RoomStore {
     });
   }, [repository, isReady, write, aliases]);
 
-  const saveAnswerMastery = useCallback((
+  const saveHides = useCallback((
     deckId: string,
     cardId: string,
-    answerMastery: boolean[],
-    answerSchedule: Array<AnswerSchedule | null> | undefined,
+    hides: Hide[],
     options?: WriteCallbacks,
   ): EnqueuedMutation => {
     if (!repository || !isReady) return rejectedMutation();
@@ -258,16 +252,16 @@ export function useRoomStore(roomCode: string): RoomStore {
         if (!confirmed(deckId).cards.some((card) => card.id === resolvedCardId)) {
           throw new Error('Confirmed card id is unavailable');
         }
-        await repository.setCardAnswerMastery(deckId, resolvedCardId, answerMastery, answerSchedule);
+        await repository.setCardHides(deckId, resolvedCardId, hides);
         return resolvedCardId;
       },
       optimistic: (entry) => ({
         ...entry,
-        cards: applyAnswerMastery(entry.cards, cardId, answerMastery, answerSchedule),
+        cards: applyHides(entry.cards, cardId, hides),
       }),
       confirm: (entry, resolvedCardId) => withCards(
         entry,
-        applyAnswerMastery(entry.cards, resolvedCardId, answerMastery, answerSchedule),
+        applyHides(entry.cards, resolvedCardId, hides),
       ),
       afterLatestCommit: () => aliases.clearDeck(deckId),
       onRejected: options?.onRejected,
@@ -413,7 +407,7 @@ export function useRoomStore(roomCode: string): RoomStore {
     hasPendingCardWrites,
     hasPendingWrites,
     saveSectionCards,
-    saveAnswerMastery,
+    saveHides,
     renameSection,
     createListWithCards,
     deleteSection,

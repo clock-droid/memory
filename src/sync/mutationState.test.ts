@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CardIdAliases, applyAnswerMastery, replaceSectionCards } from './mutationState';
+import { CardIdAliases, applyHides, replaceSectionCards } from './mutationState';
 import type { Card } from '../domain/types';
 
 function card(id: string, sectionId = 's1'): Card {
@@ -24,9 +24,15 @@ describe('mutation state helpers', () => {
     ).map((item) => item.id)).toEqual(['keep', 'saved']);
   });
 
-  it('applies per-hide mastery while preserving unrelated cards', () => {
-    const result = applyAnswerMastery([card('c1'), card('c2')], 'c1', [true]);
-    expect(result[0]).toMatchObject({ id: 'c1', answerMastery: [true], mastered: true, starred: false });
+  it('projects judged hides onto the stored arrays while preserving unrelated cards', () => {
+    const schedule = { due: 9, stability: 2, difficulty: 5, reps: 1, lapses: 0, state: 2, lastReview: 1 };
+    const judged = [{ index: 0, text: '답', known: true, schedule, dueAt: schedule.due }];
+
+    const result = applyHides([card('c1'), card('c2')], 'c1', judged);
+
+    expect(result[0]).toMatchObject({
+      id: 'c1', answerMastery: [true], answerSchedule: [schedule], mastered: true, starred: false,
+    });
     expect(result[1]).toEqual(card('c2'));
   });
 

@@ -12,6 +12,7 @@ import {
   setDoc,
   updateDoc,
 } from 'firebase/firestore';
+import { hideMastery, hideSchedules } from '../domain/hides';
 import type { Card, Deck, NewCard, Section } from '../domain/types';
 import type { Repository } from './repository';
 
@@ -165,11 +166,12 @@ export function createFirebaseRepository(roomCode: string): Repository | null {
         updatedAt: Date.now(),
       });
     },
-    async setCardAnswerMastery(deckId, cardId, answerMastery, answerSchedule) {
+    async setCardHides(deckId, cardId, hides) {
+      const answerMastery = hideMastery(hides);
       const mastered = answerMastery.length > 0 && answerMastery.every(Boolean);
       await updateDoc(doc(db, 'rooms', roomCode, 'decks', deckId, 'cards', cardId), {
         answerMastery,
-        ...(answerSchedule ? { answerSchedule } : {}),
+        answerSchedule: hideSchedules(hides),
         mastered,
         ...(mastered ? { starred: false } : {}),
         updatedAt: Date.now(),

@@ -1,4 +1,5 @@
-import type { AnswerSchedule, Card, Deck, NewCard, Section } from '../domain/types';
+import type { Hide } from '../domain/hides';
+import type { Card, Deck, NewCard, Section } from '../domain/types';
 
 /**
  * The port every backend implements. The room store talks only to this, so a
@@ -19,10 +20,5 @@ export type Repository = {
   deleteSection: (deckId: string, sectionId: string) => Promise<void>;
   setSectionContent: (deckId: string, sectionId: string, sourceText: string, cards: NewCard[], operationId?: string) => Promise<Card[]>;
   toggleCardStar: (deckId: string, cardId: string, starred: boolean) => Promise<void>;
-  setCardAnswerMastery: (
-    deckId: string,
-    cardId: string,
-    answerMastery: boolean[],
-    answerSchedule?: Array<AnswerSchedule | null>,
-  ) => Promise<void>;
+  setCardHides: (deckId: string, cardId: string, hides: Hide[]) => Promise<void>;
 };

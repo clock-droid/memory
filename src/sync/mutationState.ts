@@ -1,4 +1,6 @@
-import type { AnswerSchedule, Card, Section } from '../domain/types';
+import { hideMastery, hideSchedules } from '../domain/hides';
+import type { Hide } from '../domain/hides';
+import type { Card, Section } from '../domain/types';
 
 export function replaceSectionCards(cards: Card[], sectionId: string, replacement: Card[]) {
   return [
@@ -7,18 +9,14 @@ export function replaceSectionCards(cards: Card[], sectionId: string, replacemen
   ];
 }
 
-export function applyAnswerMastery(
-  cards: Card[],
-  cardId: string,
-  answerMastery: boolean[],
-  answerSchedule?: Array<AnswerSchedule | null>,
-) {
+export function applyHides(cards: Card[], cardId: string, hides: Hide[]) {
+  const answerMastery = hideMastery(hides);
   const mastered = answerMastery.length > 0 && answerMastery.every(Boolean);
   return cards.map((card) => card.id === cardId
     ? {
         ...card,
         answerMastery,
-        ...(answerSchedule ? { answerSchedule } : {}),
+        answerSchedule: hideSchedules(hides),
         mastered,
         starred: mastered ? false : card.starred,
       }

@@ -55,6 +55,11 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+/** One hide in the shape the repository projects onto the wire. */
+function hide(known: boolean) {
+  return { index: 0, text: '답', known, schedule: null, dueAt: 0 };
+}
+
 describe('createServerRepository errors', () => {
   it('turns a network failure into a customer-safe Korean message', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
@@ -418,6 +423,32 @@ describe('createServerRepository errors', () => {
     unsubscribe();
   });
 
+  it('always sends both per-hide arrays, so a schedule can never be dropped', async () => {
+    vi.useFakeTimers();
+    hidePage();
+    const stored = {
+      id: 'card-1', sectionId: 'section-1', sourceText: '가림별 학습', answers: ['가림'],
+      answerMastery: [false], starred: false, revision: 3, createdAt: 1, updatedAt: 1,
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response(200, [stored]))
+      .mockResolvedValueOnce(response(200, { revision: 4 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const repository = createServerRepository('test-room');
+    if (!repository) throw new Error('repository was not created');
+    const unsubscribe = repository.subscribeCards('deck-1', () => {});
+    await flushMicrotasks();
+
+    const schedule = { due: 9, stability: 2, difficulty: 5, reps: 1, lapses: 0, state: 2, lastReview: 1 };
+    await repository.setCardHides('deck-1', 'card-1', [
+      { index: 0, text: '가림', known: true, schedule, dueAt: schedule.due },
+    ]);
+
+    const body = JSON.parse(String(fetchMock.mock.calls[1][1]?.body));
+    expect(body).toMatchObject({ answerMastery: [true], answerSchedule: [schedule] });
+    unsubscribe();
+  });
+
   it('sends and advances the latest card revision on per-hide mastery writes', async () => {
     vi.useFakeTimers();
     hidePage();
@@ -442,8 +473,8 @@ describe('createServerRepository errors', () => {
     const unsubscribe = repository.subscribeCards('deck-1', () => {});
     await flushMicrotasks();
 
-    await repository.setCardAnswerMastery('deck-1', 'card-1', [true]);
-    await repository.setCardAnswerMastery('deck-1', 'card-1', [false]);
+    await repository.setCardHides('deck-1', 'card-1', [hide(true)]);
+    await repository.setCardHides('deck-1', 'card-1', [hide(false)]);
 
     const firstWrite = JSON.parse(String(fetchMock.mock.calls[1][1]?.body));
     const secondWrite = JSON.parse(String(fetchMock.mock.calls[2][1]?.body));
@@ -477,7 +508,7 @@ describe('createServerRepository errors', () => {
     const unsubscribeCards = repository.subscribeCards('deck-1', () => {});
     await flushMicrotasks();
 
-    await repository.setCardAnswerMastery('deck-1', 'card-1', [true]);
+    await repository.setCardHides('deck-1', 'card-1', [hide(true)]);
     await repository.setSectionContent('deck-1', 'section-1', '질문:답', [{
       type: 'pair', prompt: '질문', answers: ['답'], rawText: '질문:답', answerMastery: [true],
     }]);

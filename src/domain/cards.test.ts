@@ -10,8 +10,7 @@ import {
   masterySummary,
   qaToNewCard,
   reconcileStudyTargets,
-  remapAnswerMastery,
-  remapAnswerSchedule,
+  remapHides,
   resolveEditedCardId,
 } from './cards';
 
@@ -121,41 +120,38 @@ describe('cardNeedsRepair', () => {
   });
 });
 
-describe('remapAnswerMastery', () => {
-  it('keeps mastery for unchanged answers and drops it for changed ones', () => {
-    const c = card({ type: 'pair', prompt: 'Q', answers: ['a', 'b'], answerMastery: [true, true] });
-    expect(remapAnswerMastery(c, ['a', 'X'])).toEqual([true, false]);
-  });
-
-  it('drops mastery for reordered answers (compares by same index, not membership)', () => {
-    const c = card({ type: 'pair', prompt: 'Q', answers: ['a', 'b'], answerMastery: [true, true] });
-    expect(remapAnswerMastery(c, ['b', 'a'])).toEqual([false, false]);
-  });
-});
-
-describe('remapAnswerSchedule', () => {
+describe('remapHides', () => {
   const entry = (due: number): AnswerSchedule =>
     ({ due, stability: 2, difficulty: 5, reps: 1, lapses: 0, state: 2, lastReview: due - 1000 });
 
-  it('keeps the schedule for unchanged answers and restarts changed ones', () => {
-    const c = card({
-      type: 'pair', prompt: 'Q', answers: ['a', 'b'],
-      answerSchedule: [entry(100), entry(200)],
-    });
-    expect(remapAnswerSchedule(c, ['a', 'X'])).toEqual([entry(100), null]);
+  const edited = card({
+    type: 'pair', prompt: 'Q', answers: ['a', 'b'],
+    answerMastery: [true, true], answerSchedule: [entry(100), entry(200)],
   });
 
-  it('restarts every hide when answers are reordered', () => {
-    const c = card({
-      type: 'pair', prompt: 'Q', answers: ['a', 'b'],
-      answerSchedule: [entry(100), entry(200)],
-    });
-    expect(remapAnswerSchedule(c, ['b', 'a'])).toEqual([null, null]);
+  it('keeps the judgment and the schedule of a hide whose text is unchanged', () => {
+    expect(remapHides(edited, ['a', 'X'])).toMatchObject([
+      { index: 0, text: 'a', known: true, schedule: entry(100) },
+      { index: 1, text: 'X', known: false, schedule: null },
+    ]);
   });
 
-  it('pads with nulls when a card gains a hide', () => {
-    const c = card({ type: 'pair', prompt: 'Q', answers: ['a'], answerSchedule: [entry(100)] });
-    expect(remapAnswerSchedule(c, ['a', 'new'])).toEqual([entry(100), null]);
+  it('restarts every hide when answers are reordered (compares by position, not membership)', () => {
+    expect(remapHides(edited, ['b', 'a'])).toMatchObject([
+      { text: 'b', known: false, schedule: null },
+      { text: 'a', known: false, schedule: null },
+    ]);
+  });
+
+  it('adds an unrated hide when a card gains one', () => {
+    const grown = card({
+      type: 'pair', prompt: 'Q', answers: ['a'],
+      answerMastery: [true], answerSchedule: [entry(100)],
+    });
+    expect(remapHides(grown, ['a', 'new'])).toMatchObject([
+      { text: 'a', known: true, schedule: entry(100) },
+      { text: 'new', known: false, schedule: null },
+    ]);
   });
 });
 
@@ -237,15 +233,31 @@ describe('qaToNewCard', () => {
     expect(qaToNewCard('사과', ['apple'])).toMatchObject({ type: 'pair', rawText: '사과: apple' });
   });
 
-  it('sets mastered only when every answer is mastered', () => {
-    expect(qaToNewCard('Q', ['a', 'b'], [true, true]).mastered).toBe(true);
-    expect(qaToNewCard('Q', ['a', 'b'], [true, false]).mastered).toBe(false);
+  it('leaves every hide unrated when none are carried over', () => {
+    expect(qaToNewCard('Q', ['a', 'b'])).toMatchObject({
+      answerMastery: [false, false],
+      answerSchedule: [null, null],
+      mastered: false,
+    });
   });
 
-  it('defaults every hide to an unscheduled slot and keeps a supplied schedule aligned', () => {
+  it('projects the carried hides onto the stored arrays', () => {
     const entry: AnswerSchedule = { due: 5, stability: 2, difficulty: 5, reps: 1, lapses: 0, state: 2, lastReview: 1 };
-    expect(qaToNewCard('Q', ['a', 'b']).answerSchedule).toEqual([null, null]);
-    expect(qaToNewCard('Q', ['a', 'b'], [true, false], [entry]).answerSchedule).toEqual([entry, null]);
+    const carried = [
+      { index: 0, text: 'a', known: true, schedule: entry, dueAt: entry.due },
+      { index: 1, text: 'b', known: false, schedule: null, dueAt: 0 },
+    ];
+    expect(qaToNewCard('Q', ['a', 'b'], carried)).toMatchObject({
+      answerMastery: [true, false],
+      answerSchedule: [entry, null],
+      mastered: false,
+    });
+  });
+
+  it('sets mastered only when every carried hide is known', () => {
+    const known = (text: string, index: number) =>
+      ({ index, text, known: true, schedule: null, dueAt: 0 });
+    expect(qaToNewCard('Q', ['a', 'b'], ['a', 'b'].map(known)).mastered).toBe(true);
   });
 });
 

@@ -1,7 +1,7 @@
 import { useCallback, useRef } from 'react';
 import type { Dispatch } from 'react';
 import type { ProtoList } from '../domain/cards';
-import { hideMastery, hideSchedules, rateHides } from '../domain/hides';
+import { rateHides } from '../domain/hides';
 import type { Patch } from '../state/patchState';
 import type { RouteState, SessionState } from '../state/uiSlices';
 import type { SessionRun } from '../state/useRoomUi';
@@ -82,8 +82,8 @@ export function useStudySession({
     const previousRetry = [...retry];
     const judged = rateHides(card.hides, target.hideIndexes, new Set(retry), Date.now());
 
-    const save = (hides: typeof judged) => store.saveAnswerMastery(
-      activeList.deckId, card.id, hideMastery(hides), hideSchedules(hides),
+    const save = (hides: typeof judged) => store.saveHides(
+      activeList.deckId, card.id, hides,
       { onFailure: () => toast('학습 상태를 저장하지 못했어요. 연결을 복구해 주세요') },
     );
 
