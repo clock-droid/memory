@@ -1,5 +1,16 @@
 export type CardType = 'pair' | 'cloze' | 'group';
 
+/** Serialized FSRS memory state for one hide. Timestamps are ms epoch. */
+export type AnswerSchedule = {
+  due: number;
+  stability: number;
+  difficulty: number;
+  reps: number;
+  lapses: number;
+  state: number;
+  lastReview: number;
+};
+
 export type Deck = {
   id: string;
   name: string;
@@ -33,6 +44,8 @@ export type Card = {
   needsRepair?: boolean;
   starred?: boolean;
   answerMastery?: boolean[];
+  /** Per-hide FSRS state, parallel to answers. Null = never rated. */
+  answerSchedule?: Array<AnswerSchedule | null>;
   mastered?: boolean;
   createdAt: number;
   updatedAt: number;
@@ -73,5 +86,10 @@ export type Repository = {
   deleteSection: (deckId: string, sectionId: string) => Promise<void>;
   setSectionContent: (deckId: string, sectionId: string, sourceText: string, cards: NewCard[], operationId?: string) => Promise<Card[]>;
   toggleCardStar: (deckId: string, cardId: string, starred: boolean) => Promise<void>;
-  setCardAnswerMastery: (deckId: string, cardId: string, answerMastery: boolean[]) => Promise<void>;
+  setCardAnswerMastery: (
+    deckId: string,
+    cardId: string,
+    answerMastery: boolean[],
+    answerSchedule?: Array<AnswerSchedule | null>,
+  ) => Promise<void>;
 };

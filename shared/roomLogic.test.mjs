@@ -619,3 +619,112 @@ describe('room content integrity', () => {
     });
   });
 });
+
+describe('per-hide schedule', () => {
+  const scheduleEntry = (due) => ({
+    due, stability: 2.31, difficulty: 2.12, reps: 1, lapses: 0, state: 2, lastReview: due - 86400000,
+  });
+
+  function roomWithPairCard() {
+    const room = roomWithSection();
+    room.cardsByDeck['deck-1'] = [{
+      id: 'card-1', sectionId: 'section-1', type: 'pair', prompt: '질문', answers: ['첫째', '둘째'],
+      rawText: '질문:첫째,둘째', answerMastery: [false, false], revision: 0, createdAt: 1, updatedAt: 1,
+    }];
+    return room;
+  }
+
+  it('persists a schedule patch alongside mastery and strips unknown entry fields', () => {
+    const room = roomWithPairCard();
+    const patch = request(
+      room,
+      'PATCH',
+      ['decks', 'deck-1', 'cards', 'card-1'],
+      {
+        answerMastery: [true, false],
+        answerSchedule: [{ ...scheduleEntry(2000), injected: 'nope' }, null],
+        expectedRevision: 0,
+      },
+    );
+
+    expect(patch).toMatchObject({ status: 200, body: { revision: 1 }, write: true });
+    expect(room.cardsByDeck['deck-1'][0].answerSchedule).toEqual([scheduleEntry(2000), null]);
+    expect(room.cardsByDeck['deck-1'][0].answerSchedule[0]).not.toHaveProperty('injected');
+  });
+
+  it.each([
+    ['length mismatch', [scheduleEntry(2000)]],
+    ['non-numeric field', [{ ...scheduleEntry(2000), due: 'tomorrow' }, null]],
+    ['missing field', [{ due: 2000 }, null]],
+    ['non-object entry', ['soon', null]],
+  ])('rejects a malformed schedule patch (%s) without changing the card', (_label, answerSchedule) => {
+    const room = roomWithPairCard();
+    const invalid = request(
+      room,
+      'PATCH',
+      ['decks', 'deck-1', 'cards', 'card-1'],
+      { answerMastery: [true, false], answerSchedule, expectedRevision: 0 },
+    );
+
+    expect(invalid).toMatchObject({ status: 400, write: false });
+    expect(room.cardsByDeck['deck-1'][0]).toMatchObject({ answerMastery: [false, false], revision: 0 });
+    expect(room.cardsByDeck['deck-1'][0].answerSchedule).toBeUndefined();
+  });
+
+  it('keeps a sanitized schedule through a whole-section rewrite', () => {
+    const room = roomWithSection();
+    const save = request(
+      room,
+      'PUT',
+      ['decks', 'deck-1', 'sections', 'section-1', 'content'],
+      {
+        sourceText: '질문:첫째,둘째',
+        cards: [{
+          type: 'pair', prompt: '질문', answers: ['첫째', '둘째'], rawText: '질문:첫째,둘째',
+          answerMastery: [true, false],
+          answerSchedule: [{ ...scheduleEntry(3000), extra: true }, null],
+          mastered: false,
+        }],
+        expectedRevision: 0,
+      },
+    );
+
+    expect(save).toMatchObject({ status: 200, write: true });
+    expect(room.cardsByDeck['deck-1'][0].answerSchedule).toEqual([scheduleEntry(3000), null]);
+  });
+
+  it('rejects a rewrite whose schedule length disagrees with the answers', () => {
+    const room = roomWithSection();
+    const save = request(
+      room,
+      'PUT',
+      ['decks', 'deck-1', 'sections', 'section-1', 'content'],
+      {
+        sourceText: '질문:첫째,둘째',
+        cards: [{
+          type: 'pair', prompt: '질문', answers: ['첫째', '둘째'], rawText: '질문:첫째,둘째',
+          answerMastery: [true, false],
+          answerSchedule: [null],
+          mastered: false,
+        }],
+        expectedRevision: 0,
+      },
+    );
+
+    expect(save).toMatchObject({ status: 400, write: false });
+    expect(room.cardsByDeck['deck-1']).toEqual([]);
+  });
+
+  it('clears the schedule when a card is quarantined for repair', () => {
+    const room = roomWithSection();
+    room.cardsByDeck['deck-1'] = [{
+      id: 'card-1', sectionId: 'section-1', type: 'pair', prompt: '질문', answers: [''],
+      rawText: '질문:', answerMastery: [true], answerSchedule: [scheduleEntry(2000)],
+      revision: 0, createdAt: 1, updatedAt: 1,
+    }];
+
+    ensureRoom(room);
+
+    expect(room.cardsByDeck['deck-1'][0]).toMatchObject({ needsRepair: true, answerMastery: [], answerSchedule: [] });
+  });
+});

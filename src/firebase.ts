@@ -164,10 +164,11 @@ export function createFirebaseRepository(roomCode: string): Repository | null {
         updatedAt: Date.now(),
       });
     },
-    async setCardAnswerMastery(deckId, cardId, answerMastery) {
+    async setCardAnswerMastery(deckId, cardId, answerMastery, answerSchedule) {
       const mastered = answerMastery.length > 0 && answerMastery.every(Boolean);
       await updateDoc(doc(db, 'rooms', roomCode, 'decks', deckId, 'cards', cardId), {
         answerMastery,
+        ...(answerSchedule ? { answerSchedule } : {}),
         mastered,
         ...(mastered ? { starred: false } : {}),
         updatedAt: Date.now(),

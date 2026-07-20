@@ -2,6 +2,8 @@ import type { Row, Token } from './tokens';
 
 export type View = 'home' | 'deck' | 'study';
 export type StudyTarget = { cardId: string; answerIndexes: number[] };
+/** learn: unknown hides · review: everything again · checkup: known hides that came due. */
+export type SessionMode = 'learn' | 'review' | 'checkup';
 
 export type UIState = {
   view: View;
@@ -14,7 +16,7 @@ export type UIState = {
   sessionDone: number;
   revealedIdx: number[];
   retryAnswerIdx: number[];
-  review: boolean;
+  sessionMode: SessionMode;
   openRowId: string | null;
   rowDrag: { id: string; x: number; base: number } | null;
   reorder: { id: string; dy: number; overId?: string | null } | null;
@@ -43,7 +45,7 @@ export type UIState = {
 
 export const initialUI: UIState = {
   view: 'home', activeDeckId: null, activeSectionId: null, shuffle: false, filter: 'all',
-  queue: [], sessionTotal: 0, sessionDone: 0, revealedIdx: [], retryAnswerIdx: [], review: false,
+  queue: [], sessionTotal: 0, sessionDone: 0, revealedIdx: [], retryAnswerIdx: [], sessionMode: 'learn',
   openRowId: null, rowDrag: null, reorder: null, sel: null,
   slotOpen: false, pasteText: '', pasteMode: 'auto', sheetRows: [], addOperationId: '',
   editSheetOpen: false, editIdx: null, editCardId: null, editSourceSignature: '', editMode: 'qa', editSingleAnswer: false, editQ: '', editA: '', editText: '', editTokens: [], editInitialSignature: '',

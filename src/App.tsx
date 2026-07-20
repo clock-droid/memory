@@ -10,11 +10,12 @@ import type { EnqueuedMutation } from './mutationQueue';
 import { CardIdAliases, applyAnswerMastery, applySectionName, replaceSectionCards } from './mutationState';
 import { cardToTokens, editSignature, tokensToCard, tokensToText } from './tokens';
 import type { Token } from './tokens';
-import { cardNeedsRepair, deriveQA, emptyDeckCache, keepCard, normalizeAnswerMastery, protoCardSourceSignature, qaToNewCard, reconcileStudyTargets, remapAnswerMastery, resolveEditedCardId } from './cards';
+import { cardNeedsRepair, deriveQA, emptyDeckCache, keepCard, normalizeAnswerMastery, protoCardSourceSignature, qaToNewCard, reconcileStudyTargets, remapAnswerMastery, remapAnswerSchedule, resolveEditedCardId } from './cards';
+import { answerDueAt, dueAnswerIndexes, normalizeAnswerSchedule, rateAnswer } from './answerSchedule';
 import type { DeckCacheEntry, OptimisticNewCard, ProtoCard, ProtoList } from './cards';
 import { initialUI, uiReducer } from './uiState';
-import type { StudyTarget, UIState } from './uiState';
-import type { Card, Deck, NewCard, Repository, Section } from './types';
+import type { SessionMode, StudyTarget, UIState } from './uiState';
+import type { AnswerSchedule, Card, Deck, NewCard, Repository, Section } from './types';
 import { ContinuousAddView } from './views/ContinuousAddView';
 import { DeckView } from './views/DeckView';
 import { EditSheet } from './views/EditSheet';
@@ -335,11 +336,13 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
           q,
           a,
           answerMastery,
+          answerSchedule: needsRepair ? [] : normalizeAnswerSchedule(c, a.length),
           knownCount,
           remainingCount: needsRepair ? 0 : a.length - knownCount,
           memorized: !needsRepair && a.length > 0 && knownCount === a.length,
           needsRepair,
           isGroup: c.type === 'group',
+          updatedAt: c.updatedAt,
           source: c,
         };
       };
@@ -465,7 +468,12 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
     return queued;
   }, [repository, syncHealth.status, mutationQueue, confirmCards, restoreConfirmedCards, markSyncFailure, toast]);
 
-  const setAnswerMastery = useCallback((deckId: string, cardId: string, answerMastery: boolean[]) => {
+  const setAnswerMastery = useCallback((
+    deckId: string,
+    cardId: string,
+    answerMastery: boolean[],
+    answerSchedule?: Array<AnswerSchedule | null>,
+  ) => {
     if (!repository || syncHealth.status !== 'ready') return rejectedMutation();
     const resourceKey = `cards:${deckId}`;
     const queued = mutationQueue.enqueue(
@@ -476,13 +484,13 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
         if (!confirmed?.cards.some((card) => card.id === resolvedCardId)) {
           throw new Error('Confirmed card id is unavailable');
         }
-        await repository.setCardAnswerMastery(deckId, resolvedCardId, answerMastery);
+        await repository.setCardAnswerMastery(deckId, resolvedCardId, answerMastery, answerSchedule);
         return resolvedCardId;
       },
       {
         onSuccess: (resolvedCardId, context) => {
           const confirmed = confirmedDeckDataByIdRef.current[deckId] ?? emptyDeckCache();
-          const nextCards = applyAnswerMastery(confirmed.cards, resolvedCardId, answerMastery);
+          const nextCards = applyAnswerMastery(confirmed.cards, resolvedCardId, answerMastery, answerSchedule);
           confirmCards(deckId, nextCards);
           if (!context.isLatest) return;
           setDeckDataById((current) => {
@@ -506,7 +514,7 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
         ...cur,
         [deckId]: {
           ...prev,
-          cards: applyAnswerMastery(prev.cards, cardId, answerMastery),
+          cards: applyAnswerMastery(prev.cards, cardId, answerMastery, answerSchedule),
         },
       };
     });
@@ -729,7 +737,9 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
       return false;
     }
     const rebuilt = stored.map((c, i) =>
-      i === targetIndex ? { ...qaToNewCard(q, a, remapAnswerMastery(c, a)), optimisticId: c.id } : keepCard(c),
+      i === targetIndex
+        ? { ...qaToNewCard(q, a, remapAnswerMastery(c, a), remapAnswerSchedule(c, a)), optimisticId: c.id }
+        : keepCard(c),
     );
     const queued = commitSection(activeList.deckId, activeList.id, rebuilt);
     return queued.accepted ? queued.done : false;
@@ -753,9 +763,9 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
       toast('답이 없는 카드를 먼저 수정해 주세요');
       return;
     }
-    let review = false;
-    if (cards.length === 0) { cards = eligibleCards; review = true; }
-    else if (cards.every((card) => card.remainingCount === 0)) review = true;
+    let sessionMode: SessionMode = 'learn';
+    if (cards.length === 0) { cards = eligibleCards; sessionMode = 'review'; }
+    else if (cards.every((card) => card.remainingCount === 0)) sessionMode = 'review';
     let queue: StudyTarget[] = cards.map((card) => {
       const remaining = card.answerMastery.flatMap((known, i) => (known ? [] : [i]));
       return {
@@ -770,9 +780,43 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
     const sessionTotal = queue.reduce((total, target) => total + target.answerIndexes.length, 0);
     dispatch({
       view: 'study', activeDeckId: deckId, activeSectionId: sectionId, queue, sessionTotal, sessionDone: 0,
-      revealedIdx: [], retryAnswerIdx: [], openRowId: null, review,
+      revealedIdx: [], retryAnswerIdx: [], openRowId: null, sessionMode,
     });
   }, [lists, weakFirst, state.shuffle, mutationQueue, toast]);
+
+  // Checkup sessions re-hide known hides whose FSRS due date has passed, so a
+  // "known" judgment is re-earned instead of lasting forever.
+  const startCheckup = useCallback((deckId: string, sectionId: string) => {
+    if (mutationQueue.hasPending(`cards:${deckId}`)) {
+      toast('카드 저장이 끝난 뒤 점검을 시작해 주세요');
+      return;
+    }
+    const list = lists.find((l) => l.deckId === deckId && l.id === sectionId);
+    if (!list) return;
+    const now = Date.now();
+    const dueAtOf = (card: ProtoCard, answerIndexes: number[]) =>
+      Math.min(...answerIndexes.map((index) => answerDueAt(card.answerSchedule[index], card.updatedAt)));
+    const entries = list.cards
+      .filter((card) => !card.needsRepair)
+      .map((card) => ({ card, answerIndexes: dueAnswerIndexes(card, now) }))
+      .filter((entry) => entry.answerIndexes.length > 0);
+    if (entries.length === 0) {
+      toast('지금 점검할 가림이 없어요');
+      return;
+    }
+    // Most-overdue card first: the longest-unchecked memories are most at risk.
+    entries.sort((x, y) => dueAtOf(x.card, x.answerIndexes) - dueAtOf(y.card, y.answerIndexes));
+    let queue: StudyTarget[] = entries.map(({ card, answerIndexes }) => ({ cardId: card.id, answerIndexes }));
+    if (state.shuffle) {
+      queue = [...queue];
+      for (let i = queue.length - 1; i > 0; i -= 1) { const j = Math.floor(Math.random() * (i + 1)); [queue[i], queue[j]] = [queue[j], queue[i]]; }
+    }
+    const sessionTotal = queue.reduce((total, target) => total + target.answerIndexes.length, 0);
+    dispatch({
+      view: 'study', activeDeckId: deckId, activeSectionId: sectionId, queue, sessionTotal, sessionDone: 0,
+      revealedIdx: [], retryAnswerIdx: [], openRowId: null, sessionMode: 'checkup',
+    });
+  }, [lists, state.shuffle, mutationQueue, toast]);
 
   const completeStudyTarget = useCallback(async () => {
     const list = activeList;
@@ -787,9 +831,16 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
     const retryAnswerIdx = [...state.retryAnswerIdx];
     const previousMastery = [...card.answerMastery];
     const nextMastery = [...card.answerMastery];
-    target.answerIndexes.forEach((answerIndex) => { nextMastery[answerIndex] = !retry.has(answerIndex); });
+    const previousSchedule = [...card.answerSchedule];
+    const nextSchedule = [...card.answerSchedule];
+    const judgedAt = Date.now();
+    target.answerIndexes.forEach((answerIndex) => {
+      const knew = !retry.has(answerIndex);
+      nextMastery[answerIndex] = knew;
+      nextSchedule[answerIndex] = rateAnswer(card.answerSchedule[answerIndex], knew, judgedAt);
+    });
     try {
-      const queued = setAnswerMastery(list.deckId, card.id, nextMastery);
+      const queued = setAnswerMastery(list.deckId, card.id, nextMastery, nextSchedule);
       if (!queued.accepted || !(await queued.done)) return;
       dispatch((st) => ({
         queue: st.queue[0]?.cardId === target.cardId ? st.queue.slice(1) : st.queue,
@@ -800,7 +851,7 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
         retryAnswerIdx: [],
       }));
       toast('판정을 저장했어요', () => { void (async () => {
-        const undo = setAnswerMastery(list.deckId, card.id, previousMastery);
+        const undo = setAnswerMastery(list.deckId, card.id, previousMastery, previousSchedule);
         if (!undo.accepted || !(await undo.done)) return;
         dispatch((st) => ({
           view: 'study',
@@ -851,6 +902,7 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
           onMove={moveCard}
           onDeleteList={deleteList}
           onStart={(ids) => startStudy(activeList.deckId, activeList.id, ids)}
+          onStartCheckup={() => startCheckup(activeList.deckId, activeList.id)}
           onOpenAdd={() => {
             lastAddedSnapshotRef.current = null;
             dispatch({ slotOpen: true, pasteText: '', pasteMode: 'auto', sheetRows: [], addOperationId: newOperationId(), openRowId: null });

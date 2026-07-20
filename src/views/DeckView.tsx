@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
+import { RotateCcw } from 'lucide-react';
 import { ACCENT, ACCENT_DEEP } from '../constants';
 import { masterySummary } from '../cards';
+import { dueAnswerIndexes } from '../answerSchedule';
 import type { ProtoCard, ProtoList } from '../cards';
 import type { Patch, UIState } from '../uiState';
 import { usePcHints } from '../usePcHints';
@@ -13,7 +15,7 @@ export function DeckView(props: {
   onHome: () => void; onRename: (name: string) => void;
   onDelete: (card: ProtoCard) => void; onEdit: (card: ProtoCard) => void; onMove: (draggedId: string, targetId: string) => void;
   onDeleteList: () => void;
-  onStart: (ids: string[]) => void; onOpenAdd: () => void; toast: (msg: string) => void;
+  onStart: (ids: string[]) => void; onStartCheckup: () => void; onOpenAdd: () => void; toast: (msg: string) => void;
 }) {
   const { list, state, dispatch, weakFirst, lpTimer, rowStart } = props;
   const isPc = usePcHints();
@@ -41,6 +43,13 @@ export function DeckView(props: {
   const deckPct = mastery.total ? Math.round((mastery.known / mastery.total) * 100) : 0;
   const cntUnknown = cardsAll.filter((c) => c.remainingCount > 0).length;
   const cntDone = cardsAll.filter((c) => c.memorized).length;
+  // Known hides whose FSRS check date has passed — recomputed per render so the
+  // count follows judgments without a timer.
+  const checkupNow = Date.now();
+  const checkupDueCount = cardsAll.reduce(
+    (total, c) => c.needsRepair ? total : total + dueAnswerIndexes(c, checkupNow).length,
+    0,
+  );
 
   useEffect(() => {
     if ((state.filter === 'unknown' && cntUnknown === 0) || (state.filter === 'done' && cntDone === 0)) {
@@ -237,6 +246,24 @@ export function DeckView(props: {
         </div>
         <span style={{ fontSize: 12, fontWeight: 600, color: totalRepairCount > 0 ? '#b42318' : '#6e6e73', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{totalRepairCount > 0 ? `수정 필요 ${totalRepairCount}` : mastery.total === 0 ? '가림 없음' : `${mastery.known}/${mastery.total} 가림`}</span>
       </div>
+
+      {checkupDueCount > 0 && (
+        <div style={{ padding: '0 16px 10px' }}>
+          <button
+            type="button"
+            className="ui-button"
+            onClick={props.onStartCheckup}
+            style={{ width: '100%', minHeight: 52, padding: '10px 14px', borderRadius: 12, background: 'rgba(255,149,0,0.1)', border: '1px solid rgba(255,149,0,0.28)', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', textAlign: 'left' }}
+          >
+            <RotateCcw size={17} strokeWidth={2.4} color="#8a4d00" aria-hidden="true" style={{ flexShrink: 0 }} />
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: 'block', fontSize: 14.5, fontWeight: 700, color: '#8a4d00' }}>다시 점검할 가림 {checkupDueCount}개</span>
+              <span style={{ display: 'block', fontSize: 11.5, fontWeight: 500, color: 'rgba(138,77,0,0.75)', lineHeight: 1.4, wordBreak: 'keep-all' }}>외운 지 시간이 지나 잊었을 수 있어요</span>
+            </span>
+            <svg width="8" height="13" viewBox="0 0 8 13" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}><path d="M1.5 1.5L6.5 6.5l-5 5" stroke="rgba(138,77,0,0.55)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </button>
+        </div>
+      )}
 
       <div style={{ margin: '0 16px 4px', display: 'flex', padding: 2, borderRadius: 9, background: 'rgba(120,120,128,0.12)' }}>
         {chips.map((chip) => {

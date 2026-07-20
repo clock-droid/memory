@@ -498,14 +498,14 @@ export function createServerRepository(roomCode: string): Repository | null {
         refreshSubscriptions(cardSubs.get(deckId));
       });
     },
-    async setCardAnswerMastery(deckId, cardId, answerMastery) {
+    async setCardAnswerMastery(deckId, cardId, answerMastery, answerSchedule) {
       return withWriteRecovery(async () => {
         await waitForRoomRefresh();
         const key = cardKey(deckId, cardId);
         const expectedRevision = cardRevisions.get(key) ?? 0;
         const result = await request<{ revision: number; sectionId?: string; sectionRevision?: number }>(roomCode, `/decks/${encodeURIComponent(deckId)}/cards/${encodeURIComponent(cardId)}`, {
           method: 'PATCH',
-          body: JSON.stringify({ answerMastery, expectedRevision }),
+          body: JSON.stringify({ answerMastery, ...(answerSchedule ? { answerSchedule } : {}), expectedRevision }),
         });
         rememberCardPatch(deckId, cardId, result);
         refreshSubscriptions(cardSubs.get(deckId));

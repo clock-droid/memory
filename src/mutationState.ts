@@ -1,4 +1,4 @@
-import type { Card, Section } from './types';
+import type { AnswerSchedule, Card, Section } from './types';
 
 export function replaceSectionCards(cards: Card[], sectionId: string, replacement: Card[]) {
   return [
@@ -7,10 +7,21 @@ export function replaceSectionCards(cards: Card[], sectionId: string, replacemen
   ];
 }
 
-export function applyAnswerMastery(cards: Card[], cardId: string, answerMastery: boolean[]) {
+export function applyAnswerMastery(
+  cards: Card[],
+  cardId: string,
+  answerMastery: boolean[],
+  answerSchedule?: Array<AnswerSchedule | null>,
+) {
   const mastered = answerMastery.length > 0 && answerMastery.every(Boolean);
   return cards.map((card) => card.id === cardId
-    ? { ...card, answerMastery, mastered, starred: mastered ? false : card.starred }
+    ? {
+        ...card,
+        answerMastery,
+        ...(answerSchedule ? { answerSchedule } : {}),
+        mastered,
+        starred: mastered ? false : card.starred,
+      }
     : card);
 }
 

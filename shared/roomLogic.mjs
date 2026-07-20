@@ -97,8 +97,31 @@ function quarantineRepairCard(card) {
     ...(repairGroup ? { type: 'pair', answers: [], groupItems: undefined } : {}),
     needsRepair: true,
     answerMastery: [],
+    answerSchedule: [],
     mastered: false,
   };
+}
+
+const ANSWER_SCHEDULE_FIELDS = ['due', 'stability', 'difficulty', 'reps', 'lapses', 'state', 'lastReview'];
+
+function isValidAnswerScheduleEntry(entry) {
+  if (entry === null) return true;
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false;
+  return ANSWER_SCHEDULE_FIELDS.every((field) => Number.isFinite(entry[field]));
+}
+
+function isValidAnswerScheduleList(value, expectedLength) {
+  return Array.isArray(value)
+    && value.length === expectedLength
+    && value.every(isValidAnswerScheduleEntry);
+}
+
+// Persist only the known numeric fields so a hand-crafted request cannot smuggle
+// arbitrary payloads into the stored room through schedule entries.
+function sanitizeAnswerSchedule(value) {
+  return value.map((entry) => entry === null
+    ? null
+    : Object.fromEntries(ANSWER_SCHEDULE_FIELDS.map((field) => [field, entry[field]])));
 }
 
 function normalizeStoredCard(card) {
@@ -148,6 +171,10 @@ function isValidCardInput(card) {
       || !card.answers.every((answer) => typeof answer === 'string')
     ) return false;
     if (!Array.isArray(card.answerMastery) || card.answerMastery.length !== 0 || card.mastered !== false) return false;
+    if (
+      Object.prototype.hasOwnProperty.call(card, 'answerSchedule')
+      && !isValidAnswerScheduleList(card.answerSchedule, 0)
+    ) return false;
     if (Object.prototype.hasOwnProperty.call(card, 'starred') && typeof card.starred !== 'boolean') return false;
     if (
       Object.prototype.hasOwnProperty.call(card, 'groupItems')
@@ -165,6 +192,10 @@ function isValidCardInput(card) {
     && (!Array.isArray(card.answerMastery)
       || card.answerMastery.length !== card.answers.length
       || !card.answerMastery.every((known) => typeof known === 'boolean'))
+  ) return false;
+  if (
+    Object.prototype.hasOwnProperty.call(card, 'answerSchedule')
+    && !isValidAnswerScheduleList(card.answerSchedule, card.answers.length)
   ) return false;
   if (Object.prototype.hasOwnProperty.call(card, 'mastered') && typeof card.mastered !== 'boolean') return false;
   if (Object.prototype.hasOwnProperty.call(card, 'starred') && typeof card.starred !== 'boolean') return false;
@@ -314,6 +345,7 @@ export function applyRoomRequest({ room, method, parts, body }) {
       const hasStarred = Object.prototype.hasOwnProperty.call(body, 'starred');
       const hasMastered = Object.prototype.hasOwnProperty.call(body, 'mastered');
       const hasAnswerMastery = Object.prototype.hasOwnProperty.call(body, 'answerMastery');
+      const hasAnswerSchedule = Object.prototype.hasOwnProperty.call(body, 'answerSchedule');
       if (!hasStarred && !hasMastered && !hasAnswerMastery) {
         return { status: 400, body: { error: 'Invalid card patch' }, write: false };
       }
@@ -327,6 +359,13 @@ export function applyRoomRequest({ room, method, parts, body }) {
               ? body.answerMastery.length !== 0
               : !Array.isArray(currentCard.answers) || body.answerMastery.length !== currentCard.answers.length)
             || !body.answerMastery.every((known) => typeof known === 'boolean')))
+        || (hasAnswerSchedule
+          && !isValidAnswerScheduleList(
+            body.answerSchedule,
+            currentCard.needsRepair === true
+              ? 0
+              : Array.isArray(currentCard.answers) ? currentCard.answers.length : -1,
+          ))
       ) {
         return { status: 400, body: { error: 'Invalid card patch' }, write: false };
       }
@@ -345,7 +384,7 @@ export function applyRoomRequest({ room, method, parts, body }) {
       }
       room.cardsByDeck[deckId] = room.cardsByDeck[deckId].map((card) =>
         card.id === parts[3]
-          ? { ...applyCardPatch(card, body, { hasStarred, hasMastered, hasAnswerMastery }), revision }
+          ? { ...applyCardPatch(card, body, { hasStarred, hasMastered, hasAnswerMastery, hasAnswerSchedule }), revision }
           : card,
       );
       return {
@@ -466,7 +505,9 @@ export function applyRoomRequest({ room, method, parts, body }) {
           : section,
       );
       const created = cards.map((card) => ({
-        ...card, sectionId, id: id('card'), revision: 0, createdAt: now, updatedAt: now,
+        ...card,
+        ...(Array.isArray(card.answerSchedule) ? { answerSchedule: sanitizeAnswerSchedule(card.answerSchedule) } : {}),
+        sectionId, id: id('card'), revision: 0, createdAt: now, updatedAt: now,
       }));
       room.cardsByDeck[deckId] = [
         ...room.cardsByDeck[deckId].filter((card) => (card.sectionId ?? 'default') !== sectionId),
@@ -485,7 +526,7 @@ export function applyRoomRequest({ room, method, parts, body }) {
   return { status: 404, body: { error: 'Not found' }, write: false };
 }
 
-function applyCardPatch(card, body, { hasStarred, hasMastered, hasAnswerMastery }) {
+function applyCardPatch(card, body, { hasStarred, hasMastered, hasAnswerMastery, hasAnswerSchedule }) {
   const answerMastery = hasAnswerMastery ? body.answerMastery.map(Boolean) : card.answerMastery;
   const masteredFromAnswers = hasAnswerMastery && answerMastery.length > 0 ? answerMastery.every(Boolean) : undefined;
   let mastered = masteredFromAnswers ?? (hasMastered ? Boolean(body.mastered) : card.mastered);
@@ -496,6 +537,7 @@ function applyCardPatch(card, body, { hasStarred, hasMastered, hasAnswerMastery 
     ...card,
     ...(hasStarred || ((hasMastered || hasAnswerMastery) && mastered) ? { starred } : {}),
     ...(hasAnswerMastery ? { answerMastery } : {}),
+    ...(hasAnswerSchedule ? { answerSchedule: sanitizeAnswerSchedule(body.answerSchedule) } : {}),
     ...(hasStarred || hasMastered || hasAnswerMastery ? { mastered } : {}),
     updatedAt: Date.now(),
   };

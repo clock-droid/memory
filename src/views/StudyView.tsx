@@ -105,7 +105,7 @@ export function StudyView(props: {
             <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#1e9e46" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-            <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.01em' }}>{state.review ? '복습 끝!' : '오늘 학습 끝!'}</div>
+            <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.01em' }}>{state.sessionMode === 'checkup' ? '점검 끝!' : state.sessionMode === 'review' ? '복습 끝!' : '오늘 학습 끝!'}</div>
             <div style={{ fontSize: 15, color: 'rgba(60,60,67,0.6)', textAlign: 'center', lineHeight: 1.5 }}>
               {list ? (remaining === 0 ? `가림 ${progress.total}개 완료` : `가림 ${state.sessionTotal}개 확인 · 다시 ${remaining}개`) : ''}
             </div>

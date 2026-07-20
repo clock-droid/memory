@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Card, CardType } from './types';
+import type { AnswerSchedule, Card, CardType } from './types';
 import {
   cardNeedsRepair,
   deriveQA,
@@ -9,6 +9,7 @@ import {
   qaToNewCard,
   reconcileStudyTargets,
   remapAnswerMastery,
+  remapAnswerSchedule,
   resolveEditedCardId,
 } from './cards';
 
@@ -146,6 +147,32 @@ describe('remapAnswerMastery', () => {
   });
 });
 
+describe('remapAnswerSchedule', () => {
+  const entry = (due: number): AnswerSchedule =>
+    ({ due, stability: 2, difficulty: 5, reps: 1, lapses: 0, state: 2, lastReview: due - 1000 });
+
+  it('keeps the schedule for unchanged answers and restarts changed ones', () => {
+    const c = card({
+      type: 'pair', prompt: 'Q', answers: ['a', 'b'],
+      answerSchedule: [entry(100), entry(200)],
+    });
+    expect(remapAnswerSchedule(c, ['a', 'X'])).toEqual([entry(100), null]);
+  });
+
+  it('restarts every hide when answers are reordered', () => {
+    const c = card({
+      type: 'pair', prompt: 'Q', answers: ['a', 'b'],
+      answerSchedule: [entry(100), entry(200)],
+    });
+    expect(remapAnswerSchedule(c, ['b', 'a'])).toEqual([null, null]);
+  });
+
+  it('pads with nulls when a card gains a hide', () => {
+    const c = card({ type: 'pair', prompt: 'Q', answers: ['a'], answerSchedule: [entry(100)] });
+    expect(remapAnswerSchedule(c, ['a', 'new'])).toEqual([entry(100), null]);
+  });
+});
+
 describe('masterySummary', () => {
   it('sums answer counts and known counts across proto cards', () => {
     const protos = [
@@ -227,6 +254,12 @@ describe('qaToNewCard', () => {
     expect(qaToNewCard('Q', ['a', 'b'], [true, true]).mastered).toBe(true);
     expect(qaToNewCard('Q', ['a', 'b'], [true, false]).mastered).toBe(false);
   });
+
+  it('defaults every hide to an unscheduled slot and keeps a supplied schedule aligned', () => {
+    const entry: AnswerSchedule = { due: 5, stability: 2, difficulty: 5, reps: 1, lapses: 0, state: 2, lastReview: 1 };
+    expect(qaToNewCard('Q', ['a', 'b']).answerSchedule).toEqual([null, null]);
+    expect(qaToNewCard('Q', ['a', 'b'], [true, false], [entry]).answerSchedule).toEqual([entry, null]);
+  });
 });
 
 describe('keepCard', () => {
@@ -238,6 +271,18 @@ describe('keepCard', () => {
   it('honors an explicit answerMastery override', () => {
     const c = card({ id: 'c1', type: 'pair', prompt: 'Q', answers: ['a', 'b'], answerMastery: [true, true] });
     expect(keepCard(c, [true, false])).toMatchObject({ answerMastery: [true, false], mastered: false });
+  });
+
+  it('carries per-hide schedules through a section rewrite and drops them when quarantined', () => {
+    const entry: AnswerSchedule = { due: 9, stability: 2, difficulty: 5, reps: 1, lapses: 0, state: 2, lastReview: 1 };
+    const scheduled = card({
+      id: 'c1', type: 'pair', prompt: 'Q', answers: ['a', 'b'],
+      answerMastery: [true, false], answerSchedule: [entry, null],
+    });
+    expect(keepCard(scheduled).answerSchedule).toEqual([entry, null]);
+
+    const broken = card({ id: 'c2', type: 'pair', prompt: 'Q', answers: [], answerSchedule: [entry] });
+    expect(keepCard(broken)).toMatchObject({ needsRepair: true, answerSchedule: [] });
   });
 
   it('migrates a legacy normal group to one semantic answer without losing mastery on a section rewrite', () => {

@@ -1,6 +1,7 @@
 import { splitCloze } from './parser';
 import { groupSemanticAnswers } from './groupCardSchema';
-import type { Card, NewCard, Section } from './types';
+import { normalizeAnswerSchedule } from './answerSchedule';
+import type { AnswerSchedule, Card, NewCard, Section } from './types';
 import type { StudyTarget } from './uiState';
 
 // ------------------------------------------------------------------ view model
@@ -9,11 +10,13 @@ export type ProtoCard = {
   q: string;
   a: string[];
   answerMastery: boolean[];
+  answerSchedule: Array<AnswerSchedule | null>;
   knownCount: number;
   remainingCount: number;
   memorized: boolean;
   needsRepair: boolean;
   isGroup: boolean;
+  updatedAt: number;
   source: Card;
 };
 
@@ -136,6 +139,14 @@ export function remapAnswerMastery(card: Card, nextAnswers: string[]): boolean[]
   return nextAnswers.map((answer, i) => previous.a[i] === answer && Boolean(previousMastery[i]));
 }
 
+// A hide whose answer text changed is a new memory item: its FSRS history no
+// longer describes what the user must recall, so it restarts unscheduled.
+export function remapAnswerSchedule(card: Card, nextAnswers: string[]): Array<AnswerSchedule | null> {
+  const previous = deriveQA(card);
+  const previousSchedule = normalizeAnswerSchedule(card, previous.a.length);
+  return nextAnswers.map((answer, i) => (previous.a[i] === answer ? previousSchedule[i] : null));
+}
+
 export function masterySummary(cards: ProtoCard[]) {
   return cards.reduce((summary, card) => ({
     total: summary.total + card.a.length,
@@ -171,7 +182,12 @@ export function reconcileStudyTargets(
   return { queue: changed ? nextQueue : queue, removedCount, currentChanged };
 }
 
-export function qaToNewCard(q: string, a: string[], answerMastery = a.map(() => false)): NewCard {
+export function qaToNewCard(
+  q: string,
+  a: string[],
+  answerMastery = a.map(() => false),
+  answerSchedule: Array<AnswerSchedule | null> = a.map(() => null),
+): NewCard {
   const isCloze = q.includes('___');
   const normalized = a.map((_, i) => Boolean(answerMastery[i]));
   return {
@@ -180,6 +196,7 @@ export function qaToNewCard(q: string, a: string[], answerMastery = a.map(() => 
     answers: a,
     rawText: isCloze ? q : `${q}: ${a.join(', ')}`,
     answerMastery: normalized,
+    answerSchedule: a.map((_, i) => answerSchedule[i] ?? null),
     mastered: normalized.length > 0 && normalized.every(Boolean),
   };
 }
@@ -202,6 +219,7 @@ function cardToNewCard(card: Card, answerMasteryOverride?: boolean[]): NewCard {
     ...(needsRepair ? { needsRepair: true } : {}),
     starred: card.starred,
     answerMastery,
+    answerSchedule: needsRepair ? [] : normalizeAnswerSchedule(card, answers.length),
     mastered: !needsRepair && answerMastery.length > 0 && answerMastery.every(Boolean),
   };
 }
