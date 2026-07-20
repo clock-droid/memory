@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Token } from './tokens';
 import {
+  applyHideSelection,
   cardToTokens,
   editSignature,
   parsePaste,
@@ -130,5 +131,35 @@ describe('parsePaste', () => {
 
   it('mode "auto" splits blank-separated units into separate rows', () => {
     expect(parsePaste('A: 1\n\nB: 2', 'auto')).toHaveLength(2);
+  });
+});
+
+describe('applyHideSelection', () => {
+  it('hides a dragged range as one hide', () => {
+    const tokens = applyHideSelection(tokenizeText('대한민국의 수도는 서울이다'), { start: 1, end: 2, wasHidden: false });
+    expect(tokens.map((t) => t.hidden)).toEqual([false, true, true]);
+    expect(tokens[1].gid).toBe(tokens[2].gid);
+  });
+
+  it('hides a single token when the selection does not move', () => {
+    const tokens = applyHideSelection(tokenizeText('수도는 서울이다'), { start: 1, end: 1, wasHidden: false });
+    expect(tokens.map((t) => t.hidden)).toEqual([false, true]);
+  });
+
+  it('clears the whole hide when released on an already hidden token', () => {
+    const hidden = applyHideSelection(tokenizeText('대한민국의 수도는 서울이다'), { start: 1, end: 2, wasHidden: false });
+    const cleared = applyHideSelection(hidden, { start: 2, end: 2, wasHidden: true });
+    expect(cleared.map((t) => t.hidden)).toEqual([false, false, false]);
+    expect(cleared.map((t) => t.gid)).toEqual([0, 0, 0]);
+  });
+
+  it('normalizes a backwards selection', () => {
+    const tokens = applyHideSelection(tokenizeText('대한민국의 수도는 서울이다'), { start: 2, end: 1, wasHidden: false });
+    expect(tokens.map((t) => t.hidden)).toEqual([false, true, true]);
+  });
+
+  it('never hides a line break token', () => {
+    const tokens = applyHideSelection(tokenizeText('가\n나'), { start: 0, end: 2, wasHidden: false });
+    expect(tokens.map((t) => [t.nl ?? false, t.hidden])).toEqual([[false, true], [true, false], [false, true]]);
   });
 });

@@ -22,6 +22,11 @@ export type EnqueuedMutation = {
   done: Promise<boolean>;
 };
 
+/** A write that never reached the queue, shaped like one that was refused. */
+export function rejectedMutation(): EnqueuedMutation {
+  return { accepted: false, version: 0, done: Promise.resolve(false) };
+}
+
 /**
  * Serializes writes that target the same subscribed resource. A failed write
  * pauses that resource and invalidates every already-queued write from the old

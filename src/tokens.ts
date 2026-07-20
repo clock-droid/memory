@@ -95,6 +95,27 @@ export function toggleTokenAt(tokens: Token[], index: number): Token[] {
   return tokens.map((token, tokenIndex) => (tokenIndex === index ? { ...token, hidden: true, gid } : token));
 }
 
+/**
+ * Applies a drag selection over tokens. Releasing on a single already-hidden
+ * token clears that whole hide; any other selection hides the range as one.
+ */
+export function applyHideSelection(
+  tokens: Token[],
+  selection: { start: number; end: number; wasHidden: boolean },
+): Token[] {
+  const lo = Math.min(selection.start, selection.end);
+  const hi = Math.max(selection.start, selection.end);
+  if (lo === hi && selection.wasHidden) {
+    const gid = tokens[lo].gid;
+    if (gid === 0) return tokens;
+    return tokens.map((token) => (token.gid === gid ? { ...token, hidden: false, gid: 0 } : token));
+  }
+  const gid = (Date.now() % 1000000) + lo;
+  return tokens.map((token, index) => (!token.nl && index >= lo && index <= hi
+    ? { ...token, hidden: true, gid }
+    : token));
+}
+
 export function editSignature(mode: 'qa' | 'tokens', q: string, a: string, tokens: Token[]) {
   if (mode === 'qa') {
     return JSON.stringify(['qa', q.trim(), a.split(',').map((answer) => answer.trim()).filter(Boolean)]);

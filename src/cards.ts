@@ -1,7 +1,7 @@
 import { splitCloze } from './parser';
 import { groupSemanticAnswers } from './groupCardSchema';
 import { normalizeAnswerSchedule } from './answerSchedule';
-import type { AnswerSchedule, Card, NewCard, Section } from './types';
+import type { AnswerSchedule, Card, Deck, NewCard, Section } from './types';
 import type { StudyTarget } from './uiState';
 
 // ------------------------------------------------------------------ view model
@@ -81,6 +81,15 @@ export function emptyDeckCache(): DeckCacheEntry {
   return { cards: [], sections: [], cardsLoaded: false, sectionsLoaded: false };
 }
 
+/** Replacing a slice also marks it loaded: the caller now holds a real snapshot. */
+export function withCards(entry: DeckCacheEntry, cards: Card[]): DeckCacheEntry {
+  return { ...entry, cards, cardsLoaded: true };
+}
+
+export function withSections(entry: DeckCacheEntry, sections: Section[]): DeckCacheEntry {
+  return { ...entry, sections, sectionsLoaded: true };
+}
+
 // stored Card -> prototype-style { q(with ___), a[] }
 function deriveGroup(card: Card): { q: string; a: string[] } {
   const items = card.groupItems ?? [];
@@ -145,6 +154,82 @@ export function remapAnswerSchedule(card: Card, nextAnswers: string[]): Array<An
   const previous = deriveQA(card);
   const previousSchedule = normalizeAnswerSchedule(card, previous.a.length);
   return nextAnswers.map((answer, i) => (previous.a[i] === answer ? previousSchedule[i] : null));
+}
+
+/** Stored card -> the hide-level view model every screen reads. */
+export function toProtoCard(card: Card): ProtoCard {
+  const needsRepair = cardNeedsRepair(card);
+  // A broken group card keeps its raw text visible so the user can repair it,
+  // but it exposes no hides and therefore no study target.
+  const { q, a } = needsRepair && card.type === 'group'
+    ? { q: card.prompt, a: card.rawText.trim() ? [card.rawText] : [] }
+    : deriveQA(card);
+  const answerMastery = needsRepair ? [] : normalizeAnswerMastery(card, a.length);
+  const knownCount = answerMastery.filter(Boolean).length;
+  return {
+    id: card.id,
+    q,
+    a,
+    answerMastery,
+    answerSchedule: needsRepair ? [] : normalizeAnswerSchedule(card, a.length),
+    knownCount,
+    remainingCount: needsRepair ? 0 : a.length - knownCount,
+    memorized: !needsRepair && a.length > 0 && knownCount === a.length,
+    needsRepair,
+    isGroup: card.type === 'group',
+    updatedAt: card.updatedAt,
+    source: card,
+  };
+}
+
+const DEFAULT_SECTION_ID = 'default';
+const sectionIdOf = (card: Card) => card.sectionId ?? DEFAULT_SECTION_ID;
+
+/**
+ * Flattens the deck/section/card cache into the flat list of screens.
+ * Cards whose section no longer exists stay reachable in a synthetic list
+ * instead of disappearing with their hide-level progress.
+ */
+export function buildLists(decks: Deck[], deckDataById: Record<string, DeckCacheEntry>): ProtoList[] {
+  const lists: ProtoList[] = [];
+  for (const deck of decks) {
+    const data = deckDataById[deck.id];
+    const sections = data?.sections ?? [];
+    const cards = data?.cards ?? [];
+    const knownSectionIds = new Set(sections.map((section) => section.id));
+    for (const section of sections) {
+      lists.push({
+        id: section.id,
+        deckId: deck.id,
+        name: !section.name || section.name === '새 목록' ? '새 암기장' : section.name,
+        synthetic: false,
+        cards: cards.filter((card) => sectionIdOf(card) === section.id).map(toProtoCard),
+      });
+    }
+    const orphans = cards.filter((card) => !knownSectionIds.has(sectionIdOf(card)));
+    const orphansBySection = new Map<string, Card[]>();
+    for (const card of orphans) {
+      const key = sectionIdOf(card);
+      const bucket = orphansBySection.get(key) ?? [];
+      bucket.push(card);
+      orphansBySection.set(key, bucket);
+    }
+    for (const [sectionId, bucket] of orphansBySection) {
+      lists.push({
+        id: sectionId,
+        deckId: deck.id,
+        name: '기본',
+        synthetic: true,
+        cards: bucket.map(toProtoCard),
+      });
+    }
+  }
+  return lists;
+}
+
+/** Most unknown hides first: the cards that need the work lead the session. */
+export function weakestFirst(cards: ProtoCard[]): ProtoCard[] {
+  return [...cards].sort((x, y) => y.remainingCount - x.remainingCount);
 }
 
 export function masterySummary(cards: ProtoCard[]) {

@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { AnswerSchedule, Card, CardType } from './types';
+import type { DeckCacheEntry } from './cards';
 import {
+  buildLists,
   cardNeedsRepair,
   deriveQA,
+  emptyDeckCache,
   keepCard,
   masterySummary,
   normalizeAnswerMastery,
@@ -350,5 +353,55 @@ describe('keepCard', () => {
     const repaired = qaToNewCard('손상된 질문', ['복구된 답']);
     expect(repaired).not.toHaveProperty('needsRepair');
     expect(repaired).toMatchObject({ answers: ['복구된 답'], answerMastery: [false], mastered: false });
+  });
+});
+
+describe('buildLists', () => {
+  const deck = { id: 'd1', name: '일반', createdAt: 0, updatedAt: 0 };
+  const section = (id: string, name: string) => ({ id, name, sourceText: '', createdAt: 0, updatedAt: 0 });
+  const cache = (partial: Partial<DeckCacheEntry>): Record<string, DeckCacheEntry> => ({
+    d1: { ...emptyDeckCache(), ...partial },
+  });
+
+  it('groups each card under the section it belongs to', () => {
+    const lists = buildLists([deck], cache({
+      sections: [section('s1', '1과'), section('s2', '2과')],
+      cards: [
+        card({ id: 'a', type: 'pair', prompt: 'Q1', answers: ['A'], sectionId: 's1' }),
+        card({ id: 'b', type: 'pair', prompt: 'Q2', answers: ['A'], sectionId: 's2' }),
+      ],
+    }));
+    expect(lists.map((list) => [list.name, list.cards.map((c) => c.id)]))
+      .toEqual([['1과', ['a']], ['2과', ['b']]]);
+  });
+
+  it('renames the legacy default section name', () => {
+    const lists = buildLists([deck], cache({ sections: [section('s1', '새 목록')] }));
+    expect(lists[0].name).toBe('새 암기장');
+  });
+
+  it('keeps cards whose section was deleted in a synthetic list', () => {
+    const lists = buildLists([deck], cache({
+      sections: [section('s1', '1과')],
+      cards: [card({ id: 'orphan', type: 'pair', prompt: 'Q', answers: ['A'], sectionId: 'gone' })],
+    }));
+    expect(lists).toHaveLength(2);
+    expect(lists[1]).toMatchObject({ id: 'gone', name: '기본', synthetic: true });
+    expect(lists[1].cards.map((c) => c.id)).toEqual(['orphan']);
+  });
+
+  it('exposes hide-level progress rather than a card-level flag', () => {
+    const lists = buildLists([deck], cache({
+      sections: [section('s1', '1과')],
+      cards: [card({
+        id: 'a', type: 'cloze', prompt: '___ 이고 ___ 이다',
+        answers: ['x', 'y'], answerMastery: [true, false], sectionId: 's1',
+      })],
+    }));
+    expect(lists[0].cards[0]).toMatchObject({ knownCount: 1, remainingCount: 1, memorized: false });
+  });
+
+  it('yields no list for a deck whose data has not arrived yet', () => {
+    expect(buildLists([deck], {})).toEqual([]);
   });
 });
