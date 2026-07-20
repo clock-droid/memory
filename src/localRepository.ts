@@ -89,11 +89,13 @@ export function createLocalRepository(roomCode: string): Repository {
       }
       return Promise.resolve();
     },
-    async addDeck(name) {
+    async addDeck(name, operationId) {
       const state = read(roomCode);
+      const existing = operationId ? state.decks.find((deck) => deck.clientOperationId === operationId) : undefined;
+      if (existing) return existing.id;
       const now = Date.now();
       const deckId = id('deck');
-      state.decks.push({ id: deckId, name, createdAt: now, updatedAt: now });
+      state.decks.push({ id: deckId, name, ...(operationId ? { clientOperationId: operationId } : {}), createdAt: now, updatedAt: now });
       state.cardsByDeck[deckId] = [];
       state.sectionsByDeck[deckId] = [];
       write(roomCode, state);
@@ -113,12 +115,23 @@ export function createLocalRepository(roomCode: string): Repository {
       delete state.sectionsByDeck[deckId];
       write(roomCode, state);
     },
-    async addSection(deckId, name) {
+    async addSection(deckId, name, operationId) {
       const state = read(roomCode);
       const now = Date.now();
       state.sectionsByDeck[deckId] ??= [];
+      const existing = operationId
+        ? state.sectionsByDeck[deckId].find((section) => section.clientOperationId === operationId)
+        : undefined;
+      if (existing) return existing.id;
       const sectionId = id('section');
-      state.sectionsByDeck[deckId].push({ id: sectionId, name, sourceText: '', createdAt: now, updatedAt: now });
+      state.sectionsByDeck[deckId].push({
+        id: sectionId,
+        name,
+        sourceText: '',
+        ...(operationId ? { clientOperationId: operationId } : {}),
+        createdAt: now,
+        updatedAt: now,
+      });
       write(roomCode, state);
       return sectionId;
     },
@@ -139,19 +152,36 @@ export function createLocalRepository(roomCode: string): Repository {
       );
       write(roomCode, state);
     },
-    async setSectionContent(deckId, sectionId, sourceText, cards: NewCard[]) {
+    async setSectionContent(deckId, sectionId, sourceText, cards: NewCard[], operationId) {
       const state = read(roomCode);
       const now = Date.now();
       state.sectionsByDeck[deckId] ??= [];
-      const nextCards = cards.map((card) => ({
+      const section = state.sectionsByDeck[deckId].find((item) => item.id === sectionId);
+      if (operationId && (
+        section?.contentOperationId === operationId
+        || section?.contentOperationIds?.includes(operationId)
+      )) {
+        return (state.cardsByDeck[deckId] ?? []).filter((card) => (card.sectionId ?? 'default') === sectionId);
+      }
+      const nextCards = cards.map((card, index) => ({
         ...card,
         sectionId,
-        id: id('card'),
+        id: operationId ? `card_${operationId}_${index}` : id('card'),
         createdAt: now,
         updatedAt: now,
       }));
       state.sectionsByDeck[deckId] = state.sectionsByDeck[deckId].map((section) =>
-        section.id === sectionId ? { ...section, sourceText, updatedAt: now } : section,
+        section.id === sectionId
+          ? {
+              ...section,
+              sourceText,
+              contentOperationId: operationId ?? null,
+              contentOperationIds: operationId
+                ? [...(section.contentOperationIds ?? []).filter((item) => item !== operationId), operationId].slice(-32)
+                : (section.contentOperationIds ?? []).slice(-32),
+              updatedAt: now,
+            }
+          : section,
       );
       state.cardsByDeck[deckId] = [
         ...(state.cardsByDeck[deckId] ?? []).filter((card) => (card.sectionId ?? 'default') !== sectionId),

@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { Card, CardType } from './types';
 import {
+  cardNeedsRepair,
   deriveQA,
   keepCard,
   masterySummary,
   normalizeAnswerMastery,
   qaToNewCard,
+  reconcileStudyTargets,
   remapAnswerMastery,
+  resolveEditedCardId,
 } from './cards';
 
 function card(partial: Partial<Card> & { type: CardType }): Card {
@@ -60,6 +63,54 @@ describe('deriveQA', () => {
     });
     expect(deriveQA(c)).toEqual({ q: '목록\n1. ___ 설명', a: ['a'] });
   });
+
+  it('uses the same trimmed bracket answers that the group parser persists', () => {
+    const c = card({
+      type: 'group',
+      prompt: '목록',
+      answers: ['a'],
+      groupItems: [{ marker: '- ', text: '[ a ] 설명' }],
+    });
+    expect(deriveQA(c)).toEqual({ q: '목록\n- ___ 설명', a: ['a'] });
+  });
+});
+
+describe('cardNeedsRepair', () => {
+  it('recognizes both explicit quarantine and unmarked legacy zero-answer cards', () => {
+    expect(cardNeedsRepair(card({ type: 'pair', prompt: 'Q', answers: [] }))).toBe(true);
+    expect(cardNeedsRepair(card({ type: 'cloze', prompt: '___', answers: [], needsRepair: true }))).toBe(true);
+    expect(cardNeedsRepair(card({ type: 'pair', prompt: 'Q', answers: ['A'] }))).toBe(false);
+    expect(cardNeedsRepair(card({ type: 'cloze', prompt: '___ / ___', answers: ['하나'] }))).toBe(true);
+  });
+
+  it('does not quarantine the legacy empty-answer group schema because it has a derivable semantic answer', () => {
+    expect(cardNeedsRepair(card({
+      type: 'group',
+      prompt: '과일',
+      answers: [],
+      groupItems: [{ marker: '- ', text: '사과' }],
+    }))).toBe(false);
+  });
+
+  it('quarantines a malformed group without list items instead of inventing its prompt as an answer', () => {
+    const malformed = card({
+      id: 'broken-group',
+      type: 'group',
+      prompt: '손상된 묶음',
+      answers: [],
+      rawText: '손상된 묶음:',
+      groupItems: [],
+    });
+    expect(cardNeedsRepair(malformed)).toBe(true);
+    expect(keepCard(malformed)).toMatchObject({
+      optimisticId: 'broken-group',
+      type: 'pair',
+      answers: [],
+      needsRepair: true,
+      answerMastery: [],
+      mastered: false,
+    });
+  });
 });
 
 describe('normalizeAnswerMastery', () => {
@@ -71,6 +122,15 @@ describe('normalizeAnswerMastery', () => {
   it('falls back to the card-level mastered flag when there is no array', () => {
     expect(normalizeAnswerMastery({ mastered: true }, 2)).toEqual([true, true]);
     expect(normalizeAnswerMastery({}, 2)).toEqual([false, false]);
+  });
+
+  it('recovers card-level mastery from the legacy empty group schema', () => {
+    expect(normalizeAnswerMastery({
+      type: 'group',
+      answers: [],
+      answerMastery: [],
+      mastered: true,
+    }, 1)).toEqual([true]);
   });
 });
 
@@ -97,6 +157,55 @@ describe('masterySummary', () => {
 
   it('returns zeros for an empty list', () => {
     expect(masterySummary([])).toEqual({ total: 0, known: 0 });
+  });
+});
+
+describe('reconcileStudyTargets', () => {
+  it('removes targets deleted by another device and reports the current-card change', () => {
+    const result = reconcileStudyTargets(
+      [
+        { cardId: 'deleted', answerIndexes: [0, 1] },
+        { cardId: 'kept', answerIndexes: [0] },
+      ],
+      [{ id: 'kept', a: ['답'] }],
+    );
+
+    expect(result).toEqual({
+      queue: [{ cardId: 'kept', answerIndexes: [0] }],
+      removedCount: 2,
+      currentChanged: true,
+    });
+  });
+
+  it('drops answer indexes that no longer exist after an external card edit', () => {
+    const result = reconcileStudyTargets(
+      [{ cardId: 'card-1', answerIndexes: [0, 1, 2] }],
+      [{ id: 'card-1', a: ['첫째', '둘째'] }],
+    );
+
+    expect(result.queue).toEqual([{ cardId: 'card-1', answerIndexes: [0, 1] }]);
+    expect(result.removedCount).toBe(1);
+    expect(result.currentChanged).toBe(true);
+  });
+});
+
+describe('resolveEditedCardId', () => {
+  const cards = [
+    { id: 'new-a', q: '질문 A', a: ['답 A'] },
+    { id: 'new-b', q: '질문 B', a: ['답 B'] },
+  ];
+
+  it('keeps using the stable id when it still exists', () => {
+    expect(resolveEditedCardId(cards, 'new-b', JSON.stringify(['질문 A', ['답 A']]))).toBe('new-b');
+  });
+
+  it('rebinds a regenerated id only when the original content has one match', () => {
+    expect(resolveEditedCardId(cards, 'old-a', JSON.stringify(['질문 A', ['답 A']]))).toBe('new-a');
+  });
+
+  it('refuses to guess when the target was deleted or has duplicate matches', () => {
+    expect(resolveEditedCardId(cards, 'deleted', JSON.stringify(['없음', ['없음']]))).toBeNull();
+    expect(resolveEditedCardId([...cards, { id: 'copy-a', q: '질문 A', a: ['답 A'] }], 'deleted', JSON.stringify(['질문 A', ['답 A']]))).toBeNull();
   });
 });
 
@@ -129,5 +238,72 @@ describe('keepCard', () => {
   it('honors an explicit answerMastery override', () => {
     const c = card({ id: 'c1', type: 'pair', prompt: 'Q', answers: ['a', 'b'], answerMastery: [true, true] });
     expect(keepCard(c, [true, false])).toMatchObject({ answerMastery: [true, false], mastered: false });
+  });
+
+  it('migrates a legacy normal group to one semantic answer without losing mastery on a section rewrite', () => {
+    const c = card({
+      id: 'group-1',
+      type: 'group',
+      prompt: '과일',
+      answers: [],
+      answerMastery: [],
+      mastered: true,
+      groupItems: [
+        { marker: '- ', text: '사과' },
+        { marker: '- ', text: '배' },
+      ],
+    });
+
+    expect(keepCard(c)).toMatchObject({
+      optimisticId: 'group-1',
+      answers: ['- 사과\n- 배'],
+      answerMastery: [true],
+      mastered: true,
+    });
+  });
+
+  it('preserves a legacy zero-answer pair as a repair quarantine with no mastery target', () => {
+    const c = card({
+      id: 'repair-1',
+      type: 'pair',
+      prompt: '손상된 질문',
+      answers: [],
+      answerMastery: [true],
+      mastered: true,
+    });
+
+    expect(deriveQA(c).a).toEqual([]);
+    expect(keepCard(c, [true])).toMatchObject({
+      optimisticId: 'repair-1',
+      needsRepair: true,
+      answers: [],
+      answerMastery: [],
+      mastered: false,
+    });
+  });
+
+  it('preserves existing answers while quarantining a mismatched legacy cloze', () => {
+    const c = card({
+      id: 'repair-cloze',
+      type: 'cloze',
+      prompt: '___ / ___',
+      answers: ['기존 답'],
+      answerMastery: [true],
+      mastered: true,
+    });
+
+    expect(keepCard(c)).toMatchObject({
+      optimisticId: 'repair-cloze',
+      needsRepair: true,
+      answers: ['기존 답'],
+      answerMastery: [],
+      mastered: false,
+    });
+  });
+
+  it('clears repair quarantine by omission when a real answer is saved from the editor', () => {
+    const repaired = qaToNewCard('손상된 질문', ['복구된 답']);
+    expect(repaired).not.toHaveProperty('needsRepair');
+    expect(repaired).toMatchObject({ answers: ['복구된 답'], answerMastery: [false], mastered: false });
   });
 });

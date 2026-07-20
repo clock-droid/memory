@@ -43,7 +43,10 @@ describe('parseGroup', () => {
   it('builds a group card from a title and a list', () => {
     const parsed = parseInput('과일:\n- 사과\n- 배');
     const group = parsed.find((p) => p.valid && p.card.type === 'group');
-    expect(group).toMatchObject({ valid: true, card: { type: 'group', prompt: '과일' } });
+    expect(group).toMatchObject({
+      valid: true,
+      card: { type: 'group', prompt: '과일', answers: ['- 사과\n- 배'] },
+    });
     if (group?.valid) expect(group.card.groupItems).toHaveLength(2);
   });
 

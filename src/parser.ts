@@ -1,4 +1,5 @@
 import type { GroupItem, NewCard, ParsedLine } from './types';
+import { groupSemanticAnswers } from './groupCardSchema';
 
 const clozePattern = /\[([^\[\]]+)\]/g;
 const validListPattern = /^(-\s+|\d+[.)]\s*)(.+)$/;
@@ -90,7 +91,7 @@ function parseGroup(lines: string[], titleIndex: number): { items: ParsedLine[];
     };
   }
 
-  const answers = groupItems.flatMap((item) => extractAnswers(item.text));
+  const answers = groupSemanticAnswers(groupTitle || title, groupItems);
   return {
     items: [
       {

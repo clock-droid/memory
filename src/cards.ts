@@ -1,5 +1,7 @@
 import { splitCloze } from './parser';
+import { groupSemanticAnswers } from './groupCardSchema';
 import type { Card, NewCard, Section } from './types';
+import type { StudyTarget } from './uiState';
 
 // ------------------------------------------------------------------ view model
 export type ProtoCard = {
@@ -10,6 +12,7 @@ export type ProtoCard = {
   knownCount: number;
   remainingCount: number;
   memorized: boolean;
+  needsRepair: boolean;
   isGroup: boolean;
   source: Card;
 };
@@ -21,6 +24,50 @@ export type ProtoList = {
   synthetic: boolean;
   cards: ProtoCard[];
 };
+
+export function protoCardSourceSignature(card: Pick<ProtoCard, 'q' | 'a'>) {
+  return JSON.stringify([card.q, card.a]);
+}
+
+export function resolveEditedCardId(
+  cards: Array<Pick<ProtoCard, 'id' | 'q' | 'a'>>,
+  preferredId: string | null,
+  sourceSignature: string,
+) {
+  if (preferredId && cards.some((card) => card.id === preferredId)) return preferredId;
+  const matches = cards.filter((card) => protoCardSourceSignature(card) === sourceSignature);
+  return matches.length === 1 ? matches[0].id : null;
+}
+
+export function cardNeedsRepair(card: Pick<Card, 'type' | 'prompt' | 'answers' | 'needsRepair'>) {
+  if (card.needsRepair === true) return true;
+  if (!Array.isArray(card.answers)) return true;
+  if (card.type === 'group') {
+    const items = (card as Pick<Card, 'groupItems'>).groupItems;
+    if (
+      !Array.isArray(items)
+      || items.length === 0
+      || items.some((item) => !item || typeof item.marker !== 'string' || typeof item.text !== 'string' || item.text.trim().length === 0)
+    ) return true;
+    const semanticAnswers = groupSemanticAnswers(card.prompt, items);
+    return card.answers.length > 0 && (
+      card.answers.length !== semanticAnswers.length
+      || card.answers.some((answer, index) => answer !== semanticAnswers[index])
+    );
+  }
+  if (card.answers.length === 0 || card.answers.some((answer) => typeof answer !== 'string' || answer.trim().length === 0)) {
+    return true;
+  }
+  if (card.type !== 'cloze') return false;
+  const placeholderCount = card.prompt.match(/___/g)?.length ?? 0;
+  if (placeholderCount > 0) return placeholderCount !== card.answers.length;
+  const embeddedAnswers = [...card.prompt.matchAll(/\[([^\[\]]+)\]/g)]
+    .map((match) => match[1].trim())
+    .filter(Boolean);
+  return embeddedAnswers.length === 0
+    || embeddedAnswers.length !== card.answers.length
+    || embeddedAnswers.some((answer, index) => answer !== card.answers[index]);
+}
 
 // NewCard + a client-only hint so the optimistic cache can keep the card's
 // current id (the server regenerates ids on every content PUT).
@@ -34,22 +81,21 @@ export function emptyDeckCache(): DeckCacheEntry {
 // stored Card -> prototype-style { q(with ___), a[] }
 function deriveGroup(card: Card): { q: string; a: string[] } {
   const items = card.groupItems ?? [];
+  const semanticAnswers = groupSemanticAnswers(card.prompt, items);
   const anyBlank = items.some((it) => /\[[^\]]+\]/.test(it.text));
   if (anyBlank) {
     const qLines = [card.prompt];
-    const a: string[] = [];
     for (const it of items) {
       let line = it.marker || '';
       for (const piece of splitCloze(it.text)) {
         if (piece.kind === 'text') line += piece.value;
-        else { line += '___'; a.push(piece.value); }
+        else line += '___';
       }
       qLines.push(line);
     }
-    return { q: qLines.join('\n'), a };
+    return { q: qLines.join('\n'), a: semanticAnswers };
   }
-  const body = items.map((it) => `${it.marker || '· '}${it.text}`).join('\n');
-  return { q: card.prompt, a: [body || card.prompt] };
+  return { q: card.prompt, a: semanticAnswers };
 }
 
 export function deriveQA(card: Card): { q: string; a: string[] } {
@@ -70,8 +116,15 @@ export function deriveQA(card: Card): { q: string; a: string[] } {
   return { q: card.prompt, a: card.answers };
 }
 
-export function normalizeAnswerMastery(card: Pick<Card, 'answerMastery' | 'mastered'>, answerCount: number): boolean[] {
-  if (Array.isArray(card.answerMastery)) {
+type MasterySource = Pick<Card, 'answerMastery' | 'mastered'> & Partial<Pick<Card, 'type' | 'answers'>>;
+
+export function normalizeAnswerMastery(card: MasterySource, answerCount: number): boolean[] {
+  const legacyEmptyGroupMastery = card.type === 'group'
+    && Array.isArray(card.answers)
+    && card.answers.length === 0
+    && Array.isArray(card.answerMastery)
+    && card.answerMastery.length === 0;
+  if (Array.isArray(card.answerMastery) && !legacyEmptyGroupMastery) {
     return Array.from({ length: answerCount }, (_, i) => Boolean(card.answerMastery?.[i]));
   }
   return Array.from({ length: answerCount }, () => Boolean(card.mastered));
@@ -90,6 +143,34 @@ export function masterySummary(cards: ProtoCard[]) {
   }), { total: 0, known: 0 });
 }
 
+export function reconcileStudyTargets(
+  queue: StudyTarget[],
+  cards: Array<Pick<ProtoCard, 'id' | 'a'>>,
+): { queue: StudyTarget[]; removedCount: number; currentChanged: boolean } {
+  const answerCounts = new Map(cards.map((card) => [card.id, card.a.length]));
+  let removedCount = 0;
+  let changed = false;
+  const nextQueue = queue.flatMap((target) => {
+    const answerCount = answerCounts.get(target.cardId);
+    if (answerCount === undefined) {
+      removedCount += target.answerIndexes.length;
+      changed = true;
+      return [];
+    }
+    const answerIndexes = target.answerIndexes.filter((index) => index >= 0 && index < answerCount);
+    removedCount += target.answerIndexes.length - answerIndexes.length;
+    if (answerIndexes.length !== target.answerIndexes.length) changed = true;
+    return answerIndexes.length > 0 ? [{ ...target, answerIndexes }] : [];
+  });
+  const previousCurrent = queue[0];
+  const nextCurrent = nextQueue[0];
+  const currentChanged = Boolean(previousCurrent) && (
+    previousCurrent.cardId !== nextCurrent?.cardId
+    || previousCurrent.answerIndexes.length !== nextCurrent.answerIndexes.length
+  );
+  return { queue: changed ? nextQueue : queue, removedCount, currentChanged };
+}
+
 export function qaToNewCard(q: string, a: string[], answerMastery = a.map(() => false)): NewCard {
   const isCloze = q.includes('___');
   const normalized = a.map((_, i) => Boolean(answerMastery[i]));
@@ -104,16 +185,24 @@ export function qaToNewCard(q: string, a: string[], answerMastery = a.map(() => 
 }
 
 function cardToNewCard(card: Card, answerMasteryOverride?: boolean[]): NewCard {
-  const answerMastery = answerMasteryOverride ?? normalizeAnswerMastery(card, card.answers.length);
+  const needsRepair = cardNeedsRepair(card);
+  const repairGroup = needsRepair && card.type === 'group';
+  const answers = repairGroup ? [] : card.type === 'group' ? deriveGroup(card).a : card.answers;
+  const answerMastery = needsRepair
+    ? []
+    : answerMasteryOverride
+      ? Array.from({ length: answers.length }, (_, index) => Boolean(answerMasteryOverride[index]))
+      : normalizeAnswerMastery(card, answers.length);
   return {
-    type: card.type,
+    type: repairGroup ? 'pair' : card.type,
     prompt: card.prompt,
-    answers: card.answers,
+    answers,
     rawText: card.rawText,
-    groupItems: card.groupItems,
+    groupItems: repairGroup ? undefined : card.groupItems,
+    ...(needsRepair ? { needsRepair: true } : {}),
     starred: card.starred,
     answerMastery,
-    mastered: answerMastery.length > 0 && answerMastery.every(Boolean),
+    mastered: !needsRepair && answerMastery.length > 0 && answerMastery.every(Boolean),
   };
 }
 

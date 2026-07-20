@@ -3,6 +3,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   getFirestore,
   onSnapshot,
@@ -28,6 +29,10 @@ const db = isFirebaseConfigured ? getFirestore(getApps()[0] ?? initializeApp(con
 
 function defaultSection(now = Date.now()): Omit<Section, 'id'> {
   return { name: '기본', sourceText: '', createdAt: now, updatedAt: now };
+}
+
+function operationDocumentId(prefix: string, operationId: string) {
+  return `${prefix}_${operationId.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
 }
 
 export function createFirebaseRepository(roomCode: string): Repository | null {
@@ -71,10 +76,10 @@ export function createFirebaseRepository(roomCode: string): Repository | null {
         { merge: true },
       );
     },
-    async addDeck(name) {
+    async addDeck(name, operationId) {
       const now = Date.now();
-      const deckRef = doc(decksPath);
-      await setDoc(deckRef, { name, createdAt: now, updatedAt: now });
+      const deckRef = operationId ? doc(decksPath, operationDocumentId('deck', operationId)) : doc(decksPath);
+      await setDoc(deckRef, { name, ...(operationId ? { clientOperationId: operationId } : {}), createdAt: now, updatedAt: now }, { merge: true });
       return deckRef.id;
     },
     async renameDeck(deckId, name) {
@@ -89,10 +94,13 @@ export function createFirebaseRepository(roomCode: string): Repository | null {
       ]);
       await deleteDoc(doc(db, 'rooms', roomCode, 'decks', deckId));
     },
-    async addSection(deckId, name) {
+    async addSection(deckId, name, operationId) {
       const now = Date.now();
-      const sectionRef = doc(collection(db, 'rooms', roomCode, 'decks', deckId, 'sections'));
-      await setDoc(sectionRef, { name, sourceText: '', createdAt: now, updatedAt: now });
+      const sectionsPath = collection(db, 'rooms', roomCode, 'decks', deckId, 'sections');
+      const sectionRef = operationId
+        ? doc(sectionsPath, operationDocumentId('section', operationId))
+        : doc(sectionsPath);
+      await setDoc(sectionRef, { name, sourceText: '', ...(operationId ? { clientOperationId: operationId } : {}), createdAt: now, updatedAt: now }, { merge: true });
       return sectionRef.id;
     },
     async renameSection(deckId, sectionId, name) {
@@ -110,26 +118,41 @@ export function createFirebaseRepository(roomCode: string): Repository | null {
       );
       await deleteDoc(doc(db, 'rooms', roomCode, 'decks', deckId, 'sections', sectionId));
     },
-    async setSectionContent(deckId, sectionId, sourceText, cards: NewCard[]) {
+    async setSectionContent(deckId, sectionId, sourceText, cards: NewCard[], operationId) {
       const now = Date.now();
       const cardsPath = collection(db, 'rooms', roomCode, 'decks', deckId, 'cards');
-      const cardsSnapshot = await getDocs(cardsPath);
+      const sectionRef = doc(db, 'rooms', roomCode, 'decks', deckId, 'sections', sectionId);
+      const [cardsSnapshot, sectionSnapshot] = await Promise.all([getDocs(cardsPath), getDoc(sectionRef)]);
+      const sectionData = sectionSnapshot.data() as Section | undefined;
+      const existingSectionCards = cardsSnapshot.docs
+        .filter((cardDoc) => ((cardDoc.data() as Card).sectionId ?? 'default') === sectionId);
+      if (operationId && (
+        sectionData?.contentOperationId === operationId
+        || sectionData?.contentOperationIds?.includes(operationId)
+      )) {
+        return existingSectionCards.map((cardDoc) => ({ id: cardDoc.id, ...cardDoc.data() }) as Card);
+      }
       await Promise.all(
-        cardsSnapshot.docs
-          .filter((cardDoc) => ((cardDoc.data() as Card).sectionId ?? 'default') === sectionId)
-          .map((cardDoc) => deleteDoc(cardDoc.ref)),
+        existingSectionCards.map((cardDoc) => deleteDoc(cardDoc.ref)),
       );
       const created: Card[] = [];
-      await Promise.all(
-        cards.map((card) => {
-          const cardRef = doc(cardsPath);
+      await Promise.all(cards.map((card, index) => {
+          const cardRef = operationId
+            ? doc(cardsPath, operationDocumentId('card', `${operationId}_${index}`))
+            : doc(cardsPath);
           created.push({ ...card, id: cardRef.id, sectionId, createdAt: now, updatedAt: now });
           return setDoc(cardRef, { ...card, sectionId, createdAt: now, updatedAt: now });
-        }),
-      );
+      }));
       await setDoc(
-        doc(db, 'rooms', roomCode, 'decks', deckId, 'sections', sectionId),
-        { sourceText, updatedAt: now },
+        sectionRef,
+        {
+          sourceText,
+          contentOperationId: operationId ?? null,
+          contentOperationIds: operationId
+            ? [...(sectionData?.contentOperationIds ?? []).filter((item) => item !== operationId), operationId].slice(-32)
+            : (sectionData?.contentOperationIds ?? []).slice(-32),
+          updatedAt: now,
+        },
         { merge: true },
       );
       return created;
