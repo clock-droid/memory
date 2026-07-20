@@ -2,6 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { HomeView } from './HomeView';
+import { toProtoCard } from '../cards';
 
 function renderHome(overrides: Partial<Parameters<typeof HomeView>[0]> = {}) {
   return renderToStaticMarkup(createElement(HomeView, {
@@ -37,25 +38,16 @@ describe('HomeView sync states', () => {
         deckId: 'd1',
         name: '기존 암기장',
         synthetic: false,
-        cards: [{
+        cards: [toProtoCard({
           id: 'c1',
-          q: '___',
-          a: ['서울'],
+          type: 'cloze',
+          prompt: '___',
+          answers: ['서울'],
+          rawText: '[서울]',
           answerMastery: [false],
-          knownCount: 0,
-          remainingCount: 1,
-          memorized: false,
-          isGroup: false,
-          source: {
-            id: 'c1',
-            type: 'cloze',
-            prompt: '___',
-            answers: ['서울'],
-            rawText: '[서울]',
-            createdAt: 0,
-            updatedAt: 0,
-          },
-        }],
+          createdAt: 0,
+          updatedAt: 0,
+        })],
       }],
     });
 

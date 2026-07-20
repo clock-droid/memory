@@ -31,7 +31,7 @@ export function StudyView(props: {
   const qParts = card ? card.q.split('___') : [];
   const nBlanks = card ? (qParts.length > 1 ? qParts.length - 1 : 1) : 0;
   const isCloze = !!card && qParts.length > 1;
-  const targetIndexes = target?.answerIndexes ?? [];
+  const targetIndexes = target?.hideIndexes ?? [];
   const targetSet = new Set(targetIndexes);
   const retrySet = new Set(session.retry);
   let nextIdx = -1;
@@ -98,7 +98,9 @@ export function StudyView(props: {
     const remaining = progress.total - progress.known;
     const allMemorized = progress.total > 0 && remaining === 0;
     const resultStates: HideState[] = list
-      ? list.cards.flatMap((item) => item.answerMastery.map((known) => known ? 'known' : 'retry'))
+      // Cards that need repair are not studied, so they contribute no dots.
+      ? list.cards.filter((item) => !item.needsRepair)
+        .flatMap((item) => item.hides.map((hide) => hide.known ? 'known' : 'retry'))
       : [];
     return (
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, paddingTop: 'env(safe-area-inset-top)', background: '#fff' }}>
@@ -134,7 +136,7 @@ export function StudyView(props: {
       if (i < qParts.length - 1) {
         const isTarget = targetSet.has(i);
         const kind = !isTarget || session.revealed.includes(i) ? 'revealed' : i === nextIdx ? 'next' : 'waiting';
-        cardSegs.push({ text: '', kind, answer: card.a[i] || '', answerIndex: i, target: isTarget });
+        cardSegs.push({ text: '', kind, answer: card.hides[i]?.text ?? '', answerIndex: i, target: isTarget });
       }
     });
   }
@@ -142,14 +144,14 @@ export function StudyView(props: {
   const checkedInCard = targetIndexes.filter((i) => session.revealed.includes(i)).length;
   const checkedTotal = session.done + checkedInCard;
   const progressPct = session.total ? Math.round((checkedTotal / session.total) * 100) : 0;
-  const cardBadge = isCloze ? (nBlanks > 1 ? `가림 ${nBlanks}곳` : '가림 1곳') : (card.a.length > 1 ? `문답 · 답 ${card.a.length}개` : '문답');
+  const cardBadge = isCloze ? (nBlanks > 1 ? `가림 ${nBlanks}곳` : '가림 1곳') : (card.hides.length > 1 ? `문답 · 답 ${card.hides.length}개` : '문답');
   const tapHint = targetIndexes.length > 1
     ? `탭하면 다음 답 (${checkedInCard + 1}/${targetIndexes.length})`
     : '화면을 탭하면 답이 보여요';
   const keyboardHint = targetIndexes.length > 1
     ? `스페이스를 누르면 다음 답 (${checkedInCard + 1}/${targetIndexes.length})`
     : '스페이스를 누르면 답이 보여요';
-  const liveHideStates: HideState[] = card.answerMastery.map((known, answerIndex) => {
+  const liveHideStates: HideState[] = card.hides.map(({ index: answerIndex, known }) => {
     if (retrySet.has(answerIndex)) return 'retry';
     if (targetSet.has(answerIndex)) return session.revealed.includes(answerIndex) ? 'checked' : 'pending';
     return known ? 'known' : 'retry';
@@ -184,7 +186,7 @@ export function StudyView(props: {
             <>
               <div style={{ fontSize: 25, fontWeight: 800, letterSpacing: '-0.015em', lineHeight: 1.4, wordBreak: 'keep-all', whiteSpace: 'pre-line' }}>{card.q}</div>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 10 }}>
-                {card.a.map((answer, answerIndex) => {
+                {card.hides.map(({ index: answerIndex, text: answer }) => {
                   const isTarget = targetSet.has(answerIndex);
                   const revealed = !isTarget || session.revealed.includes(answerIndex);
                   if (!revealed) {

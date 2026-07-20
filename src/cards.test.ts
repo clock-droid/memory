@@ -8,13 +8,17 @@ import {
   emptyDeckCache,
   keepCard,
   masterySummary,
-  normalizeAnswerMastery,
   qaToNewCard,
   reconcileStudyTargets,
   remapAnswerMastery,
   remapAnswerSchedule,
   resolveEditedCardId,
 } from './cards';
+
+/** Minimal hides for tests that only care about their texts. */
+function hides(texts: string[]) {
+  return texts.map((text, index) => ({ index, text, known: false, schedule: null, dueAt: 0 }));
+}
 
 function card(partial: Partial<Card> & { type: CardType }): Card {
   return {
@@ -117,27 +121,6 @@ describe('cardNeedsRepair', () => {
   });
 });
 
-describe('normalizeAnswerMastery', () => {
-  it('coerces an array to booleans padded/truncated to the answer count', () => {
-    expect(normalizeAnswerMastery({ answerMastery: [true] }, 3)).toEqual([true, false, false]);
-    expect(normalizeAnswerMastery({ answerMastery: [true, true, true] }, 2)).toEqual([true, true]);
-  });
-
-  it('falls back to the card-level mastered flag when there is no array', () => {
-    expect(normalizeAnswerMastery({ mastered: true }, 2)).toEqual([true, true]);
-    expect(normalizeAnswerMastery({}, 2)).toEqual([false, false]);
-  });
-
-  it('recovers card-level mastery from the legacy empty group schema', () => {
-    expect(normalizeAnswerMastery({
-      type: 'group',
-      answers: [],
-      answerMastery: [],
-      mastered: true,
-    }, 1)).toEqual([true]);
-  });
-});
-
 describe('remapAnswerMastery', () => {
   it('keeps mastery for unchanged answers and drops it for changed ones', () => {
     const c = card({ type: 'pair', prompt: 'Q', answers: ['a', 'b'], answerMastery: [true, true] });
@@ -179,8 +162,8 @@ describe('remapAnswerSchedule', () => {
 describe('masterySummary', () => {
   it('sums answer counts and known counts across proto cards', () => {
     const protos = [
-      { a: ['x', 'y'], knownCount: 1 },
-      { a: ['z'], knownCount: 1 },
+      { hides: [{}, {}], knownCount: 1 },
+      { hides: [{}], knownCount: 1 },
     ] as unknown as Parameters<typeof masterySummary>[0];
     expect(masterySummary(protos)).toEqual({ total: 3, known: 2 });
   });
@@ -194,14 +177,14 @@ describe('reconcileStudyTargets', () => {
   it('removes targets deleted by another device and reports the current-card change', () => {
     const result = reconcileStudyTargets(
       [
-        { cardId: 'deleted', answerIndexes: [0, 1] },
-        { cardId: 'kept', answerIndexes: [0] },
+        { cardId: 'deleted', hideIndexes: [0, 1] },
+        { cardId: 'kept', hideIndexes: [0] },
       ],
-      [{ id: 'kept', a: ['답'] }],
+      [{ id: 'kept', hides: hides(['답']) }],
     );
 
     expect(result).toEqual({
-      queue: [{ cardId: 'kept', answerIndexes: [0] }],
+      queue: [{ cardId: 'kept', hideIndexes: [0] }],
       removedCount: 2,
       currentChanged: true,
     });
@@ -209,11 +192,11 @@ describe('reconcileStudyTargets', () => {
 
   it('drops answer indexes that no longer exist after an external card edit', () => {
     const result = reconcileStudyTargets(
-      [{ cardId: 'card-1', answerIndexes: [0, 1, 2] }],
-      [{ id: 'card-1', a: ['첫째', '둘째'] }],
+      [{ cardId: 'card-1', hideIndexes: [0, 1, 2] }],
+      [{ id: 'card-1', hides: hides(['첫째', '둘째']) }],
     );
 
-    expect(result.queue).toEqual([{ cardId: 'card-1', answerIndexes: [0, 1] }]);
+    expect(result.queue).toEqual([{ cardId: 'card-1', hideIndexes: [0, 1] }]);
     expect(result.removedCount).toBe(1);
     expect(result.currentChanged).toBe(true);
   });
@@ -221,8 +204,8 @@ describe('reconcileStudyTargets', () => {
 
 describe('resolveEditedCardId', () => {
   const cards = [
-    { id: 'new-a', q: '질문 A', a: ['답 A'] },
-    { id: 'new-b', q: '질문 B', a: ['답 B'] },
+    { id: 'new-a', q: '질문 A', hides: hides(['답 A']) },
+    { id: 'new-b', q: '질문 B', hides: hides(['답 B']) },
   ];
 
   it('keeps using the stable id when it still exists', () => {
@@ -235,7 +218,8 @@ describe('resolveEditedCardId', () => {
 
   it('refuses to guess when the target was deleted or has duplicate matches', () => {
     expect(resolveEditedCardId(cards, 'deleted', JSON.stringify(['없음', ['없음']]))).toBeNull();
-    expect(resolveEditedCardId([...cards, { id: 'copy-a', q: '질문 A', a: ['답 A'] }], 'deleted', JSON.stringify(['질문 A', ['답 A']]))).toBeNull();
+    const withDuplicate = [...cards, { id: 'copy-a', q: '질문 A', hides: hides(['답 A']) }];
+    expect(resolveEditedCardId(withDuplicate, 'deleted', JSON.stringify(['질문 A', ['답 A']]))).toBeNull();
   });
 });
 

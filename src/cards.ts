@@ -1,15 +1,16 @@
 import { splitCloze } from './parser';
 import { groupSemanticAnswers } from './groupCardSchema';
 import { normalizeAnswerSchedule } from './answerSchedule';
+import { buildHides, hideTexts, knownCountOf, normalizeAnswerMastery, unratedHides } from './hides';
+import type { Hide } from './hides';
 import type { AnswerSchedule, Card, Deck, NewCard, Section, StudyTarget } from './types';
 
 // ------------------------------------------------------------------ view model
 export type ProtoCard = {
   id: string;
   q: string;
-  a: string[];
-  answerMastery: boolean[];
-  answerSchedule: Array<AnswerSchedule | null>;
+  /** The card's hides, in prompt order. This is the learning unit. */
+  hides: Hide[];
   knownCount: number;
   remainingCount: number;
   memorized: boolean;
@@ -27,12 +28,12 @@ export type ProtoList = {
   cards: ProtoCard[];
 };
 
-export function protoCardSourceSignature(card: Pick<ProtoCard, 'q' | 'a'>) {
-  return JSON.stringify([card.q, card.a]);
+export function protoCardSourceSignature(card: Pick<ProtoCard, 'q' | 'hides'>) {
+  return JSON.stringify([card.q, hideTexts(card.hides)]);
 }
 
 export function resolveEditedCardId(
-  cards: Array<Pick<ProtoCard, 'id' | 'q' | 'a'>>,
+  cards: Array<Pick<ProtoCard, 'id' | 'q' | 'hides'>>,
   preferredId: string | null,
   sourceSignature: string,
 ) {
@@ -127,20 +128,6 @@ export function deriveQA(card: Card): { q: string; a: string[] } {
   return { q: card.prompt, a: card.answers };
 }
 
-type MasterySource = Pick<Card, 'answerMastery' | 'mastered'> & Partial<Pick<Card, 'type' | 'answers'>>;
-
-export function normalizeAnswerMastery(card: MasterySource, answerCount: number): boolean[] {
-  const legacyEmptyGroupMastery = card.type === 'group'
-    && Array.isArray(card.answers)
-    && card.answers.length === 0
-    && Array.isArray(card.answerMastery)
-    && card.answerMastery.length === 0;
-  if (Array.isArray(card.answerMastery) && !legacyEmptyGroupMastery) {
-    return Array.from({ length: answerCount }, (_, i) => Boolean(card.answerMastery?.[i]));
-  }
-  return Array.from({ length: answerCount }, () => Boolean(card.mastered));
-}
-
 export function remapAnswerMastery(card: Card, nextAnswers: string[]): boolean[] {
   const previous = deriveQA(card);
   const previousMastery = normalizeAnswerMastery(card, previous.a.length);
@@ -158,22 +145,21 @@ export function remapAnswerSchedule(card: Card, nextAnswers: string[]): Array<An
 /** Stored card -> the hide-level view model every screen reads. */
 export function toProtoCard(card: Card): ProtoCard {
   const needsRepair = cardNeedsRepair(card);
-  // A broken group card keeps its raw text visible so the user can repair it,
-  // but it exposes no hides and therefore no study target.
+  // A broken group card keeps its raw text visible so the user can repair it.
   const { q, a } = needsRepair && card.type === 'group'
     ? { q: card.prompt, a: card.rawText.trim() ? [card.rawText] : [] }
     : deriveQA(card);
-  const answerMastery = needsRepair ? [] : normalizeAnswerMastery(card, a.length);
-  const knownCount = answerMastery.filter(Boolean).length;
+  // A card that needs repair still shows its text, but claims no judgments and
+  // offers no study target until the user fixes it.
+  const hides = needsRepair ? unratedHides(card, a) : buildHides(card, a);
+  const knownCount = knownCountOf(hides);
   return {
     id: card.id,
     q,
-    a,
-    answerMastery,
-    answerSchedule: needsRepair ? [] : normalizeAnswerSchedule(card, a.length),
+    hides,
     knownCount,
-    remainingCount: needsRepair ? 0 : a.length - knownCount,
-    memorized: !needsRepair && a.length > 0 && knownCount === a.length,
+    remainingCount: needsRepair ? 0 : hides.length - knownCount,
+    memorized: !needsRepair && hides.length > 0 && knownCount === hides.length,
     needsRepair,
     isGroup: card.type === 'group',
     updatedAt: card.updatedAt,
@@ -233,35 +219,35 @@ export function weakestFirst(cards: ProtoCard[]): ProtoCard[] {
 
 export function masterySummary(cards: ProtoCard[]) {
   return cards.reduce((summary, card) => ({
-    total: summary.total + card.a.length,
+    total: summary.total + card.hides.length,
     known: summary.known + card.knownCount,
   }), { total: 0, known: 0 });
 }
 
 export function reconcileStudyTargets(
   queue: StudyTarget[],
-  cards: Array<Pick<ProtoCard, 'id' | 'a'>>,
+  cards: Array<Pick<ProtoCard, 'id' | 'hides'>>,
 ): { queue: StudyTarget[]; removedCount: number; currentChanged: boolean } {
-  const answerCounts = new Map(cards.map((card) => [card.id, card.a.length]));
+  const hideCounts = new Map(cards.map((card) => [card.id, card.hides.length]));
   let removedCount = 0;
   let changed = false;
   const nextQueue = queue.flatMap((target) => {
-    const answerCount = answerCounts.get(target.cardId);
-    if (answerCount === undefined) {
-      removedCount += target.answerIndexes.length;
+    const hideCount = hideCounts.get(target.cardId);
+    if (hideCount === undefined) {
+      removedCount += target.hideIndexes.length;
       changed = true;
       return [];
     }
-    const answerIndexes = target.answerIndexes.filter((index) => index >= 0 && index < answerCount);
-    removedCount += target.answerIndexes.length - answerIndexes.length;
-    if (answerIndexes.length !== target.answerIndexes.length) changed = true;
-    return answerIndexes.length > 0 ? [{ ...target, answerIndexes }] : [];
+    const hideIndexes = target.hideIndexes.filter((index) => index >= 0 && index < hideCount);
+    removedCount += target.hideIndexes.length - hideIndexes.length;
+    if (hideIndexes.length !== target.hideIndexes.length) changed = true;
+    return hideIndexes.length > 0 ? [{ ...target, hideIndexes }] : [];
   });
   const previousCurrent = queue[0];
   const nextCurrent = nextQueue[0];
   const currentChanged = Boolean(previousCurrent) && (
     previousCurrent.cardId !== nextCurrent?.cardId
-    || previousCurrent.answerIndexes.length !== nextCurrent.answerIndexes.length
+    || previousCurrent.hideIndexes.length !== nextCurrent.hideIndexes.length
   );
   return { queue: changed ? nextQueue : queue, removedCount, currentChanged };
 }

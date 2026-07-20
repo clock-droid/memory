@@ -42,7 +42,7 @@ describe('planStudySession', () => {
     expect(plan).toEqual({
       kind: 'session',
       mode: 'learn',
-      targets: [{ cardId: 'c1', answerIndexes: [1] }],
+      targets: [{ cardId: 'c1', hideIndexes: [1] }],
     });
   });
 
@@ -57,7 +57,7 @@ describe('planStudySession', () => {
     expect(plan).toEqual({
       kind: 'session',
       mode: 'review',
-      targets: [{ cardId: 'c1', answerIndexes: [0, 1] }],
+      targets: [{ cardId: 'c1', hideIndexes: [0, 1] }],
     });
   });
 
@@ -66,7 +66,7 @@ describe('planStudySession', () => {
     expect(plan).toEqual({
       kind: 'session',
       mode: 'review',
-      targets: [{ cardId: 'c1', answerIndexes: [0, 1] }],
+      targets: [{ cardId: 'c1', hideIndexes: [0, 1] }],
     });
   });
 
@@ -115,7 +115,7 @@ describe('planCheckupSession', () => {
     expect(planCheckupSession([card], now)).toEqual({
       kind: 'session',
       mode: 'checkup',
-      targets: [{ cardId: 'c1', answerIndexes: [0] }],
+      targets: [{ cardId: 'c1', hideIndexes: [0] }],
     });
   });
 
@@ -137,8 +137,8 @@ describe('planCheckupSession', () => {
 describe('countHides', () => {
   it('counts hides rather than cards', () => {
     expect(countHides([
-      { cardId: 'c1', answerIndexes: [0, 1] },
-      { cardId: 'c2', answerIndexes: [3] },
+      { cardId: 'c1', hideIndexes: [0, 1] },
+      { cardId: 'c2', hideIndexes: [3] },
     ])).toBe(3);
   });
 });

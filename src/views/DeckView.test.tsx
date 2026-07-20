@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { DeckView } from './DeckView';
 import { rateAnswer } from '../answerSchedule';
+import { toProtoCard } from '../cards';
 import type { ProtoCard, ProtoList } from '../cards';
 import { initialDeckUi } from '../state/uiSlices';
 import type { AnswerSchedule, Card } from '../types';
@@ -16,28 +17,28 @@ beforeAll(() => {
   vi.stubGlobal('localStorage', { getItem: () => '1', setItem: () => {} });
 });
 
-function protoCard(overrides: Partial<ProtoCard> = {}): ProtoCard {
-  const a = overrides.a ?? ['서울'];
-  const answerMastery = overrides.answerMastery ?? a.map(() => false);
-  const knownCount = answerMastery.filter(Boolean).length;
+/** Builds the view model the way the app does, from a stored card. */
+function protoCard(options: {
+  answers?: string[];
+  mastery?: boolean[];
+  schedules?: Array<AnswerSchedule | null>;
+  /** Fewer answers than blanks quarantines the card for repair. */
+  broken?: boolean;
+} = {}): ProtoCard {
+  const answers = options.answers ?? ['서울'];
+  const blanks = options.broken ? answers.length + 1 : answers.length;
   const source: Card = {
-    id: 'c1', type: 'cloze', prompt: '___', answers: a, rawText: '[서울]', createdAt: 0, updatedAt: NOW,
-  };
-  return {
     id: 'c1',
-    q: '___',
-    a,
-    answerMastery,
-    answerSchedule: a.map(() => null),
-    knownCount,
-    remainingCount: a.length - knownCount,
-    memorized: a.length > 0 && knownCount === a.length,
-    needsRepair: false,
-    isGroup: false,
+    type: 'cloze',
+    prompt: Array.from({ length: blanks }, () => '___').join(' '),
+    answers,
+    rawText: answers.map((answer) => `[${answer}]`).join(' '),
+    answerMastery: options.mastery ?? answers.map(() => false),
+    answerSchedule: options.schedules,
+    createdAt: 0,
     updatedAt: NOW,
-    source,
-    ...overrides,
   };
+  return toProtoCard(source);
 }
 
 function renderDeck(cards: ProtoCard[], onStartCheckup = vi.fn()) {
@@ -70,7 +71,7 @@ function schedule(due: number): AnswerSchedule {
 describe('DeckView checkup banner', () => {
   it('stays hidden while every known hide is still within its interval', () => {
     const markup = renderDeck([protoCard({
-      a: ['서울'], answerMastery: [true], answerSchedule: [schedule(NOW + DAY)],
+      answers: ['서울'], mastery: [true], schedules: [schedule(NOW + DAY)],
     })]);
 
     expect(markup).not.toContain('다시 점검할 가림');
@@ -78,10 +79,10 @@ describe('DeckView checkup banner', () => {
 
   it('counts only known hides whose check date has passed', () => {
     const markup = renderDeck([protoCard({
-      a: ['서울', '부산', '대구'],
+      answers: ['서울', '부산', '대구'],
       // known+overdue, known+future, unknown+overdue
-      answerMastery: [true, true, false],
-      answerSchedule: [schedule(NOW - DAY), schedule(NOW + DAY), schedule(NOW - DAY)],
+      mastery: [true, true, false],
+      schedules: [schedule(NOW - DAY), schedule(NOW + DAY), schedule(NOW - DAY)],
     })]);
 
     expect(markup).toContain('다시 점검할 가림 1개');
@@ -89,16 +90,14 @@ describe('DeckView checkup banner', () => {
   });
 
   it('never proposes a checkup for a card that needs repair', () => {
-    const markup = renderDeck([protoCard({
-      needsRepair: true, a: [], answerMastery: [], answerSchedule: [], remainingCount: 0, memorized: false,
-    })]);
+    const markup = renderDeck([protoCard({ broken: true, answers: ['서울'], mastery: [true] })]);
 
     expect(markup).not.toContain('다시 점검할 가림');
   });
 
   it('leaves a hide judged known today out of the checkup queue', () => {
     const markup = renderDeck([protoCard({
-      a: ['서울'], answerMastery: [true], answerSchedule: [rateAnswer(null, true, NOW)],
+      answers: ['서울'], mastery: [true], schedules: [rateAnswer(null, true, NOW)],
     })]);
 
     expect(markup).not.toContain('다시 점검할 가림');

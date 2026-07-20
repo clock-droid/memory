@@ -4,7 +4,7 @@ import { RotateCcw } from 'lucide-react';
 import type { Dispatch } from 'react';
 import { ACCENT, ACCENT_DEEP } from '../constants';
 import { masterySummary, weakestFirst } from '../cards';
-import { dueAnswerIndexes } from '../answerSchedule';
+import { dueHides, hideTexts } from '../hides';
 import type { ProtoCard, ProtoList } from '../cards';
 import type { Patch } from '../state/patchState';
 import type { DeckUiState } from '../state/uiSlices';
@@ -50,7 +50,7 @@ export function DeckView(props: {
   // count follows judgments without a timer.
   const checkupNow = Date.now();
   const checkupDueCount = cardsAll.reduce(
-    (total, c) => c.needsRepair ? total : total + dueAnswerIndexes(c, checkupNow).length,
+    (total, c) => c.needsRepair ? total : total + dueHides(c.hides, checkupNow).length,
     0,
   );
 
@@ -74,11 +74,11 @@ export function DeckView(props: {
     if (parts.length > 1) {
       parts.forEach((t, i) => {
         segs.push({ text: t, chip: false, chipText: '' });
-        if (i < parts.length - 1) segs.push({ text: '', chip: true, chipText: c.a[i] || '' });
+        if (i < parts.length - 1) segs.push({ text: '', chip: true, chipText: c.hides[i]?.text ?? '' });
       });
     } else {
       segs.push({ text: `${c.q}  `, chip: false, chipText: '' });
-      segs.push({ text: '', chip: true, chipText: c.a.join(', ') });
+      segs.push({ text: '', chip: true, chipText: hideTexts(c.hides).join(', ') });
     }
     return segs;
   };
@@ -338,7 +338,7 @@ export function DeckView(props: {
                 aria-describedby="card-row-keyboard-help"
                 aria-label={c.needsRepair
                   ? `${c.q.replaceAll('___', '가림')} 카드 수정 필요. 답을 입력하세요`
-                  : `${c.q.replaceAll('___', '가림')} ${c.a.join(', ')} 카드 수정. 가림 ${c.knownCount}/${c.a.length} 완료`}
+                  : `${c.q.replaceAll('___', '가림')} ${hideTexts(c.hides).join(', ')} 카드 수정. 가림 ${c.knownCount}/${c.hides.length} 완료`}
                 aria-keyshortcuts="Enter Space Delete ArrowLeft"
                 onKeyDown={rowKeyDown(c)}
                 onPointerDown={rowPointerDown(c, isOpen)}
@@ -359,8 +359,8 @@ export function DeckView(props: {
                   ))}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5, flexShrink: 0, paddingTop: 3, pointerEvents: 'none', color: c.needsRepair ? '#b42318' : c.memorized ? '#1e9e46' : '#6e6e73' }}>
-                  {!c.needsRepair && <HideStateMap states={c.answerMastery.map((known) => known ? 'known' : 'retry')} />}
-                  <span style={{ fontSize: 11, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{c.needsRepair ? '수정 필요' : `${c.knownCount}/${c.a.length}`}</span>
+                  {!c.needsRepair && <HideStateMap states={c.hides.map((hide) => hide.known ? 'known' : 'retry')} />}
+                  <span style={{ fontSize: 11, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{c.needsRepair ? '수정 필요' : `${c.knownCount}/${c.hides.length}`}</span>
                 </div>
               </div>
             </div>

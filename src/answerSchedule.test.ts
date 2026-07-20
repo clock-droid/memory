@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   answerDueAt,
-  dueAnswerIndexes,
   isValidAnswerSchedule,
   normalizeAnswerSchedule,
   rateAnswer,
@@ -92,22 +91,3 @@ describe('normalizeAnswerSchedule', () => {
   });
 });
 
-describe('dueAnswerIndexes', () => {
-  it('returns only known hides whose check date has passed', () => {
-    const overdue = schedule({ due: T0 - DAY });
-    const future = schedule({ due: T0 + DAY });
-    const card = {
-      answerMastery: [true, true, false, true],
-      answerSchedule: [overdue, future, overdue, null],
-      updatedAt: T0 - 30 * DAY,
-    };
-    // index 0: known+overdue → due. index 1: known+future → not due.
-    // index 2: unknown → never due. index 3: known, seeded from an old card → due.
-    expect(dueAnswerIndexes(card, T0)).toEqual([0, 3]);
-  });
-
-  it('keeps freshly saved known hides quiet', () => {
-    const card = { answerMastery: [true], answerSchedule: [null], updatedAt: T0 - 1 };
-    expect(dueAnswerIndexes(card, T0)).toEqual([]);
-  });
-});

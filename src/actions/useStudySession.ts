@@ -1,7 +1,7 @@
 import { useCallback, useRef } from 'react';
 import type { Dispatch } from 'react';
-import { rateAnswer } from '../answerSchedule';
 import type { ProtoList } from '../cards';
+import { hideMastery, hideSchedules, rateHides } from '../hides';
 import type { Patch } from '../state/patchState';
 import type { RouteState, SessionState } from '../state/uiSlices';
 import type { SessionRun } from '../state/useRoomUi';
@@ -76,48 +76,38 @@ export function useStudySession({
     const card = activeList.cards.find((item) => item.id === target.cardId);
     if (!card) return;
     if (savingKey.current !== null) return;
-    const saveKey = `${activeList.deckId}:${card.id}:${target.answerIndexes.join(',')}`;
+    const saveKey = `${activeList.deckId}:${card.id}:${target.hideIndexes.join(',')}`;
     savingKey.current = saveKey;
 
-    const retried = new Set(retry);
     const previousRetry = [...retry];
-    const previousMastery = [...card.answerMastery];
-    const previousSchedule = [...card.answerSchedule];
-    const nextMastery = [...card.answerMastery];
-    const nextSchedule = [...card.answerSchedule];
-    const judgedAt = Date.now();
-    for (const answerIndex of target.answerIndexes) {
-      const knew = !retried.has(answerIndex);
-      nextMastery[answerIndex] = knew;
-      nextSchedule[answerIndex] = rateAnswer(card.answerSchedule[answerIndex], knew, judgedAt);
-    }
+    const judged = rateHides(card.hides, target.hideIndexes, new Set(retry), Date.now());
 
-    const save = (mastery: boolean[], schedule: typeof nextSchedule) => store.saveAnswerMastery(
-      activeList.deckId, card.id, mastery, schedule,
+    const save = (hides: typeof judged) => store.saveAnswerMastery(
+      activeList.deckId, card.id, hideMastery(hides), hideSchedules(hides),
       { onFailure: () => toast('학습 상태를 저장하지 못했어요. 연결을 복구해 주세요') },
     );
 
     try {
-      const queued = save(nextMastery, nextSchedule);
+      const queued = save(judged);
       if (!queued.accepted || !await queued.done) return;
       setSession((current) => {
         const stillCurrent = current.queue[0]?.cardId === target.cardId;
         return {
           queue: stillCurrent ? current.queue.slice(1) : current.queue,
-          done: stillCurrent ? current.done + target.answerIndexes.length : current.done,
+          done: stillCurrent ? current.done + target.hideIndexes.length : current.done,
           revealed: [],
           retry: [],
         };
       });
       toast('판정을 저장했어요', () => { void (async () => {
-        const undone = save(previousMastery, previousSchedule);
+        const undone = save(card.hides);
         if (!undone.accepted || !await undone.done) return;
         // The toast outlives the screen: undoing from the deck returns to the run.
         setRoute({ view: 'study' });
         setSession((current) => ({
           queue: [target, ...current.queue],
-          done: Math.max(0, current.done - target.answerIndexes.length),
-          revealed: [...target.answerIndexes],
+          done: Math.max(0, current.done - target.hideIndexes.length),
+          revealed: [...target.hideIndexes],
           retry: previousRetry,
         }));
       })(); });

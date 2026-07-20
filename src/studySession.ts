@@ -1,6 +1,6 @@
-import { answerDueAt, dueAnswerIndexes } from './answerSchedule';
 import { weakestFirst } from './cards';
 import type { ProtoCard } from './cards';
+import { dueHides, hideIndexes, unknownHides } from './hides';
 import type { SessionMode, StudyTarget } from './types';
 
 /**
@@ -18,19 +18,16 @@ export type StudyPlan =
  * yet, or — when the whole card is known — all of them, for a fresh pass.
  */
 function targetsOf(card: ProtoCard): StudyTarget {
-  const unknown = card.answerMastery.flatMap((known, index) => (known ? [] : [index]));
-  return {
-    cardId: card.id,
-    answerIndexes: unknown.length > 0 ? unknown : card.a.map((_, index) => index),
-  };
+  const unknown = unknownHides(card.hides);
+  return { cardId: card.id, hideIndexes: hideIndexes(unknown.length > 0 ? unknown : card.hides) };
 }
 
 function toQueue(cards: ProtoCard[]): StudyTarget[] {
-  return cards.map(targetsOf).filter((target) => target.answerIndexes.length > 0);
+  return cards.map(targetsOf).filter((target) => target.hideIndexes.length > 0);
 }
 
 export function countHides(queue: StudyTarget[]) {
-  return queue.reduce((total, target) => total + target.answerIndexes.length, 0);
+  return queue.reduce((total, target) => total + target.hideIndexes.length, 0);
 }
 
 /**
@@ -60,16 +57,15 @@ export function planStudySession(cards: ProtoCard[], cardIds?: string[]): StudyP
 export function planCheckupSession(cards: ProtoCard[], now: number): StudyPlan {
   const entries = cards
     .filter((card) => !card.needsRepair)
-    .map((card) => ({ card, answerIndexes: dueAnswerIndexes(card, now) }))
-    .filter((entry) => entry.answerIndexes.length > 0);
+    .map((card) => ({ card, due: dueHides(card.hides, now) }))
+    .filter((entry) => entry.due.length > 0);
   if (entries.length === 0) return { kind: 'nothing-due' };
-  const dueAtOf = ({ card, answerIndexes }: (typeof entries)[number]) =>
-    Math.min(...answerIndexes.map((index) => answerDueAt(card.answerSchedule[index], card.updatedAt)));
+  const dueAtOf = ({ due }: (typeof entries)[number]) => Math.min(...due.map((hide) => hide.dueAt));
   const ordered = [...entries].sort((x, y) => dueAtOf(x) - dueAtOf(y));
   return {
     kind: 'session',
     mode: 'checkup',
-    targets: ordered.map(({ card, answerIndexes }) => ({ cardId: card.id, answerIndexes })),
+    targets: ordered.map(({ card, due }) => ({ cardId: card.id, hideIndexes: hideIndexes(due) })),
   };
 }
 

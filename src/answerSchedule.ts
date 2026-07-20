@@ -66,12 +66,3 @@ export function normalizeAnswerSchedule(
     return isValidAnswerSchedule(entry) ? entry : null;
   });
 }
-
-/** Indexes of known hides whose next check date has passed. */
-export function dueAnswerIndexes(
-  card: { answerMastery: boolean[]; answerSchedule: Array<AnswerSchedule | null>; updatedAt: number },
-  now: number,
-): number[] {
-  return card.answerMastery.flatMap((known, index) =>
-    known && answerDueAt(card.answerSchedule[index], card.updatedAt) <= now ? [index] : []);
-}

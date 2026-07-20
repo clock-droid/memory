@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import type { Dispatch } from 'react';
 import { keepCard, protoCardSourceSignature, qaToNewCard, remapAnswerMastery, remapAnswerSchedule, resolveEditedCardId } from '../cards';
 import type { ProtoCard, ProtoList } from '../cards';
+import { hideTexts } from '../hides';
 import type { Patch } from '../state/patchState';
 import type { EditorState } from '../state/uiSlices';
 import type { RoomStore } from '../sync/useRoomStore';
@@ -40,8 +41,9 @@ export function useCardEditor({ store, activeList, commitSection, setEditor, toa
       sourceSignature: protoCardSourceSignature(card),
       selection: null,
     };
+    const texts = hideTexts(card.hides);
     if (card.q.includes('___')) {
-      const tokens = cardToTokens(card.q, card.a);
+      const tokens = cardToTokens(card.q, texts);
       setEditor({
         ...shared,
         mode: 'tokens',
@@ -52,11 +54,11 @@ export function useCardEditor({ store, activeList, commitSection, setEditor, toa
       });
       return;
     }
-    const a = card.a.join(', ');
+    const a = texts.join(', ');
     setEditor({
       ...shared,
       mode: 'qa',
-      singleAnswer: card.a.length === 1,
+      singleAnswer: texts.length === 1,
       q: card.q,
       a,
       initialSignature: editSignature('qa', card.q, a, []),
