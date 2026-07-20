@@ -1,7 +1,7 @@
 import { answerDueAt, dueAnswerIndexes } from './answerSchedule';
 import { weakestFirst } from './cards';
 import type { ProtoCard } from './cards';
-import type { SessionMode, StudyTarget } from './uiState';
+import type { SessionMode, StudyTarget } from './types';
 
 /**
  * What a start request resolved to. Anything other than `session` means the

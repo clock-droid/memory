@@ -1,20 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
+import type { Dispatch } from 'react';
 import { RotateCcw } from 'lucide-react';
 import { ACCENT, ACCENT_DEEP } from '../constants';
 import { masterySummary } from '../cards';
 import type { ProtoList } from '../cards';
-import type { Patch, UIState } from '../uiState';
+import type { Patch } from '../state/patchState';
+import type { SessionState } from '../state/uiSlices';
 import { usePcHints } from '../usePcHints';
 import { readJudgeHintEnabled, writeJudgeHintEnabled } from '../judgeHint';
 import { HideStateMap } from './HideStateMap';
 import type { HideState } from './HideStateMap';
 
 export function StudyView(props: {
-  list: ProtoList | undefined; state: UIState; dispatch: (p: Patch) => void;
+  list: ProtoList | undefined; session: SessionState; setSession: Dispatch<Patch<SessionState>>;
   onComplete: () => Promise<void>;
   onDeck: () => void; onRetryRemaining: () => void; onReviewAll: () => void;
 }) {
-  const { list, state, dispatch } = props;
+  const { list, session, setSession } = props;
   const isPc = usePcHints();
   const contentRef = useRef<HTMLDivElement | null>(null);
   const savingRef = useRef(false);
@@ -24,17 +26,17 @@ export function StudyView(props: {
     setJudgeHintEnabled(false);
     writeJudgeHintEnabled(false);
   };
-  const target = state.queue[0];
+  const target = session.queue[0];
   const card = list && target ? list.cards.find((c) => c.id === target.cardId) : undefined;
   const qParts = card ? card.q.split('___') : [];
   const nBlanks = card ? (qParts.length > 1 ? qParts.length - 1 : 1) : 0;
   const isCloze = !!card && qParts.length > 1;
   const targetIndexes = target?.answerIndexes ?? [];
   const targetSet = new Set(targetIndexes);
-  const retrySet = new Set(state.retryAnswerIdx);
+  const retrySet = new Set(session.retry);
   let nextIdx = -1;
   for (const answerIndex of targetIndexes) {
-    if (!state.revealedIdx.includes(answerIndex)) { nextIdx = answerIndex; break; }
+    if (!session.revealed.includes(answerIndex)) { nextIdx = answerIndex; break; }
   }
   const allRevealed = !!card && targetIndexes.length > 0 && nextIdx === -1;
   const complete = async () => {
@@ -49,13 +51,13 @@ export function StudyView(props: {
     }
   };
 
-  const revealNext = () => { if (nextIdx >= 0) dispatch((st) => ({ revealedIdx: [...st.revealedIdx, nextIdx] })); };
+  const revealNext = () => { if (nextIdx >= 0) setSession((current) => ({ revealed: [...current.revealed, nextIdx] })); };
   const toggleRetry = (answerIndex: number) => {
     if (savingRef.current) return;
-    dispatch((st) => ({
-      retryAnswerIdx: st.retryAnswerIdx.includes(answerIndex)
-        ? st.retryAnswerIdx.filter((i) => i !== answerIndex)
-        : [...st.retryAnswerIdx, answerIndex],
+    setSession((current) => ({
+      retry: current.retry.includes(answerIndex)
+        ? current.retry.filter((i) => i !== answerIndex)
+        : [...current.retry, answerIndex],
     }));
   };
 
@@ -79,7 +81,7 @@ export function StudyView(props: {
 
   useEffect(() => {
     if (!card || targetIndexes.length <= 1) return;
-    const focusIndex = nextIdx >= 0 ? nextIdx : state.revealedIdx[state.revealedIdx.length - 1];
+    const focusIndex = nextIdx >= 0 ? nextIdx : session.revealed[session.revealed.length - 1];
     if (focusIndex === undefined) return;
     const frame = window.requestAnimationFrame(() => {
       const container = contentRef.current;
@@ -89,7 +91,7 @@ export function StudyView(props: {
       element?.scrollIntoView({ block: 'center', behavior: reducedMotion ? 'auto' : 'smooth' });
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [card, targetIndexes.length, nextIdx, state.revealedIdx]);
+  }, [card, targetIndexes.length, nextIdx, session.revealed]);
 
   if (!card) {
     const progress = list ? masterySummary(list.cards) : { total: 0, known: 0 };
@@ -105,9 +107,9 @@ export function StudyView(props: {
             <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#1e9e46" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-            <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.01em' }}>{state.sessionMode === 'checkup' ? '점검 끝!' : state.sessionMode === 'review' ? '복습 끝!' : '오늘 학습 끝!'}</div>
+            <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.01em' }}>{session.mode === 'checkup' ? '점검 끝!' : session.mode === 'review' ? '복습 끝!' : '오늘 학습 끝!'}</div>
             <div style={{ fontSize: 15, color: 'rgba(60,60,67,0.6)', textAlign: 'center', lineHeight: 1.5 }}>
-              {list ? (remaining === 0 ? `가림 ${progress.total}개 완료` : `가림 ${state.sessionTotal}개 확인 · 다시 ${remaining}개`) : ''}
+              {list ? (remaining === 0 ? `가림 ${progress.total}개 완료` : `가림 ${session.total}개 확인 · 다시 ${remaining}개`) : ''}
             </div>
           </div>
           <HideStateMap states={resultStates} size="regular" />
@@ -131,15 +133,15 @@ export function StudyView(props: {
       cardSegs.push({ text: t, kind: 'text', answer: '', answerIndex: -1, target: false });
       if (i < qParts.length - 1) {
         const isTarget = targetSet.has(i);
-        const kind = !isTarget || state.revealedIdx.includes(i) ? 'revealed' : i === nextIdx ? 'next' : 'waiting';
+        const kind = !isTarget || session.revealed.includes(i) ? 'revealed' : i === nextIdx ? 'next' : 'waiting';
         cardSegs.push({ text: '', kind, answer: card.a[i] || '', answerIndex: i, target: isTarget });
       }
     });
   }
 
-  const checkedInCard = targetIndexes.filter((i) => state.revealedIdx.includes(i)).length;
-  const checkedTotal = state.sessionDone + checkedInCard;
-  const progressPct = state.sessionTotal ? Math.round((checkedTotal / state.sessionTotal) * 100) : 0;
+  const checkedInCard = targetIndexes.filter((i) => session.revealed.includes(i)).length;
+  const checkedTotal = session.done + checkedInCard;
+  const progressPct = session.total ? Math.round((checkedTotal / session.total) * 100) : 0;
   const cardBadge = isCloze ? (nBlanks > 1 ? `가림 ${nBlanks}곳` : '가림 1곳') : (card.a.length > 1 ? `문답 · 답 ${card.a.length}개` : '문답');
   const tapHint = targetIndexes.length > 1
     ? `탭하면 다음 답 (${checkedInCard + 1}/${targetIndexes.length})`
@@ -149,7 +151,7 @@ export function StudyView(props: {
     : '스페이스를 누르면 답이 보여요';
   const liveHideStates: HideState[] = card.answerMastery.map((known, answerIndex) => {
     if (retrySet.has(answerIndex)) return 'retry';
-    if (targetSet.has(answerIndex)) return state.revealedIdx.includes(answerIndex) ? 'checked' : 'pending';
+    if (targetSet.has(answerIndex)) return session.revealed.includes(answerIndex) ? 'checked' : 'pending';
     return known ? 'known' : 'retry';
   });
 
@@ -162,11 +164,11 @@ export function StudyView(props: {
         <div style={{ flex: 1, height: 3, borderRadius: 2, background: 'rgba(120,120,128,0.16)', overflow: 'hidden' }}>
           <div style={{ width: `${progressPct}%`, height: '100%', borderRadius: 2, background: ACCENT, transition: 'width 0.35s cubic-bezier(0.3,0.9,0.4,1)' }} />
         </div>
-        <span style={{ fontSize: 12.5, fontWeight: 600, color: 'rgba(60,60,67,0.6)', fontVariantNumeric: 'tabular-nums' }}>{checkedTotal}/{state.sessionTotal}</span>
+        <span style={{ fontSize: 12.5, fontWeight: 600, color: 'rgba(60,60,67,0.6)', fontVariantNumeric: 'tabular-nums' }}>{checkedTotal}/{session.total}</span>
       </div>
 
       <div
-        key={`${card.id}-${state.sessionDone}-${state.queue.length}`}
+        key={`${card.id}-${session.done}-${session.queue.length}`}
         role={allRevealed ? undefined : 'button'}
         tabIndex={allRevealed ? undefined : 0}
         aria-label={allRevealed ? undefined : isCloze ? `가림막 공개 ${checkedInCard + 1}/${targetIndexes.length}` : '답 공개'}
@@ -184,7 +186,7 @@ export function StudyView(props: {
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 10 }}>
                 {card.a.map((answer, answerIndex) => {
                   const isTarget = targetSet.has(answerIndex);
-                  const revealed = !isTarget || state.revealedIdx.includes(answerIndex);
+                  const revealed = !isTarget || session.revealed.includes(answerIndex);
                   if (!revealed) {
                     return <div key={answerIndex} data-study-answer-index={answerIndex} style={{ height: 42, borderRadius: 10, background: answerIndex === nextIdx ? 'rgba(0,122,255,0.16)' : 'rgba(120,120,128,0.12)', width: `${Math.max(7, Math.min(answer.length + 1, 18))}em`, maxWidth: '100%', fontSize: 16 }} />;
                   }

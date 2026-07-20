@@ -1,18 +1,24 @@
 import { useCallback, useRef } from 'react';
+import type { Dispatch } from 'react';
 import { rateAnswer } from '../answerSchedule';
 import type { ProtoList } from '../cards';
+import type { Patch } from '../state/patchState';
+import type { RouteState, SessionState } from '../state/uiSlices';
+import type { SessionRun } from '../state/useRoomUi';
 import { countHides, planCheckupSession, planStudySession, shuffleTargets } from '../studySession';
 import type { StudyPlan } from '../studySession';
 import type { RoomStore } from '../sync/useRoomStore';
-import type { Patch, UIState } from '../uiState';
 import type { Toast } from './useToast';
 
 export type StudySessionOptions = {
   store: RoomStore;
   lists: ProtoList[];
   activeList: ProtoList | undefined;
-  state: UIState;
-  dispatch: (patch: Patch) => void;
+  session: SessionState;
+  setSession: Dispatch<Patch<SessionState>>;
+  setRoute: Dispatch<Patch<RouteState>>;
+  startSession: (deckId: string, sectionId: string, run: SessionRun) => void;
+  openList: (deckId: string, sectionId: string) => void;
   toast: Toast;
 };
 
@@ -20,27 +26,26 @@ export type StudySessionOptions = {
  * Starting and finishing sessions. A session is a queue of hides, never a queue
  * of cards: finishing one card can leave its known hides untouched.
  */
-export function useStudySession({ store, lists, activeList, state, dispatch, toast }: StudySessionOptions) {
+export function useStudySession({
+  store, lists, activeList, session, setSession, setRoute, startSession, openList, toast,
+}: StudySessionOptions) {
   // Guards against a double judgment while the first write is still in flight.
   const savingKey = useRef<string | null>(null);
-  const { shuffle, queue, retryAnswerIdx } = state;
+  const { shuffle, queue, retry } = session;
 
   const applyPlan = useCallback((deckId: string, sectionId: string, plan: StudyPlan) => {
-    const openDeck = () => dispatch({ view: 'deck', activeDeckId: deckId, activeSectionId: sectionId });
-    if (plan.kind === 'empty-list') return openDeck();
+    if (plan.kind === 'empty-list') return openList(deckId, sectionId);
     if (plan.kind === 'needs-repair') {
-      openDeck();
+      openList(deckId, sectionId);
       toast('답이 없는 카드를 먼저 수정해 주세요');
       return;
     }
     if (plan.kind === 'nothing-due') return toast('지금 점검할 가림이 없어요');
     const targets = shuffle ? shuffleTargets(plan.targets) : plan.targets;
-    dispatch({
-      view: 'study', activeDeckId: deckId, activeSectionId: sectionId,
-      queue: targets, sessionTotal: countHides(targets), sessionDone: 0,
-      revealedIdx: [], retryAnswerIdx: [], openRowId: null, sessionMode: plan.mode,
+    startSession(deckId, sectionId, {
+      mode: plan.mode, queue: targets, total: countHides(targets), done: 0, revealed: [], retry: [],
     });
-  }, [shuffle, dispatch, toast]);
+  }, [shuffle, startSession, openList, toast]);
 
   /** Blocks a start while a card write is in flight — it would study stale ids. */
   const readyToStart = useCallback((deckId: string, blockedMessage: string) => {
@@ -74,8 +79,8 @@ export function useStudySession({ store, lists, activeList, state, dispatch, toa
     const saveKey = `${activeList.deckId}:${card.id}:${target.answerIndexes.join(',')}`;
     savingKey.current = saveKey;
 
-    const retried = new Set(retryAnswerIdx);
-    const previousRetry = [...retryAnswerIdx];
+    const retried = new Set(retry);
+    const previousRetry = [...retry];
     const previousMastery = [...card.answerMastery];
     const previousSchedule = [...card.answerSchedule];
     const nextMastery = [...card.answerMastery];
@@ -95,30 +100,31 @@ export function useStudySession({ store, lists, activeList, state, dispatch, toa
     try {
       const queued = save(nextMastery, nextSchedule);
       if (!queued.accepted || !await queued.done) return;
-      dispatch((current) => {
+      setSession((current) => {
         const stillCurrent = current.queue[0]?.cardId === target.cardId;
         return {
           queue: stillCurrent ? current.queue.slice(1) : current.queue,
-          sessionDone: stillCurrent ? current.sessionDone + target.answerIndexes.length : current.sessionDone,
-          revealedIdx: [],
-          retryAnswerIdx: [],
+          done: stillCurrent ? current.done + target.answerIndexes.length : current.done,
+          revealed: [],
+          retry: [],
         };
       });
       toast('판정을 저장했어요', () => { void (async () => {
         const undone = save(previousMastery, previousSchedule);
         if (!undone.accepted || !await undone.done) return;
-        dispatch((current) => ({
-          view: 'study',
+        // The toast outlives the screen: undoing from the deck returns to the run.
+        setRoute({ view: 'study' });
+        setSession((current) => ({
           queue: [target, ...current.queue],
-          sessionDone: Math.max(0, current.sessionDone - target.answerIndexes.length),
-          revealedIdx: [...target.answerIndexes],
-          retryAnswerIdx: previousRetry,
+          done: Math.max(0, current.done - target.answerIndexes.length),
+          revealed: [...target.answerIndexes],
+          retry: previousRetry,
         }));
       })(); });
     } finally {
       if (savingKey.current === saveKey) savingKey.current = null;
     }
-  }, [activeList, queue, retryAnswerIdx, store, dispatch, toast]);
+  }, [activeList, queue, retry, store, setSession, setRoute, toast]);
 
   return { startStudy, startCheckup, completeTarget };
 }

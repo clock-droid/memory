@@ -1,25 +1,30 @@
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { ACCENT } from '../constants';
-import { toggleTokenAt } from '../tokens';
 import type { Token } from '../tokens';
-import type { Patch, UIState } from '../uiState';
 
-// Renders a run of tokens as tap/drag-selectable chips. The active selection
-// lives in the shared UI state (`sel`); pointer-down/enter update it and the
-// window pointer-up in App commits it. `ri` identifies which token run this is:
-// -100 is the edit sheet's tokens, otherwise it indexes into `sheetRows`.
-export function TokenChips({ tokens, ri, fontSize, outlined = false, disabled = false, sel, dispatch }: {
+/**
+ * Renders a run of tokens as tap/drag-selectable chips.
+ *
+ * The component owns no state: the parent holds the tokens and the active
+ * selection, so the same chips work for a composer row and for the edit sheet
+ * without either one knowing about the other.
+ */
+export function TokenChips({ tokens, selection, fontSize, outlined = false, disabled = false, onSelectStart, onSelectExtend, onToggle }: {
   tokens: Token[];
-  ri: number;
+  /** The active selection when it belongs to this run of tokens, else null. */
+  selection: { start: number; end: number } | null;
   fontSize: number;
   outlined?: boolean;
   disabled?: boolean;
-  sel: UIState['sel'];
-  dispatch: (p: Patch) => void;
+  onSelectStart: (index: number, wasHidden: boolean) => void;
+  onSelectExtend: (index: number) => void;
+  onToggle: (index: number) => void;
 }) {
   const views = tokens.map((t, ti) => {
     if (t.nl) return { brk: true as const, key: ti };
-    const inSel = !!sel && sel.ri === ri && ti >= Math.min(sel.start, sel.end) && ti <= Math.max(sel.start, sel.end);
+    const inSel = !!selection
+      && ti >= Math.min(selection.start, selection.end)
+      && ti <= Math.max(selection.start, selection.end);
     const marked = t.hidden || inSel;
     return {
       brk: false as const, key: ti, word: t.word, tail: t.tail, marked,
@@ -31,25 +36,17 @@ export function TokenChips({ tokens, ri, fontSize, outlined = false, disabled = 
         if (disabled) return;
         e.stopPropagation();
         try { (e.target as Element).releasePointerCapture?.(e.pointerId); } catch { /* noop */ }
-        dispatch({ sel: { ri, start: ti, end: ti, wasHidden: t.hidden } });
+        onSelectStart(ti, t.hidden);
       },
       onEnter: () => {
-        if (!disabled) dispatch((st) => (st.sel && st.sel.ri === ri ? { sel: { ...st.sel, end: ti } } : {}));
+        if (!disabled) onSelectExtend(ti);
       },
       onKeyDown: (e: ReactKeyboardEvent<HTMLButtonElement>) => {
         if (disabled) return;
         if (e.key !== 'Enter' && e.key !== ' ') return;
         e.preventDefault();
         e.stopPropagation();
-        dispatch((st) => {
-          if (ri === -100) return { editTokens: toggleTokenAt(st.editTokens, ti), sel: null };
-          return {
-            sheetRows: st.sheetRows.map((row, rowIndex) =>
-              rowIndex === ri && row.kind === 'tokens' ? { ...row, tokens: toggleTokenAt(row.tokens, ti) } : row,
-            ),
-            sel: null,
-          };
-        });
+        onToggle(ti);
       },
     };
   });

@@ -1,52 +1,53 @@
 import { useRef, useState } from 'react';
-import type { ChangeEvent } from 'react';
+import type { ChangeEvent, Dispatch } from 'react';
 import { ACCENT, ACCENT_DEEP } from '../constants';
-import { editSignature, tokenizeText, tokensToText } from '../tokens';
+import { editSignature, toggleTokenAt, tokenizeText, tokensToText } from '../tokens';
 import { resolveEditedCardId } from '../cards';
 import type { ProtoCard, ProtoList } from '../cards';
-import type { Patch, UIState } from '../uiState';
+import type { Patch } from '../state/patchState';
+import type { EditorState } from '../state/uiSlices';
 import { ModalSheet } from './ModalSheet';
 import { TokenChips } from './TokenChips';
 
 export function EditSheet(props: {
-  list: ProtoList; state: UIState; dispatch: (p: Patch) => void;
-  saveEditFrom: (st: UIState, close: boolean) => Promise<boolean>;
+  list: ProtoList; editor: EditorState; setEditor: Dispatch<Patch<EditorState>>;
+  saveEdit: (editor: EditorState, close: boolean) => Promise<boolean>;
   onDelete: () => void; openEditFor: (card: ProtoCard) => void;
 }) {
-  const { list, state, dispatch } = props;
+  const { list, editor, setEditor } = props;
   const cardsAll = list.cards;
-  const resolvedCardId = resolveEditedCardId(cardsAll, state.editCardId, state.editSourceSignature);
+  const resolvedCardId = resolveEditedCardId(cardsAll, editor.cardId, editor.sourceSignature);
   const idx = resolvedCardId ? cardsAll.findIndex((card) => card.id === resolvedCardId) : -1;
-  const dirty = editSignature(state.editMode, state.editQ, state.editA, state.editTokens) !== state.editInitialSignature;
+  const dirty = editSignature(editor.mode, editor.q, editor.a, editor.tokens) !== editor.initialSignature;
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const savingRef = useRef(false);
   const [saving, setSaving] = useState(false);
-  const close = () => { if (!savingRef.current) dispatch({ editSheetOpen: false }); };
+  const close = () => { if (!savingRef.current) setEditor({ open: false }); };
 
   const onEditText = (e: ChangeEvent<HTMLTextAreaElement>) => {
     if (savingRef.current) return;
     const text = e.target.value;
-    const hiddenWords = new Set(state.editTokens.filter((t) => t.hidden).map((t) => t.word));
+    const hiddenWords = new Set(editor.tokens.filter((t) => t.hidden).map((t) => t.word));
     let g = 5000;
     const tokens = tokenizeText(text).map((t) => (!t.nl && hiddenWords.has(t.word) ? { ...t, hidden: true, gid: g++ } : t));
-    dispatch({ editText: text, editTokens: tokens });
+    setEditor({ text, tokens });
   };
   const setQA = () => {
-    if (savingRef.current || state.editMode === 'qa') return;
-    const ans = state.editTokens.filter((t) => t.hidden).map((t) => t.word);
-    const vis = tokensToText(state.editTokens.filter((t) => !t.hidden || t.nl));
-    dispatch({ editMode: 'qa', editSingleAnswer: false, editQ: vis || state.editText.trim(), editA: ans.join(', ') });
+    if (savingRef.current || editor.mode === 'qa') return;
+    const ans = editor.tokens.filter((t) => t.hidden).map((t) => t.word);
+    const vis = tokensToText(editor.tokens.filter((t) => !t.hidden || t.nl));
+    setEditor({ mode: 'qa', singleAnswer: false, q: vis || editor.text.trim(), a: ans.join(', ') });
   };
   const setCloze = () => {
-    if (savingRef.current || state.editMode === 'tokens') return;
-    const text = (state.editQ.trim() + (state.editA.trim() ? ' ' + state.editA.trim() : '')).trim();
+    if (savingRef.current || editor.mode === 'tokens') return;
+    const text = (editor.q.trim() + (editor.a.trim() ? ' ' + editor.a.trim() : '')).trim();
     let toks = tokenizeText(text);
-    if (state.editA.trim()) {
-      const aWords = new Set(state.editA.split(/[,\s]+/).map((w) => w.trim()).filter(Boolean));
+    if (editor.a.trim()) {
+      const aWords = new Set(editor.a.split(/[,\s]+/).map((w) => w.trim()).filter(Boolean));
       let g = 8100;
       toks = toks.map((t) => (!t.nl && aWords.has(t.word) ? { ...t, hidden: true, gid: g++ } : t));
     }
-    dispatch({ editMode: 'tokens', editSingleAnswer: false, editText: text, editTokens: toks });
+    setEditor({ mode: 'tokens', singleAnswer: false, text, tokens: toks });
   };
   const goPrev = () => { if (!dirty && idx > 0) props.openEditFor(cardsAll[idx - 1]); };
   const goNext = () => { if (!dirty && idx >= 0 && idx < cardsAll.length - 1) props.openEditFor(cardsAll[idx + 1]); };
@@ -56,12 +57,12 @@ export function EditSheet(props: {
     setSaving(true);
     let saved = false;
     try {
-      saved = await props.saveEditFrom(state, true);
+      saved = await props.saveEdit(editor, true);
     } finally {
       savingRef.current = false;
       setSaving(false);
     }
-    if (saved) dispatch({ editSheetOpen: false });
+    if (saved) setEditor({ open: false });
   };
 
   const chip = (active: boolean) => ({ background: active ? ACCENT : 'rgba(120,120,128,0.12)', color: active ? '#fff' : '#48484a' });
@@ -73,8 +74,8 @@ export function EditSheet(props: {
             {dirty ? '변경 취소' : '닫기'}
           </button>
           <div className="edit-sheet-modes">
-            <button type="button" className="ui-button edit-sheet-mode-button" onClick={setQA} disabled={saving} aria-pressed={state.editMode === 'qa'} style={{ padding: '8px 14px', borderRadius: 9, cursor: saving ? 'default' : 'pointer', ...chip(state.editMode === 'qa') }}><span style={{ fontSize: 13.5, fontWeight: 700 }}>문답형</span></button>
-            <button type="button" className="ui-button edit-sheet-mode-button" onClick={setCloze} disabled={saving} aria-pressed={state.editMode === 'tokens'} style={{ padding: '8px 14px', borderRadius: 9, cursor: saving ? 'default' : 'pointer', ...chip(state.editMode === 'tokens') }}><span style={{ fontSize: 13.5, fontWeight: 700 }}>가림형</span></button>
+            <button type="button" className="ui-button edit-sheet-mode-button" onClick={setQA} disabled={saving} aria-pressed={editor.mode === 'qa'} style={{ padding: '8px 14px', borderRadius: 9, cursor: saving ? 'default' : 'pointer', ...chip(editor.mode === 'qa') }}><span style={{ fontSize: 13.5, fontWeight: 700 }}>문답형</span></button>
+            <button type="button" className="ui-button edit-sheet-mode-button" onClick={setCloze} disabled={saving} aria-pressed={editor.mode === 'tokens'} style={{ padding: '8px 14px', borderRadius: 9, cursor: saving ? 'default' : 'pointer', ...chip(editor.mode === 'tokens') }}><span style={{ fontSize: 13.5, fontWeight: 700 }}>가림형</span></button>
           </div>
           <div className="edit-sheet-nav">
             {!dirty && idx > 0 && (
@@ -90,26 +91,39 @@ export function EditSheet(props: {
           </div>
         </div>
 
-        {state.editMode === 'qa' ? (
+        {editor.mode === 'qa' ? (
           <>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               <label htmlFor="edit-card-question" style={{ fontSize: 11.5, fontWeight: 700, color: 'rgba(60,60,67,0.45)', letterSpacing: '0.03em' }}>질문</label>
-              <textarea id="edit-card-question" rows={2} value={state.editQ} disabled={saving} onChange={(e) => { if (!savingRef.current) dispatch({ editQ: e.target.value }); }} placeholder="질문" style={{ fontSize: 17, fontWeight: 600, border: 'none', background: 'transparent', color: '#000', padding: '2px 0', resize: 'none', lineHeight: 1.5 }} />
+              <textarea id="edit-card-question" rows={2} value={editor.q} disabled={saving} onChange={(e) => { if (!savingRef.current) setEditor({ q: e.target.value }); }} placeholder="질문" style={{ fontSize: 17, fontWeight: 600, border: 'none', background: 'transparent', color: '#000', padding: '2px 0', resize: 'none', lineHeight: 1.5 }} />
             </div>
             <div style={{ height: 0.5, background: 'rgba(60,60,67,0.12)' }} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               <label htmlFor="edit-card-answer" style={{ fontSize: 11.5, fontWeight: 700, color: ACCENT, opacity: 0.75, letterSpacing: '0.03em' }}>답 (가려짐)</label>
-              <textarea id="edit-card-answer" rows={state.editSingleAnswer ? 4 : 2} value={state.editA} disabled={saving} onChange={(e) => { if (!savingRef.current) dispatch({ editA: e.target.value }); }} placeholder="답" style={{ fontSize: 17, fontWeight: 600, border: 'none', background: 'transparent', color: ACCENT_DEEP, padding: '2px 0', resize: 'none', lineHeight: 1.5 }} />
+              <textarea id="edit-card-answer" rows={editor.singleAnswer ? 4 : 2} value={editor.a} disabled={saving} onChange={(e) => { if (!savingRef.current) setEditor({ a: e.target.value }); }} placeholder="답" style={{ fontSize: 17, fontWeight: 600, border: 'none', background: 'transparent', color: ACCENT_DEEP, padding: '2px 0', resize: 'none', lineHeight: 1.5 }} />
             </div>
           </>
         ) : (
           <>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0 }}>
               <label htmlFor="edit-card-content" style={{ fontSize: 11.5, fontWeight: 700, color: '#6e6e73', letterSpacing: '0.03em' }}>내용</label>
-              <textarea id="edit-card-content" rows={3} value={state.editText} disabled={saving} onChange={onEditText} placeholder="문장 전체를 쓰세요" style={{ fontSize: 16.5, fontWeight: 600, border: 'none', background: 'transparent', color: '#000', padding: '2px 0', resize: 'none', lineHeight: 1.5 }} />
+              <textarea id="edit-card-content" rows={3} value={editor.text} disabled={saving} onChange={onEditText} placeholder="문장 전체를 쓰세요" style={{ fontSize: 16.5, fontWeight: 600, border: 'none', background: 'transparent', color: '#000', padding: '2px 0', resize: 'none', lineHeight: 1.5 }} />
             </div>
             <div style={{ padding: '12px 14px', borderRadius: 10, background: 'rgba(120,120,128,0.08)', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '3px 2px', lineHeight: 1.9, overflowY: 'auto', minHeight: 0 }}>
-              <TokenChips tokens={state.editTokens} ri={-100} fontSize={15} disabled={saving} sel={state.sel} dispatch={dispatch} />
+              <TokenChips
+                tokens={editor.tokens}
+                selection={editor.selection}
+                fontSize={15}
+                disabled={saving}
+                onSelectStart={(index, wasHidden) => setEditor({ selection: { start: index, end: index, wasHidden } })}
+                onSelectExtend={(index) => setEditor((current) => (current.selection
+                  ? { selection: { ...current.selection, end: index } }
+                  : {}))}
+                onToggle={(index) => setEditor((current) => ({
+                  tokens: toggleTokenAt(current.tokens, index),
+                  selection: null,
+                }))}
+              />
               <span style={{ width: '100%', fontSize: 12.5, color: ACCENT_DEEP, fontWeight: 700, marginTop: 2 }}>가릴 답을 탭하세요</span>
             </div>
           </>

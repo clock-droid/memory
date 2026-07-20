@@ -1,23 +1,26 @@
 import { useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { RotateCcw } from 'lucide-react';
+import type { Dispatch } from 'react';
 import { ACCENT, ACCENT_DEEP } from '../constants';
-import { masterySummary } from '../cards';
+import { masterySummary, weakestFirst } from '../cards';
 import { dueAnswerIndexes } from '../answerSchedule';
 import type { ProtoCard, ProtoList } from '../cards';
-import type { Patch, UIState } from '../uiState';
+import type { Patch } from '../state/patchState';
+import type { DeckUiState } from '../state/uiSlices';
 import { usePcHints } from '../usePcHints';
 import { HideStateMap } from './HideStateMap';
 
 export function DeckView(props: {
-  list: ProtoList; state: UIState; dispatch: (p: Patch) => void; weakFirst: (cards: ProtoCard[]) => ProtoCard[];
+  list: ProtoList; deck: DeckUiState; setDeck: Dispatch<Patch<DeckUiState>>;
+  shuffle: boolean; onToggleShuffle: () => void;
   lpTimer: React.MutableRefObject<number | undefined>; rowStart: React.MutableRefObject<{ x: number; y: number; moved: boolean }>;
   onHome: () => void; onRename: (name: string) => void;
   onDelete: (card: ProtoCard) => void; onEdit: (card: ProtoCard) => void; onMove: (draggedId: string, targetId: string) => void;
   onDeleteList: () => void;
   onStart: (ids: string[]) => void; onStartCheckup: () => void; onOpenAdd: () => void; toast: (msg: string) => void;
 }) {
-  const { list, state, dispatch, weakFirst, lpTimer, rowStart } = props;
+  const { list, deck, setDeck, shuffle, lpTimer, rowStart } = props;
   const isPc = usePcHints();
   const [nameDraft, setNameDraft] = useState(list.name);
   const nameTimer = useRef<number | undefined>(undefined);
@@ -30,10 +33,10 @@ export function DeckView(props: {
   useEffect(() => { setNameDraft(list.name); }, [list.id, list.name]);
   useEffect(() => () => window.clearTimeout(nameTimer.current), []);
   const cardsAll = list.cards;
-  const filterFn = (c: ProtoCard) => (state.filter === 'done' ? c.memorized : state.filter === 'unknown' ? c.remainingCount > 0 : true);
+  const filterFn = (c: ProtoCard) => (deck.filter === 'done' ? c.memorized : deck.filter === 'unknown' ? c.remainingCount > 0 : true);
   const visible = cardsAll.filter(filterFn);
   const repairCards = visible.filter((c) => c.needsRepair);
-  const learningCards = weakFirst(visible.filter((c) => !c.needsRepair && c.remainingCount > 0));
+  const learningCards = weakestFirst(visible.filter((c) => !c.needsRepair && c.remainingCount > 0));
   const doneCards = visible.filter((c) => c.memorized);
   const studyCards = visible.filter((c) => !c.needsRepair && c.remainingCount > 0);
   const reviewCards = visible.filter((c) => !c.needsRepair);
@@ -52,10 +55,10 @@ export function DeckView(props: {
   );
 
   useEffect(() => {
-    if ((state.filter === 'unknown' && cntUnknown === 0) || (state.filter === 'done' && cntDone === 0)) {
-      dispatch({ filter: 'all', openRowId: null });
+    if ((deck.filter === 'unknown' && cntUnknown === 0) || (deck.filter === 'done' && cntDone === 0)) {
+      setDeck({ filter: 'all', openRowId: null });
     }
-  }, [state.filter, cntUnknown, cntDone, dispatch]);
+  }, [deck.filter, cntUnknown, cntDone, setDeck]);
 
   const cardGroup = (c: ProtoCard) => (c.needsRepair ? 'repair' : c.memorized ? 'done' : 'learning');
 
@@ -86,13 +89,13 @@ export function DeckView(props: {
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ }
     window.clearTimeout(lpTimer.current);
     lpTimer.current = window.setTimeout(() => {
-      if (!rowStart.current.moved) dispatch({ rowDrag: null, reorder: { id: c.id, dy: 0 } });
+      if (!rowStart.current.moved) setDeck({ rowDrag: null, reorder: { id: c.id, dy: 0 } });
     }, 350);
-    dispatch({ rowDrag: { id: c.id, x: isOpen ? -82 : 0, base: isOpen ? -82 : 0 } });
+    setDeck({ rowDrag: { id: c.id, x: isOpen ? -82 : 0, base: isOpen ? -82 : 0 } });
   };
 
   const rowPointerMove = (c: ProtoCard) => (e: ReactPointerEvent<HTMLDivElement>) => {
-    dispatch((st) => {
+    setDeck((st) => {
       const re = st.reorder;
       if (re && re.id === c.id) {
         let overId: string | null = null;
@@ -115,10 +118,10 @@ export function DeckView(props: {
 
   const rowPointerUp = (c: ProtoCard, isOpen: boolean) => () => {
     window.clearTimeout(lpTimer.current);
-    const re = state.reorder;
+    const re = deck.reorder;
     if (re && re.id === c.id) {
       const overId = re.overId;
-      dispatch({ reorder: null });
+      setDeck({ reorder: null });
       if (overId) {
         const target = list.cards.find((cc) => cc.id === overId);
         if (target && cardGroup(target) === cardGroup(c)) window.setTimeout(() => props.onMove(c.id, target.id), 0);
@@ -126,7 +129,7 @@ export function DeckView(props: {
       }
       return;
     }
-    dispatch((st) => {
+    setDeck((st) => {
       const rd = st.rowDrag;
       if (!rd || rd.id !== c.id) return {};
       if (!rowStart.current.moved) {
@@ -154,18 +157,18 @@ export function DeckView(props: {
     }
     if (event.key === 'ArrowLeft') {
       event.preventDefault();
-      dispatch({ openRowId: c.id, rowDrag: null });
+      setDeck({ openRowId: c.id, rowDrag: null });
       focusDeleteButton(c.id);
       return;
     }
     if (event.key === 'ArrowRight' || event.key === 'Escape') {
       event.preventDefault();
-      dispatch({ openRowId: null, rowDrag: null });
+      setDeck({ openRowId: null, rowDrag: null });
     }
   };
 
   const closeDeleteAction = (cardId: string) => {
-    dispatch({ openRowId: null, rowDrag: null });
+    setDeck({ openRowId: null, rowDrag: null });
     window.requestAnimationFrame(() => rowRefs.current.get(cardId)?.focus({ preventScroll: true }));
   };
 
@@ -222,15 +225,11 @@ export function DeckView(props: {
           <button
             type="button"
             className="ui-button"
-            onClick={() => {
-              const next = !state.shuffle;
-              dispatch({ shuffle: next });
-              props.toast(next ? '섞기 켬 — 순서를 무작위로' : '섞기 끔 — 헷갈린 카드부터');
-            }}
-            aria-label="섞기" aria-pressed={state.shuffle} title="섞기"
-            style={{ width: 44, height: 44, borderRadius: 12, background: state.shuffle ? 'rgba(0,122,255,0.14)' : 'transparent', display: 'grid', placeItems: 'center', cursor: 'pointer' }}
+            onClick={props.onToggleShuffle}
+            aria-label="섞기" aria-pressed={shuffle} title="섞기"
+            style={{ width: 44, height: 44, borderRadius: 12, background: shuffle ? 'rgba(0,122,255,0.14)' : 'transparent', display: 'grid', placeItems: 'center', cursor: 'pointer' }}
           >
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke={state.shuffle ? ACCENT : 'rgba(60,60,67,0.5)'} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.7-1.1 2-1.7 3.3-1.7H22" /><path d="m18 2 4 4-4 4" /><path d="M2 6h1.9c1.5 0 2.9.9 3.6 2.2" /><path d="M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8" /><path d="m18 14 4 4-4 4" /></svg>
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke={shuffle ? ACCENT : 'rgba(60,60,67,0.5)'} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.7-1.1 2-1.7 3.3-1.7H22" /><path d="m18 2 4 4-4 4" /><path d="M2 6h1.9c1.5 0 2.9.9 3.6 2.2" /><path d="M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8" /><path d="m18 14 4 4-4 4" /></svg>
           </button>
           {!list.synthetic && (
             <button type="button" className="ui-button" onClick={props.onDeleteList} aria-label="암기장 삭제" title="암기장 삭제" style={{ width: 44, height: 44, borderRadius: 12, background: 'transparent', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
@@ -267,9 +266,9 @@ export function DeckView(props: {
 
       <div style={{ margin: '0 16px 4px', display: 'flex', padding: 2, borderRadius: 9, background: 'rgba(120,120,128,0.12)' }}>
         {chips.map((chip) => {
-          const active = state.filter === chip.key;
+          const active = deck.filter === chip.key;
           return (
-            <button type="button" className="ui-button" key={chip.key} onClick={() => dispatch({ filter: chip.key, openRowId: null })} aria-pressed={active} disabled={chip.disabled} style={{ flex: 1, height: 44, borderRadius: 7, display: 'grid', placeItems: 'center', background: active ? '#fff' : 'transparent', boxShadow: active ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', cursor: chip.disabled ? 'default' : 'pointer', opacity: chip.disabled ? 0.42 : 1, transition: 'background 0.15s, opacity 0.15s' }}>
+            <button type="button" className="ui-button" key={chip.key} onClick={() => setDeck({ filter: chip.key, openRowId: null })} aria-pressed={active} disabled={chip.disabled} style={{ flex: 1, height: 44, borderRadius: 7, display: 'grid', placeItems: 'center', background: active ? '#fff' : 'transparent', boxShadow: active ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', cursor: chip.disabled ? 'default' : 'pointer', opacity: chip.disabled ? 0.42 : 1, transition: 'background 0.15s, opacity 0.15s' }}>
               <span style={{ fontSize: 12.5, fontWeight: active ? 700 : 600, color: active ? '#1d1d1f' : 'rgba(60,60,67,0.55)' }}>{chip.label}</span>
             </button>
           );
@@ -300,17 +299,17 @@ export function DeckView(props: {
             );
           }
           const c = row.card;
-          const isOpen = state.openRowId === c.id;
-          const isDragging = state.rowDrag && state.rowDrag.id === c.id;
-          const isRe = state.reorder && state.reorder.id === c.id;
-          const x = isDragging ? state.rowDrag!.x : (isOpen ? -82 : 0);
-          const dropActive = !!(state.reorder && state.reorder.id !== c.id && state.reorder.overId === c.id);
+          const isOpen = deck.openRowId === c.id;
+          const isDragging = deck.rowDrag && deck.rowDrag.id === c.id;
+          const isRe = deck.reorder && deck.reorder.id === c.id;
+          const x = isDragging ? deck.rowDrag!.x : (isOpen ? -82 : 0);
+          const dropActive = !!(deck.reorder && deck.reorder.id !== c.id && deck.reorder.overId === c.id);
           // grouped list: round only the first/last row of each contiguous run
           const firstInGroup = idx === 0 || rows[idx - 1].header;
           const lastInGroup = idx === rows.length - 1 || rows[idx + 1].header;
           const radius = `${firstInGroup ? 12 : 0}px ${firstInGroup ? 12 : 0}px ${lastInGroup ? 12 : 0}px ${lastInGroup ? 12 : 0}px`;
           return (
-            <div key={c.id} data-cid={c.id} style={{ position: 'relative', borderRadius: radius, overflow: 'hidden', flexShrink: 0, transform: isRe ? `translateY(${state.reorder!.dy}px) scale(1.02)` : 'none', transition: isRe ? 'none' : 'transform 0.2s cubic-bezier(0.3,0.9,0.4,1), margin 0.16s ease', zIndex: isRe ? 10 : 'auto', boxShadow: isRe ? '0 12px 28px rgba(0,0,0,0.18)' : 'none', opacity: isRe ? 0.9 : 1, marginTop: dropActive ? 12 : 0 }}>
+            <div key={c.id} data-cid={c.id} style={{ position: 'relative', borderRadius: radius, overflow: 'hidden', flexShrink: 0, transform: isRe ? `translateY(${deck.reorder!.dy}px) scale(1.02)` : 'none', transition: isRe ? 'none' : 'transform 0.2s cubic-bezier(0.3,0.9,0.4,1), margin 0.16s ease', zIndex: isRe ? 10 : 'auto', boxShadow: isRe ? '0 12px 28px rgba(0,0,0,0.18)' : 'none', opacity: isRe ? 0.9 : 1, marginTop: dropActive ? 12 : 0 }}>
               {dropActive && <div style={{ position: 'absolute', top: -7, left: 8, right: 8, height: 3, borderRadius: 2, background: ACCENT, zIndex: 11 }} />}
               <button
                 ref={(element) => { if (element) deleteButtonRefs.current.set(c.id, element); else deleteButtonRefs.current.delete(c.id); }}
@@ -347,7 +346,7 @@ export function DeckView(props: {
                 onPointerUp={rowPointerUp(c, isOpen)}
                 onPointerCancel={() => {
                   window.clearTimeout(lpTimer.current);
-                  dispatch({ rowDrag: null, reorder: null });
+                  setDeck({ rowDrag: null, reorder: null });
                 }}
                 style={{ padding: '11px 14px', background: '#fff', display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', transform: `translateX(${x}px)`, transition: isDragging ? 'none' : 'transform 0.25s cubic-bezier(0.3,0.9,0.4,1)', touchAction: 'pan-y', boxShadow: lastInGroup ? 'none' : 'inset 0 -1px 0 rgba(60,60,67,0.08)' }}
               >
@@ -378,7 +377,7 @@ export function DeckView(props: {
           type="button"
           className="ui-button"
           onClick={() => {
-            if (studyCards.length > 0) props.onStart(weakFirst(studyCards).map((c) => c.id));
+            if (studyCards.length > 0) props.onStart(weakestFirst(studyCards).map((c) => c.id));
             else if (reviewCards.length > 0) props.onStart(reviewCards.map((c) => c.id));
             else if (repairCards.length > 0) props.toast('답이 없는 카드를 먼저 수정해 주세요');
             else props.toast('외울 카드가 없어요');

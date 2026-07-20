@@ -1,37 +1,40 @@
 import { useEffect } from 'react';
-import type { MutableRefObject } from 'react';
+import type { Dispatch, MutableRefObject } from 'react';
+import type { Patch } from '../state/patchState';
+import type { ComposerState, DeckUiState, EditorState } from '../state/uiSlices';
 import { applyHideSelection } from '../tokens';
-import type { Patch } from '../uiState';
 
-/** The edit sheet edits one token row directly instead of a numbered sheet row. */
-const EDIT_SHEET_ROW = -100;
+export type PointerReleaseOptions = {
+  setComposer: Dispatch<Patch<ComposerState>>;
+  setEditor: Dispatch<Patch<EditorState>>;
+  setDeck: Dispatch<Patch<DeckUiState>>;
+  longPressTimer: MutableRefObject<number | undefined>;
+};
 
 /**
  * Pointer gestures start inside a row but can end anywhere, so the release is
- * handled on the window: it commits a pending hide selection and cancels an
- * unfinished long-press reorder.
+ * handled on the window: it commits whichever hide selection is pending and
+ * cancels an unfinished long-press reorder. Each slice ignores the release when
+ * it has nothing in progress.
  */
-export function useGlobalPointerRelease(
-  dispatch: (patch: Patch) => void,
-  longPressTimer: MutableRefObject<number | undefined>,
-) {
+export function useGlobalPointerRelease({ setComposer, setEditor, setDeck, longPressTimer }: PointerReleaseOptions) {
   useEffect(() => {
     const release = () => {
-      dispatch((state) => {
-        const selection = state.sel;
+      setComposer((current) => {
+        const selection = current.selection;
         if (!selection) return {};
-        if (selection.ri === EDIT_SHEET_ROW) {
-          return { editTokens: applyHideSelection(state.editTokens, selection), sel: null };
-        }
         return {
-          sheetRows: state.sheetRows.map((row, index) => (index === selection.ri && row.kind === 'tokens'
+          rows: current.rows.map((row, index) => (index === selection.row && row.kind === 'tokens'
             ? { ...row, tokens: applyHideSelection(row.tokens, selection) }
             : row)),
-          sel: null,
+          selection: null,
         };
       });
+      setEditor((current) => (current.selection
+        ? { tokens: applyHideSelection(current.tokens, current.selection), selection: null }
+        : {}));
       window.clearTimeout(longPressTimer.current);
-      dispatch((state) => (state.reorder ? { reorder: null } : {}));
+      setDeck((current) => (current.reorder ? { reorder: null } : {}));
     };
     window.addEventListener('pointerup', release);
     window.addEventListener('pointercancel', release);
@@ -39,5 +42,5 @@ export function useGlobalPointerRelease(
       window.removeEventListener('pointerup', release);
       window.removeEventListener('pointercancel', release);
     };
-  }, [dispatch, longPressTimer]);
+  }, [setComposer, setEditor, setDeck, longPressTimer]);
 }

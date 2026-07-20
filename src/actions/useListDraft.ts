@@ -1,10 +1,13 @@
 import { useCallback, useRef, useState } from 'react';
+import type { Dispatch } from 'react';
 import { keepCard } from '../cards';
 import type { OptimisticNewCard, ProtoList } from '../cards';
 import { newOperationId } from '../operationId';
+import type { Patch } from '../state/patchState';
+import { initialComposer } from '../state/uiSlices';
+import type { ComposerState, DeckUiState, RouteState } from '../state/uiSlices';
 import type { CreatedList, RoomStore } from '../sync/useRoomStore';
 import type { NewCard } from '../types';
-import type { Patch } from '../uiState';
 import type { CommitSection } from './useCardActions';
 import type { Toast } from './useToast';
 
@@ -17,16 +20,24 @@ export type ListDraftOptions = {
   store: RoomStore;
   activeList: ProtoList | undefined;
   commitSection: CommitSection;
-  dispatch: (patch: Patch) => void;
+  setRoute: Dispatch<Patch<RouteState>>;
+  setComposer: Dispatch<Patch<ComposerState>>;
+  setDeck: Dispatch<Patch<DeckUiState>>;
+  goHome: () => void;
   toast: Toast;
 };
+
+/** A composer opened on an empty draft, ready for the first card. */
+const freshComposer = () => ({ ...initialComposer, open: true, operationId: newOperationId() });
 
 /**
  * The add flow, including the case where the list itself does not exist yet.
  * A draft list is only persisted once it has cards, so an abandoned draft never
  * leaves an empty list behind.
  */
-export function useListDraft({ store, activeList, commitSection, dispatch, toast }: ListDraftOptions) {
+export function useListDraft({
+  store, activeList, commitSection, setRoute, setComposer, setDeck, goHome, toast,
+}: ListDraftOptions) {
   const [draft, setDraft] = useState<{ name: string; operationId: string } | null>(null);
   const snapshot = useRef<AddSnapshot | null>(null);
 
@@ -36,19 +47,15 @@ export function useListDraft({ store, activeList, commitSection, dispatch, toast
     if (!store.isReady) return;
     snapshot.current = null;
     setDraft({ name: '새 암기장', operationId: newOperationId() });
-    dispatch({
-      view: 'deck', activeDeckId: null, activeSectionId: null,
-      slotOpen: true, pasteText: '', sheetRows: [], addOperationId: newOperationId(),
-    });
-  }, [store.isReady, dispatch]);
+    setRoute({ view: 'deck', deckId: null, sectionId: null });
+    setComposer(freshComposer());
+  }, [store.isReady, setRoute, setComposer]);
 
   const openAdd = useCallback(() => {
     snapshot.current = null;
-    dispatch({
-      slotOpen: true, pasteText: '', pasteMode: 'auto', sheetRows: [],
-      addOperationId: newOperationId(), openRowId: null,
-    });
-  }, [dispatch]);
+    setComposer(freshComposer());
+    setDeck({ openRowId: null });
+  }, [setComposer, setDeck]);
 
   const addCards = useCallback(async (cards: NewCard[], operationId: string) => {
     if (draft) {
@@ -59,7 +66,7 @@ export function useListDraft({ store, activeList, commitSection, dispatch, toast
       }
       snapshot.current = { kind: 'created', created, addedCount: cards.length };
       setDraft(null);
-      dispatch({ activeDeckId: created.deckId, activeSectionId: created.sectionId });
+      setRoute({ deckId: created.deckId, sectionId: created.sectionId });
       return true;
     }
     if (!activeList) return false;
@@ -70,7 +77,7 @@ export function useListDraft({ store, activeList, commitSection, dispatch, toast
     const saved = queued.accepted ? await queued.done : false;
     if (!saved) snapshot.current = null;
     return saved;
-  }, [draft, store, activeList, commitSection, dispatch, toast]);
+  }, [draft, store, activeList, commitSection, setRoute, toast]);
 
   /** Returns how many cards were rolled back, or 0 when nothing was undone. */
   const undoLastAdd = useCallback(async () => {
@@ -82,7 +89,7 @@ export function useListDraft({ store, activeList, commitSection, dispatch, toast
         return 0;
       }
       setDraft({ name: '새 암기장', operationId: newOperationId() });
-      dispatch({ activeDeckId: null, activeSectionId: null });
+      setRoute({ deckId: null, sectionId: null });
       snapshot.current = null;
       return last.addedCount;
     }
@@ -91,18 +98,17 @@ export function useListDraft({ store, activeList, commitSection, dispatch, toast
     if (!queued.accepted || !await queued.done) return 0;
     snapshot.current = null;
     return last.addedCount;
-  }, [store, activeList, commitSection, dispatch, toast]);
+  }, [store, activeList, commitSection, setRoute, toast]);
 
   const closeAdd = useCallback(() => {
     snapshot.current = null;
-    const cleared = { slotOpen: false, pasteText: '', pasteMode: 'auto' as const, sheetRows: [], addOperationId: '', sel: null };
     if (!draft) {
-      dispatch(cleared);
+      setComposer(initialComposer);
       return;
     }
     setDraft(null);
-    dispatch({ ...cleared, view: 'home', activeDeckId: null, activeSectionId: null });
-  }, [draft, dispatch]);
+    goHome();
+  }, [draft, setComposer, goHome]);
 
   return { draft, startNewList, openAdd, addCards, undoLastAdd, closeAdd, forgetLastAdd };
 }

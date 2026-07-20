@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { DeckView } from './DeckView';
 import { rateAnswer } from '../answerSchedule';
 import type { ProtoCard, ProtoList } from '../cards';
-import { initialUI } from '../uiState';
+import { initialDeckUi } from '../state/uiSlices';
 import type { AnswerSchedule, Card } from '../types';
 
 const DAY = 86_400_000;
@@ -44,9 +44,10 @@ function renderDeck(cards: ProtoCard[], onStartCheckup = vi.fn()) {
   const list: ProtoList = { id: 's1', deckId: 'd1', name: '암기장', synthetic: false, cards };
   return renderToStaticMarkup(createElement(DeckView, {
     list,
-    state: { ...initialUI, activeDeckId: 'd1', activeSectionId: 's1' },
-    dispatch: vi.fn(),
-    weakFirst: (items: ProtoCard[]) => items,
+    deck: initialDeckUi,
+    setDeck: vi.fn(),
+    shuffle: false,
+    onToggleShuffle: vi.fn(),
     lpTimer: { current: undefined } as MutableRefObject<number | undefined>,
     rowStart: { current: { x: 0, y: 0, moved: false } },
     onHome: vi.fn(),

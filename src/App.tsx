@@ -1,4 +1,4 @@
-import { useMemo, useReducer, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useCardActions } from './actions/useCardActions';
 import { useCardEditor } from './actions/useCardEditor';
@@ -7,11 +7,11 @@ import { useListDraft } from './actions/useListDraft';
 import { useRemoteChangeGuard } from './actions/useRemoteChangeGuard';
 import { useStudySession } from './actions/useStudySession';
 import { useToast } from './actions/useToast';
-import { buildLists, weakestFirst } from './cards';
+import { buildLists } from './cards';
 import { ROOM_KEY } from './constants';
+import { useRoomUi } from './state/useRoomUi';
 import { isSyncReadOnly } from './syncHealth';
 import { useRoomStore } from './sync/useRoomStore';
-import { initialUI, uiReducer } from './uiState';
 import { ContinuousAddView } from './views/ContinuousAddView';
 import { DeckView } from './views/DeckView';
 import { EditSheet } from './views/EditSheet';
@@ -38,39 +38,51 @@ export default function App() {
 }
 
 /**
- * Wires one room together: the synced store, the screen state, and the intents
- * the screens can trigger. All of those live in their own modules — this
- * component only decides which screen is on top.
+ * Wires one room together: the synced store, the screen state slices, and the
+ * intents the screens can trigger. All of those live in their own modules —
+ * this component only hands each screen its slice and decides which is on top.
  */
 function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (code: string) => void }) {
-  const [state, dispatch] = useReducer(uiReducer, initialUI);
   const store = useRoomStore(roomCode);
-  const { toast, undoToast } = useToast(dispatch);
+  const ui = useRoomUi();
+  const { toast, undoToast } = useToast(ui.setShell);
 
   const lists = useMemo(
     () => buildLists(store.decks, store.deckDataById),
     [store.decks, store.deckDataById],
   );
-  const activeList = lists.find((list) => list.deckId === state.activeDeckId && list.id === state.activeSectionId);
+  const activeList = lists.find((list) => list.deckId === ui.route.deckId && list.id === ui.route.sectionId);
 
-  const { commitSection, renameList, deleteCard, moveCard, deleteList } =
-    useCardActions({ store, activeList, dispatch, toast });
-  const editor = useCardEditor({ store, activeList, commitSection, dispatch, toast });
-  const draft = useListDraft({ store, activeList, commitSection, dispatch, toast });
-  const session = useStudySession({ store, lists, activeList, state, dispatch, toast });
+  const { commitSection, renameList, deleteCard, moveCard, deleteList } = useCardActions({
+    store, activeList, setDeck: ui.setDeck, goHome: ui.goHome, toast,
+  });
+  const editor = useCardEditor({ store, activeList, commitSection, setEditor: ui.setEditor, toast });
+  const draft = useListDraft({
+    store, activeList, commitSection,
+    setRoute: ui.setRoute, setComposer: ui.setComposer, setDeck: ui.setDeck, goHome: ui.goHome, toast,
+  });
+  const session = useStudySession({
+    store, lists, activeList,
+    session: ui.session, setSession: ui.setSession, setRoute: ui.setRoute,
+    startSession: ui.startSession, openList: ui.openList, toast,
+  });
 
   // Row gesture scratch state, owned here because the pointer release that ends
   // a gesture is handled on the window rather than inside the row.
   const longPressTimer = useRef<number | undefined>(undefined);
   const rowStart = useRef<{ x: number; y: number; moved: boolean }>({ x: 0, y: 0, moved: false });
-  useGlobalPointerRelease(dispatch, longPressTimer);
+  useGlobalPointerRelease({
+    setComposer: ui.setComposer, setEditor: ui.setEditor, setDeck: ui.setDeck, longPressTimer,
+  });
 
   useRemoteChangeGuard({
     syncHealth: store.syncHealth,
     activeList,
     hasDraftList: Boolean(draft.draft),
-    state,
-    dispatch,
+    route: ui.route,
+    session: ui.session,
+    setSession: ui.setSession,
+    goHome: ui.goHome,
     toast,
     onLeaveList: draft.forgetLastAdd,
   });
@@ -81,26 +93,32 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
 
   return (
     <div style={SHELL_STYLE}>
-      {(state.view === 'home' || syncReadOnly) && (
+      {(ui.route.view === 'home' || syncReadOnly) && (
         <HomeView
           lists={lists}
           decksState={store.syncHealth.status}
           syncPending={store.syncHealth.pending}
           onRetry={store.retry}
-          onOpenList={(list) => dispatch({
-            view: 'deck', activeDeckId: list.deckId, activeSectionId: list.id, openRowId: null, filter: 'all',
-          })}
+          onOpenList={(list) => {
+            ui.openList(list.deckId, list.id);
+            ui.setDeck({ filter: 'all' });
+          }}
           onContinue={(list) => session.startStudy(list.deckId, list.id)}
           onNewList={draft.startNewList}
-          onOpenSettings={() => dispatch({ settingsOpen: true })}
+          onOpenSettings={() => ui.setShell({ settingsOpen: true })}
         />
       )}
 
-      {!syncReadOnly && state.view === 'deck' && activeList && !state.slotOpen && (
+      {!syncReadOnly && ui.route.view === 'deck' && activeList && !ui.composer.open && (
         <DeckView
-          list={activeList} state={state} dispatch={dispatch} weakFirst={weakestFirst}
+          list={activeList} deck={ui.deck} setDeck={ui.setDeck}
+          shuffle={ui.session.shuffle}
+          onToggleShuffle={() => ui.setSession((current) => {
+            toast(current.shuffle ? '섞기 끔 — 헷갈린 카드부터' : '섞기 켬 — 순서를 무작위로');
+            return { shuffle: !current.shuffle };
+          })}
           lpTimer={longPressTimer} rowStart={rowStart}
-          onHome={() => dispatch({ view: 'home', activeDeckId: null, activeSectionId: null, openRowId: null })}
+          onHome={ui.goHome}
           onRename={renameList}
           onDelete={deleteCard}
           onEdit={editor.openEditFor}
@@ -113,22 +131,21 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
         />
       )}
 
-      {!syncReadOnly && state.view === 'deck' && state.slotOpen && (activeList || draft.draft) && (
+      {!syncReadOnly && ui.route.view === 'deck' && ui.composer.open && (activeList || draft.draft) && (
         <ContinuousAddView
-          state={state}
-          dispatch={dispatch}
-          operationSeed={state.addOperationId}
+          composer={ui.composer}
+          setComposer={ui.setComposer}
           onAddCards={draft.addCards}
           onUndoLast={draft.undoLastAdd}
           onClose={draft.closeAdd}
         />
       )}
 
-      {!syncReadOnly && state.view === 'study' && (
+      {!syncReadOnly && ui.route.view === 'study' && (
         <StudyView
-          list={activeList} state={state} dispatch={dispatch}
+          list={activeList} session={ui.session} setSession={ui.setSession}
           onComplete={session.completeTarget}
-          onDeck={() => dispatch({ view: 'deck', queue: [], revealedIdx: [], retryAnswerIdx: [], openRowId: null })}
+          onDeck={ui.backToDeck}
           onRetryRemaining={() => activeList && session.startStudy(activeList.deckId, activeList.id)}
           onReviewAll={() => activeList && session.startStudy(
             activeList.deckId, activeList.id, activeList.cards.map((card) => card.id),
@@ -136,21 +153,25 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
         />
       )}
 
-      {!syncReadOnly && !state.settingsOpen && state.editSheetOpen && activeList && (
+      {!syncReadOnly && !ui.shell.settingsOpen && ui.editor.open && activeList && (
         <EditSheet
-          list={activeList} state={state} dispatch={dispatch}
-          saveEditFrom={editor.saveEditFrom}
-          onDelete={() => editor.deleteEditingCard(state)}
+          list={activeList} editor={ui.editor} setEditor={ui.setEditor}
+          saveEdit={editor.saveEdit}
+          onDelete={() => editor.deleteEditingCard(ui.editor)}
           openEditFor={editor.openEditFor}
         />
       )}
 
-      {state.settingsOpen && (
-        <SettingsSheet roomCode={roomCode} onClose={() => dispatch({ settingsOpen: false })} onChangeRoom={onChangeRoom} />
+      {ui.shell.settingsOpen && (
+        <SettingsSheet
+          roomCode={roomCode}
+          onClose={() => ui.setShell({ settingsOpen: false })}
+          onChangeRoom={onChangeRoom}
+        />
       )}
 
-      {state.toastVisible && (
-        <Toast message={state.toastMsg} onUndo={state.toastUndo ? undoToast : undefined} />
+      {ui.shell.toastVisible && (
+        <Toast message={ui.shell.toastMessage} onUndo={ui.shell.toastUndo ? undoToast : undefined} />
       )}
     </div>
   );

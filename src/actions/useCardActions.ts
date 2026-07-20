@@ -1,9 +1,11 @@
 import { useCallback } from 'react';
+import type { Dispatch } from 'react';
 import { keepCard } from '../cards';
 import type { OptimisticNewCard, ProtoCard, ProtoList } from '../cards';
 import type { EnqueuedMutation } from '../mutationQueue';
+import type { Patch } from '../state/patchState';
+import type { DeckUiState } from '../state/uiSlices';
 import type { RoomStore } from '../sync/useRoomStore';
-import type { Patch } from '../uiState';
 import type { Toast } from './useToast';
 
 /** Writes a section's full card list, with the shared failure copy attached. */
@@ -17,7 +19,8 @@ export type CommitSection = (
 export type CardActionsOptions = {
   store: RoomStore;
   activeList: ProtoList | undefined;
-  dispatch: (patch: Patch) => void;
+  setDeck: Dispatch<Patch<DeckUiState>>;
+  goHome: () => void;
   toast: Toast;
 };
 
@@ -25,7 +28,7 @@ export type CardActionsOptions = {
  * Card-level intents for the open list. Every one of them is a full-section
  * write: the backend stores a section's cards as one revision.
  */
-export function useCardActions({ store, activeList, dispatch, toast }: CardActionsOptions) {
+export function useCardActions({ store, activeList, setDeck, goHome, toast }: CardActionsOptions) {
   const commitSection = useCallback<CommitSection>(
     (deckId, sectionId, cards, operationId) => store.saveSectionCards(deckId, sectionId, cards, {
       operationId,
@@ -48,9 +51,9 @@ export function useCardActions({ store, activeList, dispatch, toast }: CardActio
     const before = store.storedCardsOf(deckId, sectionId);
     const after = before.filter((stored) => stored.id !== card.id);
     if (!commitSection(deckId, sectionId, after.map((stored) => keepCard(stored))).accepted) return;
-    dispatch({ openRowId: null });
+    setDeck({ openRowId: null });
     toast('카드를 삭제했어요', () => commitSection(deckId, sectionId, before.map((stored) => keepCard(stored))));
-  }, [activeList, store, commitSection, dispatch, toast]);
+  }, [activeList, store, commitSection, setDeck, toast]);
 
   const moveCard = useCallback((draggedId: string, targetId: string) => {
     if (!activeList) return;
@@ -73,10 +76,10 @@ export function useCardActions({ store, activeList, dispatch, toast }: CardActio
     }
     const cardNote = activeList.cards.length > 0 ? `카드 ${activeList.cards.length}개가 함께 삭제돼요.` : '';
     if (!window.confirm(`"${activeList.name}" 암기장을 삭제할까요? ${cardNote}`)) return;
-    dispatch({ view: 'home', activeDeckId: null, activeSectionId: null, openRowId: null });
+    goHome();
     const deleted = await store.deleteSection(activeList.deckId, activeList.id);
     toast(deleted ? '암기장을 삭제했어요' : '삭제에 실패했어요');
-  }, [activeList, store, dispatch, toast]);
+  }, [activeList, store, goHome, toast]);
 
   return { commitSection, renameList, deleteCard, moveCard, deleteList };
 }

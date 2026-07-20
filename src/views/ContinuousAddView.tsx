@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
+import type { Dispatch } from 'react';
 import { ACCENT, ACCENT_DEEP } from '../constants';
-import { parsePaste, tokensToCard } from '../tokens';
+import { parsePaste, toggleTokenAt, tokensToCard } from '../tokens';
 import { qaToNewCard } from '../cards';
-import type { Patch, UIState } from '../uiState';
+import { contentFingerprint, newOperationId } from '../operationId';
+import type { Patch } from '../state/patchState';
+import type { ComposerState } from '../state/uiSlices';
 import type { NewCard } from '../types';
 import { TokenChips } from './TokenChips';
 
@@ -11,29 +14,15 @@ function qaHasMatchingBlanks(question: string) {
   return blankCount === 0 || blankCount === 1;
 }
 
-function newDraftOperationId() {
-  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
-function draftFingerprint(value: string) {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(36);
-}
-
 // 추가 중에는 목록 관리 UI를 모두 치우고 현재 입력에만 집중한다.
 // 저장 후 편집기를 닫지 않고 비운 뒤 다시 포커스해 연속 입력을 지원한다.
 export function ContinuousAddView(props: {
-  state: UIState; dispatch: (p: Patch) => void;
-  operationSeed: string;
+  composer: ComposerState; setComposer: Dispatch<Patch<ComposerState>>;
   onAddCards: (cards: NewCard[], operationId: string) => Promise<boolean>;
   onUndoLast: () => Promise<number>;
   onClose: () => void;
 }) {
-  const { state, dispatch } = props;
+  const { composer, setComposer } = props;
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const undoTimer = useRef<number | undefined>(undefined);
   const savingRef = useRef(false);
@@ -45,9 +34,9 @@ export function ContinuousAddView(props: {
   useEffect(() => () => window.clearTimeout(undoTimer.current), []);
 
   // re-parse on every keystroke but keep words the user already masked
-  const reparse = (text: string, mode: 'auto' | 'one') => (st: UIState): Partial<UIState> => {
+  const reparse = (text: string, mode: 'auto' | 'one') => (current: ComposerState): Partial<ComposerState> => {
     const hiddenWords = new Set(
-      st.sheetRows.flatMap((r) => (r.kind === 'tokens' ? r.tokens.filter((t) => t.hidden).map((t) => t.word) : [])),
+      current.rows.flatMap((r) => (r.kind === 'tokens' ? r.tokens.filter((t) => t.hidden).map((t) => t.word) : [])),
     );
     let g = 7000;
     const rows = parsePaste(text, mode).map((r) =>
@@ -55,17 +44,17 @@ export function ContinuousAddView(props: {
         ? { ...r, tokens: r.tokens.map((t) => (!t.nl && hiddenWords.has(t.word) ? { ...t, hidden: true, gid: g++ } : t)) }
         : r,
     );
-    return { pasteText: text, pasteMode: mode, sheetRows: rows };
+    return { text, mode, rows };
   };
 
-  const invalidQaBlanks = state.sheetRows.filter((r) => r.kind === 'qa' && !qaHasMatchingBlanks(r.q)).length;
-  const validRows = state.sheetRows.filter((r) =>
+  const invalidQaBlanks = composer.rows.filter((r) => r.kind === 'qa' && !qaHasMatchingBlanks(r.q)).length;
+  const validRows = composer.rows.filter((r) =>
     r.kind === 'qa' ? qaHasMatchingBlanks(r.q) : r.tokens.some((t) => t.hidden),
   );
-  const tokenRows = state.sheetRows.filter((r) => r.kind === 'tokens');
+  const tokenRows = composer.rows.filter((r) => r.kind === 'tokens');
   const incomplete = tokenRows.filter((r) => r.kind === 'tokens' && !r.tokens.some((t) => t.hidden)).length;
   const blanks = tokenRows.reduce((n, r) => n + (r.kind === 'tokens' && r.tokens.some((t) => t.hidden) ? tokensToCard(r.tokens).a.length : 0), 0);
-  const multi = state.sheetRows.length > 1;
+  const multi = composer.rows.length > 1;
 
   const add = async () => {
     if (validRows.length === 0 || savingRef.current) return;
@@ -74,8 +63,8 @@ export function ContinuousAddView(props: {
       const { q, a } = tokensToCard(r.tokens);
       return qaToNewCard(q, a);
     });
-    const operationId = `${props.operationSeed}-append-${draftFingerprint(JSON.stringify(cards))}`;
-    const submittedDraft = JSON.stringify([state.pasteText, state.pasteMode, state.sheetRows]);
+    const operationId = `${composer.operationId}-append-${contentFingerprint(JSON.stringify(cards))}`;
+    const submittedDraft = JSON.stringify([composer.text, composer.mode, composer.rows]);
     savingRef.current = true;
     setSaving(true);
     let saved = false;
@@ -86,14 +75,14 @@ export function ContinuousAddView(props: {
       setSaving(false);
     }
     if (!saved) return;
-    const nextOperationId = newDraftOperationId();
+    const nextOperationId = newOperationId();
     setAddedCount((count) => count + cards.length);
     setLastAddedCount(cards.length);
     window.clearTimeout(undoTimer.current);
     undoTimer.current = window.setTimeout(() => setLastAddedCount(0), 4500);
-    dispatch((current) => JSON.stringify([current.pasteText, current.pasteMode, current.sheetRows]) === submittedDraft
-      ? { pasteText: '', pasteMode: 'auto', sheetRows: [], addOperationId: nextOperationId, sel: null }
-      : { addOperationId: nextOperationId });
+    setComposer((current) => JSON.stringify([current.text, current.mode, current.rows]) === submittedDraft
+      ? { text: '', mode: 'auto', rows: [], operationId: nextOperationId, selection: null }
+      : { operationId: nextOperationId });
     window.requestAnimationFrame(() => inputRef.current?.focus());
   };
 
@@ -139,23 +128,23 @@ export function ContinuousAddView(props: {
               id="new-memory-content"
               autoFocus
               disabled={saving}
-              rows={Math.min(6, Math.max(4, state.pasteText.split('\n').length))}
-              value={state.pasteText}
-              onChange={(e) => { if (!savingRef.current) dispatch(reparse(e.target.value, state.pasteMode)); }}
+              rows={Math.min(6, Math.max(4, composer.text.split('\n').length))}
+              value={composer.text}
+              onChange={(e) => { if (!savingRef.current) setComposer(reparse(e.target.value, composer.mode)); }}
               placeholder={'내용을 입력하거나 붙여넣으세요\n예: 대한민국의 수도는 서울이다'}
               style={{ width: '100%', minHeight: 124, border: 'none', background: 'transparent', color: '#000', fontSize: 17, fontWeight: 600, lineHeight: 1.55, resize: 'none', display: 'block' }}
             />
           </div>
         </div>
 
-        {state.sheetRows.length > 0 && (
+        {composer.rows.length > 0 && (
           <div style={{ padding: '0 12px', display: 'flex', flexDirection: 'column', gap: 12 }}>
           {multi && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(60,60,67,0.55)' }}>{state.sheetRows.length}줄</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(60,60,67,0.55)' }}>{composer.rows.length}줄</span>
               <div style={{ display: 'flex', padding: 2, borderRadius: 8, background: 'rgba(120,120,128,0.12)' }}>
                 {([['auto', '줄마다 추가'], ['one', '한 카드로']] as const).map(([mode, label]) => (
-                  <button type="button" className="ui-button" key={mode} onClick={() => { if (!savingRef.current) dispatch(reparse(state.pasteText, mode)); }} disabled={saving} aria-pressed={state.pasteMode === mode} style={{ minHeight: 34, padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: saving ? 'default' : 'pointer', background: state.pasteMode === mode ? '#fff' : 'transparent', color: state.pasteMode === mode ? '#1d1d1f' : '#6e6e73', boxShadow: state.pasteMode === mode ? '0 1px 2px rgba(0,0,0,0.1)' : 'none' }}>{label}</button>
+                  <button type="button" className="ui-button" key={mode} onClick={() => { if (!savingRef.current) setComposer(reparse(composer.text, mode)); }} disabled={saving} aria-pressed={composer.mode === mode} style={{ minHeight: 34, padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: saving ? 'default' : 'pointer', background: composer.mode === mode ? '#fff' : 'transparent', color: composer.mode === mode ? '#1d1d1f' : '#6e6e73', boxShadow: composer.mode === mode ? '0 1px 2px rgba(0,0,0,0.1)' : 'none' }}>{label}</button>
                 ))}
               </div>
             </div>
@@ -174,14 +163,30 @@ export function ContinuousAddView(props: {
             </div>
           )}
 
-          {state.sheetRows.map((r, ri) => r.kind === 'qa' ? (
+          {composer.rows.map((r, ri) => r.kind === 'qa' ? (
             <div key={ri} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 12px', borderRadius: 10, background: 'rgba(120,120,128,0.07)' }}>
               <span style={{ flex: 1, fontSize: 15, fontWeight: 600, lineHeight: 1.5, wordBreak: 'keep-all' }}>{r.q}</span>
               <span style={{ fontSize: 15, fontWeight: 700, color: ACCENT_DEEP, flexShrink: 0 }}>{r.a}</span>
             </div>
           ) : (
             <div key={ri} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '7px 4px', lineHeight: 1.9 }}>
-              <TokenChips tokens={r.tokens} ri={ri} fontSize={16} outlined disabled={saving} sel={state.sel} dispatch={dispatch} />
+              <TokenChips
+                tokens={r.tokens}
+                selection={composer.selection?.row === ri ? composer.selection : null}
+                fontSize={16}
+                outlined
+                disabled={saving}
+                onSelectStart={(index, wasHidden) => setComposer({ selection: { row: ri, start: index, end: index, wasHidden } })}
+                onSelectExtend={(index) => setComposer((current) => (current.selection?.row === ri
+                  ? { selection: { ...current.selection, end: index } }
+                  : {}))}
+                onToggle={(index) => setComposer((current) => ({
+                  rows: current.rows.map((row, rowIndex) => (rowIndex === ri && row.kind === 'tokens'
+                    ? { ...row, tokens: toggleTokenAt(row.tokens, index) }
+                    : row)),
+                  selection: null,
+                }))}
+              />
             </div>
           ))}
 

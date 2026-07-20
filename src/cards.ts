@@ -1,8 +1,7 @@
 import { splitCloze } from './parser';
 import { groupSemanticAnswers } from './groupCardSchema';
 import { normalizeAnswerSchedule } from './answerSchedule';
-import type { AnswerSchedule, Card, Deck, NewCard, Section } from './types';
-import type { StudyTarget } from './uiState';
+import type { AnswerSchedule, Card, Deck, NewCard, Section, StudyTarget } from './types';
 
 // ------------------------------------------------------------------ view model
 export type ProtoCard = {

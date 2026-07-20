@@ -1,5 +1,11 @@
 export type CardType = 'pair' | 'cloze' | 'group';
 
+/** One card's hides queued for a session. Hides, not cards, are the unit. */
+export type StudyTarget = { cardId: string; answerIndexes: number[] };
+
+/** learn: unknown hides · review: everything again · checkup: known hides that came due. */
+export type SessionMode = 'learn' | 'review' | 'checkup';
+
 /** Serialized FSRS memory state for one hide. Timestamps are ms epoch. */
 export type AnswerSchedule = {
   due: number;
