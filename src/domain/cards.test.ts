@@ -267,11 +267,6 @@ describe('keepCard', () => {
     expect(keepCard(c)).toMatchObject({ optimisticId: 'c1', answerMastery: [true], mastered: true });
   });
 
-  it('honors an explicit answerMastery override', () => {
-    const c = card({ id: 'c1', type: 'pair', prompt: 'Q', answers: ['a', 'b'], answerMastery: [true, true] });
-    expect(keepCard(c, [true, false])).toMatchObject({ answerMastery: [true, false], mastered: false });
-  });
-
   it('carries per-hide schedules through a section rewrite and drops them when quarantined', () => {
     const entry: AnswerSchedule = { due: 9, stability: 2, difficulty: 5, reps: 1, lapses: 0, state: 2, lastReview: 1 };
     const scheduled = card({
@@ -317,7 +312,7 @@ describe('keepCard', () => {
     });
 
     expect(deriveQA(c).a).toEqual([]);
-    expect(keepCard(c, [true])).toMatchObject({
+    expect(keepCard(c)).toMatchObject({
       optimisticId: 'repair-1',
       needsRepair: true,
       answers: [],

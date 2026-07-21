@@ -266,15 +266,16 @@ export function qaToNewCard(q: string, a: string[], hides?: Hide[]): NewCard {
   };
 }
 
-function cardToNewCard(card: Card, answerMasteryOverride?: boolean[]): NewCard {
+/**
+ * Re-serializes a stored card for a whole-section write, keeping its own id so
+ * the optimistic cache does not treat it as a new card. Its judgments carry over
+ * untouched; only the card being edited alongside it changes.
+ */
+export function keepCard(card: Card): OptimisticNewCard {
   const needsRepair = cardNeedsRepair(card);
   const repairGroup = needsRepair && card.type === 'group';
   const answers = repairGroup ? [] : card.type === 'group' ? deriveGroup(card).a : card.answers;
-  const answerMastery = needsRepair
-    ? []
-    : answerMasteryOverride
-      ? Array.from({ length: answers.length }, (_, index) => Boolean(answerMasteryOverride[index]))
-      : normalizeAnswerMastery(card, answers.length);
+  const answerMastery = needsRepair ? [] : normalizeAnswerMastery(card, answers.length);
   return {
     type: repairGroup ? 'pair' : card.type,
     prompt: card.prompt,
@@ -286,9 +287,6 @@ function cardToNewCard(card: Card, answerMasteryOverride?: boolean[]): NewCard {
     answerMastery,
     answerSchedule: needsRepair ? [] : normalizeAnswerSchedule(card, answers.length),
     mastered: !needsRepair && answerMastery.length > 0 && answerMastery.every(Boolean),
+    optimisticId: card.id,
   };
-}
-
-export function keepCard(card: Card, answerMasteryOverride?: boolean[]): OptimisticNewCard {
-  return { ...cardToNewCard(card, answerMasteryOverride), optimisticId: card.id };
 }
