@@ -2,9 +2,14 @@
   --accent: #007aff;
   --app-viewport-height: 100dvh;
   --card-composer-height: min(48dvh, 410px);
+  --card-composer-handle-height: 26px;
   --card-composer-input-height: 82px;
+  --card-composer-scroll-gap: 10px;
   --card-composer-visible-height:
     min(var(--card-composer-height), max(220px, calc(var(--app-viewport-height) - 72px)));
+  --modal-sheet-gap: 14px;
+  --modal-sheet-handle-display: block;
+  --modal-sheet-padding: 18px 20px max(42px, calc(20px + env(safe-area-inset-bottom)));
 }
 
 * {
@@ -99,9 +104,8 @@ textarea:focus-visible {
   gap: 4px;
 }
 
-.modal-sheet {
-  --modal-sheet-padding: 18px 20px max(42px, calc(20px + env(safe-area-inset-bottom)));
-  --modal-sheet-gap: 14px;
+.modal-sheet-handle {
+  display: var(--modal-sheet-handle-display);
 }
 
 .card-composer-dock {
@@ -118,7 +122,7 @@ textarea:focus-visible {
 }
 
 .card-composer-handle {
-  min-height: 26px;
+  min-height: var(--card-composer-handle-height);
   display: grid;
   place-items: center;
   flex-shrink: 0;
@@ -139,7 +143,7 @@ textarea:focus-visible {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--card-composer-scroll-gap);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -154,49 +158,25 @@ textarea:focus-visible {
 }
 
 :root[data-keyboard-open] {
+  --card-composer-handle-height: 20px;
   --card-composer-input-height: 64px;
+  --card-composer-scroll-gap: 7px;
   --card-composer-visible-height:
     clamp(280px, calc(var(--app-viewport-height) - 112px), 440px);
-}
-
-:root[data-keyboard-open] .modal-sheet {
-  --modal-sheet-padding: 8px 12px max(12px, env(safe-area-inset-bottom));
   --modal-sheet-gap: 8px;
-}
-
-:root[data-keyboard-open] .modal-sheet-handle {
-  display: none;
-}
-
-:root[data-keyboard-open] .card-composer-handle {
-  min-height: 20px;
-}
-
-:root[data-keyboard-open] .card-composer-scroll {
-  gap: 7px;
+  --modal-sheet-handle-display: none;
+  --modal-sheet-padding: 8px 12px max(12px, env(safe-area-inset-bottom));
 }
 
 @media (max-height: 480px) {
   :root {
     --card-composer-height: min(90dvh, 360px);
+    --card-composer-handle-height: 20px;
     --card-composer-input-height: 64px;
-  }
-
-  .modal-sheet {
-    --modal-sheet-padding: 8px 12px max(12px, env(safe-area-inset-bottom));
+    --card-composer-scroll-gap: 7px;
     --modal-sheet-gap: 8px;
-  }
-
-  .modal-sheet-handle {
-    display: none;
-  }
-
-  .card-composer-handle {
-    min-height: 20px;
-  }
-
-  .card-composer-scroll {
-    gap: 7px;
+    --modal-sheet-handle-display: none;
+    --modal-sheet-padding: 8px 12px max(12px, env(safe-area-inset-bottom));
   }
 }
 

@@ -3,26 +3,32 @@
  * Keep one CSS variable tied to the area the user can actually see so every
  * input surface (composer, editor, settings, and entry) shares the same rule.
  */
+const EDITABLE_SELECTOR = 'input, textarea, [contenteditable="true"]';
+const KEYBOARD_HEIGHT_THRESHOLD = 120;
+
 export function installVisualViewport() {
   const root = document.documentElement;
   const viewport = window.visualViewport;
-  let expandedHeight = Math.round(viewport?.height ?? window.innerHeight);
+  let unobscuredHeight = Math.round(viewport?.height ?? window.innerHeight);
 
   const hasEditableFocus = () =>
-    document.activeElement?.matches?.('input, textarea, [contenteditable="true"]') ?? false;
+    document.activeElement?.matches?.(EDITABLE_SELECTOR) ?? false;
 
-  const update = () => {
-    const height = Math.round(viewport?.height ?? window.innerHeight);
-    const editableFocused = hasEditableFocus();
-    if (!editableFocused) expandedHeight = Math.max(expandedHeight, height);
-    root.style.setProperty('--app-viewport-height', `${height}px`);
-    root.toggleAttribute('data-keyboard-open', editableFocused && expandedHeight - height >= 120);
+  const syncViewportState = () => {
+    const visibleHeight = Math.round(viewport?.height ?? window.innerHeight);
+    const inputFocused = hasEditableFocus();
+    if (!inputFocused) unobscuredHeight = Math.max(unobscuredHeight, visibleHeight);
+
+    const keyboardOpen =
+      inputFocused && unobscuredHeight - visibleHeight >= KEYBOARD_HEIGHT_THRESHOLD;
+    root.style.setProperty('--app-viewport-height', `${visibleHeight}px`);
+    root.toggleAttribute('data-keyboard-open', keyboardOpen);
   };
 
-  update();
-  window.addEventListener('resize', update);
-  viewport?.addEventListener('resize', update);
-  viewport?.addEventListener('scroll', update);
-  document.addEventListener('focusin', update);
-  document.addEventListener('focusout', () => window.requestAnimationFrame(update));
+  syncViewportState();
+  window.addEventListener('resize', syncViewportState);
+  viewport?.addEventListener('resize', syncViewportState);
+  viewport?.addEventListener('scroll', syncViewportState);
+  document.addEventListener('focusin', syncViewportState);
+  document.addEventListener('focusout', () => window.requestAnimationFrame(syncViewportState));
 }
