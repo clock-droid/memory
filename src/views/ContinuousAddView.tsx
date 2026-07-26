@@ -281,7 +281,7 @@ export function ContinuousAddView(props: {
 
           <div style={{ minHeight: 20, color: 'rgba(60,60,67,0.58)', fontSize: 13, fontWeight: 600, flexShrink: 0 }}>
             {composer.rows.length === 0
-              ? '내용을 입력하세요'
+              ? '문장을 입력하면 가릴 단어를 고를 수 있어요'
               : incomplete > 0 && validRows.length > 0
                 ? `${incomplete}줄은 가릴 부분이 없어 빠져요`
                 : blanks > 0

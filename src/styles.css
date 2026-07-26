@@ -1,6 +1,9 @@
 :root {
   --accent: #007aff;
+  --app-viewport-height: 100dvh;
   --card-composer-height: min(48dvh, 410px);
+  --card-composer-visible-height:
+    min(var(--card-composer-height), max(220px, calc(var(--app-viewport-height) - 112px)));
 }
 
 * {
@@ -10,7 +13,7 @@
 html,
 body,
 #root {
-  height: 100%;
+  height: var(--app-viewport-height, 100dvh);
 }
 
 body {
@@ -103,7 +106,7 @@ textarea:focus-visible {
 .card-composer-dock {
   width: 100%;
   max-width: 480px;
-  height: var(--card-composer-height);
+  height: var(--card-composer-visible-height);
   border-radius: 20px 20px 0 0;
   background: #fff;
   display: flex;

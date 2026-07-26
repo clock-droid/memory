@@ -15,7 +15,7 @@ export function IdGate({ onSubmit }: { onSubmit: (code: string) => void }) {
 
   if (!showExisting) {
     return (
-      <div style={{ minHeight: '100dvh', width: '100%', maxWidth: 480, margin: '0 auto', display: 'flex', flexDirection: 'column', padding: 'calc(env(safe-area-inset-top) + 72px) 24px calc(env(safe-area-inset-bottom) + 32px)' }}>
+      <div style={{ minHeight: 'var(--app-viewport-height, 100dvh)', width: '100%', maxWidth: 480, margin: '0 auto', display: 'flex', flexDirection: 'column', padding: 'calc(env(safe-area-inset-top) + 72px) 24px calc(env(safe-area-inset-bottom) + 32px)' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ fontSize: 29, fontWeight: 800, letterSpacing: '-0.035em' }}>시험암기</div>
           <div style={{ maxWidth: 360, fontSize: 16, color: '#5f5f65', lineHeight: 1.65, wordBreak: 'keep-all' }}>
@@ -53,7 +53,7 @@ export function IdGate({ onSubmit }: { onSubmit: (code: string) => void }) {
   }
 
   return (
-    <div style={{ minHeight: '100dvh', width: '100%', maxWidth: 480, margin: '0 auto', display: 'flex', flexDirection: 'column', padding: 'calc(env(safe-area-inset-top) + 18px) 24px calc(env(safe-area-inset-bottom) + 32px)' }}>
+    <div style={{ minHeight: 'var(--app-viewport-height, 100dvh)', width: '100%', maxWidth: 480, margin: '0 auto', display: 'flex', flexDirection: 'column', padding: 'calc(env(safe-area-inset-top) + 18px) 24px calc(env(safe-area-inset-bottom) + 32px)' }}>
       <button
         type="button"
         className="ui-button"

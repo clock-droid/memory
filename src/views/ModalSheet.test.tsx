@@ -16,6 +16,7 @@ describe('ModalSheet', () => {
     ));
 
     expect(markup).toContain('max-height:82%');
+    expect(markup).toContain('position:absolute');
     expect(markup).toContain('overflow:hidden');
     expect(markup).toContain('data-modal-scroll="true"');
     expect(markup).toContain('overflow-y:auto');

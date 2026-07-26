@@ -291,7 +291,7 @@ export function DeckView(props: {
           flex: 1,
           overflowY: 'auto',
           padding: composerOpen
-            ? '2px 16px calc(var(--card-composer-height) + 28px)'
+            ? '2px 16px calc(var(--card-composer-visible-height) + 28px)'
             : '2px 16px 130px',
           minHeight: 0,
           display: 'flex',

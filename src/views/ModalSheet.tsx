@@ -100,7 +100,7 @@ export function ModalSheet(props: {
   };
 
   return (
-    <div ref={layerRef} data-modal-layer="true" style={{ position: 'fixed', inset: 0, zIndex: 15 }}>
+    <div ref={layerRef} data-modal-layer="true" style={{ position: 'absolute', inset: 0, zIndex: 15 }}>
       <div
         aria-hidden="true"
         onClick={props.closeOnBackdrop === false ? undefined : () => closeRef.current()}

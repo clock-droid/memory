@@ -22,7 +22,7 @@ import { StudyView } from './views/StudyView';
 import { Toast } from './views/Toast';
 
 const SHELL_STYLE: CSSProperties = {
-  height: '100dvh', width: '100%', maxWidth: 480, margin: '0 auto', position: 'relative',
+  height: 'var(--app-viewport-height, 100dvh)', width: '100%', maxWidth: 480, margin: '0 auto', position: 'relative',
   background: '#F2F2F7', color: '#000', display: 'flex', flexDirection: 'column', overflow: 'clip',
 };
 
