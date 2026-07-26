@@ -32,9 +32,25 @@ npm run dev
 브라우저에서 `http://localhost:5173`을 엽니다. 같은 와이파이의 아이폰에서는 PC의 `http://<PC-IP>:5173` 주소를 Safari에서 열면 접속할 수 있습니다.
 
 - `npm run build` — 타입 검사(`tsc --noEmit`) 후 esbuild 번들 생성
+- `npm run mobile:sync` — 배포 동기화 서버를 사용해 웹을 빌드하고 iOS·Android 프로젝트에 복사
 - `npm test` — 순수 로직(domain) 단위 테스트(vitest)
 
 빌드 스택은 Vite가 아니라 **esbuild**(`scripts/build.mjs`) + **Node 동기화 서버**(`scripts/serve.mjs`)입니다. 환경변수의 `VITE_` 접두사는 관례로 유지됩니다.
+
+## iOS·Android 앱
+
+Capacitor 프로젝트는 웹앱의 `dist/`를 앱 안에 포함합니다. 웹 코드를 수정한 뒤
+`npm run mobile:sync`를 실행하면 두 네이티브 프로젝트에 최신 빌드가 반영됩니다.
+
+```bash
+npm run mobile:sync
+npx cap open ios
+npx cap open android
+```
+
+현재 표시 이름 `시험암기`와 앱 식별자 `app.memory.dev`는 개발용 가칭입니다.
+표시 이름은 이후에도 바꿀 수 있지만, 앱 식별자는 **첫 TestFlight 또는 Play Console
+빌드 업로드 전에** 소유한 도메인 기반 값으로 교체해야 합니다.
 
 ## 저장·동기화
 

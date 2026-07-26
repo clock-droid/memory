@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">시험암기</string>
+    <string name="title_activity_main">시험암기</string>
+    <string name="package_name">app.memory.dev</string>
+    <string name="custom_url_scheme">app.memory.dev</string>
+</resources>

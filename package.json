@@ -6,11 +6,15 @@
   "scripts": {
     "dev": "node scripts/build.mjs && node scripts/serve.mjs",
     "build": "tsc --noEmit && node scripts/build.mjs",
+    "mobile:sync": "VITE_SYNC_BASE=https://exam-memorizer-clockgo.netlify.app npm run build && cap sync",
     "preview": "node scripts/serve.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@capacitor/android": "^8.4.2",
+    "@capacitor/core": "^8.4.2",
+    "@capacitor/ios": "^8.4.2",
     "@netlify/blobs": "^10.7.10",
     "firebase": "^12.16.0",
     "lucide-react": "^0.468.0",
@@ -20,6 +24,7 @@
     "typescript": "^5.8.0"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.4.2",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "esbuild": "^0.28.0",
