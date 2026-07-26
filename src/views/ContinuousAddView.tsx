@@ -64,6 +64,13 @@ export function ContinuousAddView(props: {
   const incomplete = tokenRows.filter((r) => r.kind === 'tokens' && !r.tokens.some((t) => t.hidden)).length;
   const blanks = tokenRows.reduce((n, r) => n + (r.kind === 'tokens' && r.tokens.some((t) => t.hidden) ? tokensToCard(r.tokens).a.length : 0), 0);
   const multi = composer.rows.length > 1;
+  const guidance = composer.rows.length === 0
+    ? '문장을 입력하면 가릴 단어를 고를 수 있어요'
+    : incomplete > 0 && validRows.length > 0
+      ? `${incomplete}줄은 가릴 부분이 없어 빠져요`
+      : blanks > 0
+        ? `가림 ${blanks}곳 선택됨`
+        : tokenRows.length > 0 ? '가릴 부분을 탭하세요' : '';
 
   const add = async () => {
     if (validRows.length === 0 || savingRef.current) return;
@@ -252,9 +259,15 @@ export function ContinuousAddView(props: {
         </div>
 
         <div className="card-composer-scroll">
-          <label htmlFor="new-memory-content" style={{ fontSize: 14.5, fontWeight: 800, color: '#1d1d1f' }}>암기할 내용</label>
+          <div className="card-composer-meta">
+            <label htmlFor="new-memory-content" style={{ fontSize: 14.5, fontWeight: 800, color: '#1d1d1f', flexShrink: 0 }}>암기할 내용</label>
+            <span style={{ color: 'rgba(60,60,67,0.58)', fontSize: 13, fontWeight: 600, textAlign: 'right', lineHeight: 1.35 }}>
+              {guidance}
+            </span>
+          </div>
           <textarea
             ref={inputRef}
+            className="card-composer-input"
             id="new-memory-content"
             autoFocus
             disabled={saving}
@@ -264,7 +277,8 @@ export function ContinuousAddView(props: {
             placeholder={'내용을 입력하거나 붙여넣으세요\n예: 대한민국의 수도는 서울이다'}
             style={{
               width: '100%',
-              minHeight: 82,
+              height: 'var(--card-composer-input-height)',
+              minHeight: 'var(--card-composer-input-height)',
               border: '1px solid rgba(60,60,67,0.14)',
               borderRadius: 11,
               background: '#fff',
@@ -274,20 +288,11 @@ export function ContinuousAddView(props: {
               fontWeight: 600,
               lineHeight: 1.5,
               resize: 'none',
+              overflowY: 'auto',
               display: 'block',
               flexShrink: 0,
             }}
           />
-
-          <div style={{ minHeight: 20, color: 'rgba(60,60,67,0.58)', fontSize: 13, fontWeight: 600, flexShrink: 0 }}>
-            {composer.rows.length === 0
-              ? '문장을 입력하면 가릴 단어를 고를 수 있어요'
-              : incomplete > 0 && validRows.length > 0
-                ? `${incomplete}줄은 가릴 부분이 없어 빠져요`
-                : blanks > 0
-                  ? `가림 ${blanks}곳 선택됨`
-                  : tokenRows.length > 0 ? '가릴 부분을 탭하세요' : ''}
-          </div>
 
           {multi && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>

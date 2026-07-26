@@ -2,8 +2,9 @@
   --accent: #007aff;
   --app-viewport-height: 100dvh;
   --card-composer-height: min(48dvh, 410px);
+  --card-composer-input-height: 82px;
   --card-composer-visible-height:
-    min(var(--card-composer-height), max(220px, calc(var(--app-viewport-height) - 112px)));
+    min(var(--card-composer-height), max(220px, calc(var(--app-viewport-height) - 72px)));
 }
 
 * {
@@ -143,9 +144,42 @@ textarea:focus-visible {
   overscroll-behavior: contain;
 }
 
+.card-composer-meta {
+  min-height: 20px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+:root[data-keyboard-open] {
+  --card-composer-input-height: 64px;
+  --card-composer-visible-height:
+    clamp(280px, calc(var(--app-viewport-height) - 112px), 440px);
+}
+
+:root[data-keyboard-open] .modal-sheet {
+  --modal-sheet-padding: 8px 12px max(12px, env(safe-area-inset-bottom));
+  --modal-sheet-gap: 8px;
+}
+
+:root[data-keyboard-open] .modal-sheet-handle {
+  display: none;
+}
+
+:root[data-keyboard-open] .card-composer-handle {
+  min-height: 20px;
+}
+
+:root[data-keyboard-open] .card-composer-scroll {
+  gap: 7px;
+}
+
 @media (max-height: 480px) {
   :root {
-    --card-composer-height: min(64dvh, 340px);
+    --card-composer-height: min(90dvh, 360px);
+    --card-composer-input-height: 64px;
   }
 
   .modal-sheet {

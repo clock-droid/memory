@@ -21,6 +21,8 @@ describe('ContinuousAddView dock', () => {
 
     expect(markup).toContain('data-card-composer-layer="true"');
     expect(markup).toContain('aria-label="카드 추가"');
+    expect(markup).toContain('class="card-composer-meta"');
+    expect(markup).toContain('class="card-composer-input"');
     expect(markup).toContain('문장을 입력하면 가릴 단어를 고를 수 있어요');
     expect(markup).toContain('아래로 밀어 카드 추가 닫기');
     expect(markup).not.toContain('aria-modal="true"');
