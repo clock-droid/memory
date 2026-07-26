@@ -7,6 +7,10 @@ create table if not exists public.account_rooms (
 
 alter table public.account_rooms enable row level security;
 
+grant select, insert, update
+  on table public.account_rooms
+  to authenticated;
+
 create policy "account room owners can read"
   on public.account_rooms for select
   to authenticated
