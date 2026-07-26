@@ -44,3 +44,57 @@
 - Post-fix evidence: `artifacts/terminology-card-chip-qa-2026-07-11/03-chip-comparison.png`.
 
 final result: passed
+
+---
+
+# Non-modal Card Composer Design QA
+
+- Source visual truth: `/Users/admin/.codex/generated_images/019f9d23-adde-71f0-9a1a-286e370ec54b/call_XWYWUxG2qDTaMQvR5KjousYs.png`
+- Implementation screenshot: `/tmp/memory-card-composer-implementation.png`
+- Combined comparison: `/tmp/memory-card-composer-comparison.png`
+- Viewport: 390 x 844 CSS pixels
+- Screenshot dimensions: 390 x 844 pixels
+- State: an existing deck stays visible behind the composer; one card has just been added, the success message is visible, and the next card is already being prepared
+
+## Findings
+
+- No actionable P0, P1, or P2 visual findings remain.
+- The composer is docked to the lower half of the screen without a backdrop, so the visible deck keeps its hierarchy and remains operable.
+- The success message sits immediately above the composer and does not clear the next draft, matching the intended rapid-entry loop.
+- The implementation preserves the product's denser grouped card rows instead of replacing them with the mock's isolated sample cards.
+- The drag handle, title, cancel action, input, hide-selection chips, and primary action retain a clear top-to-bottom reading order at the 390 px mobile viewport.
+
+## Required Fidelity Surfaces
+
+- Fonts and typography: the app's existing Korean system font stack and title hierarchy are preserved.
+- Spacing and layout rhythm: the composer occupies a bounded lower region, keeps safe padding around controls, and leaves enough deck content visible to browse.
+- Colors and visual tokens: existing blue selection and action tokens, white surfaces, neutral borders, and the deck background are preserved.
+- Image quality and assets: no new illustrative assets were required; existing iconography remains unchanged.
+- Copy and content: the composer consistently uses `카드 추가`, reports `카드가 추가됐어요`, and keeps `되돌리기` available during the confirmation window.
+
+## Interaction Verification
+
+- Added a card and verified that the composer remained open, the input reset, focus returned to it, and the new card appeared in the deck behind it.
+- Scrolled the deck while the composer was open and verified that its scroll position changed.
+- Opened and closed an existing card's edit sheet while the composer remained open.
+- Closed the composer with both the explicit `취소` action and a downward swipe on the handle.
+- Verified the empty new-deck state shows the draft deck context behind the composer before the first card is persisted.
+
+## Comparison History
+
+### Iteration 1
+
+- Finding: [P1] the full-screen composer hid the deck and prevented users from checking existing cards while writing.
+- Fix: kept `DeckView` mounted as the page owner and changed the composer to a pointer-transparent overlay with an interactive bottom dock.
+
+### Iteration 2
+
+- Finding: [P1] the initial swipe implementation relied on pointer capture and did not dismiss reliably in the mobile browser.
+- Fix: tracked the drag on window-level pointer events and closed after a bounded 72 px downward gesture.
+
+### Iteration 3
+
+- Finding: [P2] the mock's separate card blocks did not match the app's established compact deck rows.
+- Fix: retained the existing deck presentation while matching the selected mock's composer height, action hierarchy, and toast placement.
+
+final result: passed

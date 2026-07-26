@@ -41,12 +41,13 @@ function protoCard(options: {
   return toProtoCard(source);
 }
 
-function renderDeck(cards: ProtoCard[], onStartCheckup = vi.fn()) {
+function renderDeck(cards: ProtoCard[], onStartCheckup = vi.fn(), composerOpen = false) {
   const list: ProtoList = { id: 's1', deckId: 'd1', name: '암기장', synthetic: false, cards };
   return renderToStaticMarkup(createElement(DeckView, {
     list,
     deck: initialDeckUi,
     setDeck: vi.fn(),
+    composerOpen,
     shuffle: false,
     onToggleShuffle: vi.fn(),
     lpTimer: { current: undefined } as MutableRefObject<number | undefined>,
@@ -101,5 +102,21 @@ describe('DeckView checkup banner', () => {
     })]);
 
     expect(markup).not.toContain('다시 점검할 가림');
+  });
+});
+
+describe('DeckView composer context', () => {
+  it('keeps the deck and its cards rendered behind the composer', () => {
+    const markup = renderDeck([protoCard({ answers: ['서울'] })], vi.fn(), true);
+
+    expect(markup).toContain('data-deck-scroll="true"');
+    expect(markup).toContain('서울');
+    expect(markup).not.toContain('카드를 먼저 추가하세요');
+  });
+
+  it('explains that an empty draft is being created below', () => {
+    const markup = renderDeck([], vi.fn(), true);
+
+    expect(markup).toContain('아래에서 첫 카드를 만들고 있어요.');
   });
 });

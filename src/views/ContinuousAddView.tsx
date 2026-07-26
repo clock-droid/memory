@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Dispatch } from 'react';
+import type { Dispatch, PointerEvent as ReactPointerEvent } from 'react';
 import { ACCENT, ACCENT_DEEP } from '../constants';
 import { parsePaste, toggleTokenAt, tokensToCard } from '../domain/tokens';
 import { qaToNewCard } from '../domain/cards';
@@ -14,8 +14,8 @@ function qaHasMatchingBlanks(question: string) {
   return blankCount === 0 || blankCount === 1;
 }
 
-// 추가 중에는 목록 관리 UI를 모두 치우고 현재 입력에만 집중한다.
-// 저장 후 편집기를 닫지 않고 비운 뒤 다시 포커스해 연속 입력을 지원한다.
+// 목록은 그대로 둔 채 아래에 붙는 비모달 작성 패널이다.
+// 저장 후 패널을 닫지 않고 입력만 비워 연속 추가와 목록 확인을 함께 지원한다.
 export function ContinuousAddView(props: {
   composer: ComposerState; setComposer: Dispatch<Patch<ComposerState>>;
   onAddCards: (cards: NewCard[], operationId: string) => Promise<boolean>;
@@ -26,10 +26,19 @@ export function ContinuousAddView(props: {
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const undoTimer = useRef<number | undefined>(undefined);
   const savingRef = useRef(false);
-  const [addedCount, setAddedCount] = useState(0);
+  const dragStartY = useRef(0);
+  const dragYRef = useRef(0);
+  const draggingRef = useRef(false);
   const [lastAddedCount, setLastAddedCount] = useState(0);
   const [saving, setSaving] = useState(false);
-  const close = () => { if (!savingRef.current) props.onClose(); };
+  const [dragY, setDragY] = useState(0);
+  const close = () => {
+    if (savingRef.current) return;
+    dragYRef.current = 0;
+    draggingRef.current = false;
+    setDragY(0);
+    props.onClose();
+  };
 
   useEffect(() => () => window.clearTimeout(undoTimer.current), []);
 
@@ -76,7 +85,6 @@ export function ContinuousAddView(props: {
     }
     if (!saved) return;
     const nextOperationId = newOperationId();
-    setAddedCount((count) => count + cards.length);
     setLastAddedCount(cards.length);
     window.clearTimeout(undoTimer.current);
     undoTimer.current = window.setTimeout(() => setLastAddedCount(0), 4500);
@@ -98,127 +106,256 @@ export function ContinuousAddView(props: {
       setSaving(false);
     }
     if (undone === 0) return;
-    setAddedCount((count) => Math.max(0, count - undone));
     setLastAddedCount(0);
     window.clearTimeout(undoTimer.current);
     window.requestAnimationFrame(() => inputRef.current?.focus());
   };
 
+  const onDismissPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (savingRef.current) return;
+    event.preventDefault();
+    draggingRef.current = true;
+    dragStartY.current = event.clientY;
+    dragYRef.current = 0;
+    setDragY(0);
+    window.addEventListener('pointermove', onDismissPointerMove);
+    window.addEventListener('pointerup', finishDismissGesture, { once: true });
+    window.addEventListener('pointercancel', finishDismissGesture, { once: true });
+  };
+
+  function onDismissPointerMove(event: PointerEvent) {
+    if (!draggingRef.current) return;
+    const next = Math.max(0, event.clientY - dragStartY.current);
+    dragYRef.current = next;
+    setDragY(next);
+  }
+
+  function finishDismissGesture() {
+    if (!draggingRef.current) return;
+    draggingRef.current = false;
+    window.removeEventListener('pointermove', onDismissPointerMove);
+    window.removeEventListener('pointerup', finishDismissGesture);
+    window.removeEventListener('pointercancel', finishDismissGesture);
+    if (dragYRef.current >= 72) {
+      close();
+      return;
+    }
+    dragYRef.current = 0;
+    setDragY(0);
+  }
+
   return (
-    <div style={{ flex: 1, minHeight: 0, position: 'relative', display: 'flex', flexDirection: 'column', background: '#F2F2F7', paddingTop: 'env(safe-area-inset-top)' }}>
-      <div style={{ height: 60, padding: '6px 16px 0', display: 'grid', gridTemplateColumns: '76px 1fr 76px', alignItems: 'center', flexShrink: 0 }}>
-        <button type="button" className="ui-button" onClick={close} disabled={saving} style={{ minWidth: 44, minHeight: 44, justifySelf: 'start', background: 'transparent', color: ACCENT, fontSize: 16.5, fontWeight: 600, cursor: saving ? 'default' : 'pointer' }}>
-          {saving ? '저장 중…' : '닫기'}
-        </button>
-        <div style={{ textAlign: 'center', fontSize: 18, fontWeight: 800, letterSpacing: '-0.02em' }}>카드 연속 추가</div>
-        <span />
-      </div>
-      {addedCount > 0 && (
-        <div aria-live="polite" style={{ minHeight: 34, display: 'grid', placeItems: 'center', color: 'rgba(60,60,67,0.55)', fontSize: 14, fontWeight: 600, flexShrink: 0 }}>
-          카드 {addedCount}개 추가됨
+    <div
+      data-card-composer-layer="true"
+      style={{
+        position: 'absolute',
+        inset: 0,
+        zIndex: 12,
+        pointerEvents: 'none',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'flex-end',
+        alignItems: 'center',
+      }}
+    >
+      {lastAddedCount > 0 && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            pointerEvents: 'auto',
+            width: 'max-content',
+            maxWidth: 'calc(100% - 32px)',
+            minHeight: 48,
+            marginBottom: 10,
+            padding: '0 8px 0 16px',
+            borderRadius: 11,
+            background: 'rgba(29,29,31,0.94)',
+            color: '#fff',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+            animation: 'popIn 0.2s cubic-bezier(0.3,1.2,0.4,1)',
+          }}
+        >
+          <span style={{ fontSize: 14, fontWeight: 700 }}>
+            {lastAddedCount > 1 ? `카드 ${lastAddedCount}개가 추가됐어요` : '카드가 추가됐어요'}
+          </span>
+          <button
+            type="button"
+            className="ui-button"
+            onClick={undoLast}
+            disabled={saving}
+            style={{
+              minWidth: 64,
+              minHeight: 36,
+              padding: '0 10px',
+              borderRadius: 8,
+              background: 'rgba(255,255,255,0.14)',
+              color: '#fff',
+              display: 'grid',
+              placeItems: 'center',
+              cursor: saving ? 'default' : 'pointer',
+              fontSize: 13.5,
+              fontWeight: 800,
+            }}
+          >
+            되돌리기
+          </button>
         </div>
       )}
 
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '12px 16px 190px', display: 'flex', flexDirection: 'column', gap: 18 }}>
-        <div style={{ background: '#fff', borderRadius: 14, padding: '18px 14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <label htmlFor="new-memory-content" style={{ fontSize: 16, fontWeight: 800, color: '#1d1d1f' }}>암기할 내용</label>
-          <div style={{ minHeight: 150, border: '1px solid rgba(60,60,67,0.14)', borderRadius: 11, background: '#fff', padding: '12px 13px' }}>
-            <textarea
-              ref={inputRef}
-              id="new-memory-content"
-              autoFocus
-              disabled={saving}
-              rows={Math.min(6, Math.max(4, composer.text.split('\n').length))}
-              value={composer.text}
-              onChange={(e) => { if (!savingRef.current) setComposer(reparse(e.target.value, composer.mode)); }}
-              placeholder={'내용을 입력하거나 붙여넣으세요\n예: 대한민국의 수도는 서울이다'}
-              style={{ width: '100%', minHeight: 124, border: 'none', background: 'transparent', color: '#000', fontSize: 17, fontWeight: 600, lineHeight: 1.55, resize: 'none', display: 'block' }}
-            />
-          </div>
+      <section
+        className="card-composer-dock"
+        aria-label="카드 추가"
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            close();
+          }
+        }}
+        style={{
+          pointerEvents: 'auto',
+          transform: `translateY(${dragY}px)`,
+          transition: draggingRef.current ? 'none' : 'transform 0.2s cubic-bezier(0.3,0.9,0.4,1)',
+        }}
+      >
+        <div
+          className="card-composer-handle"
+          aria-label="아래로 밀어 카드 추가 닫기"
+          role="button"
+          tabIndex={0}
+          onPointerDown={onDismissPointerDown}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowDown' || event.key === 'Escape') {
+              event.preventDefault();
+              close();
+            }
+          }}
+        >
+          <span />
         </div>
 
-        {composer.rows.length > 0 && (
-          <div style={{ padding: '0 12px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ minHeight: 44, padding: '0 18px', display: 'grid', gridTemplateColumns: '64px 1fr 64px', alignItems: 'center', flexShrink: 0 }}>
+          <span />
+          <h2 style={{ margin: 0, textAlign: 'center', fontSize: 18, fontWeight: 800, letterSpacing: '-0.02em' }}>카드 추가</h2>
+          <button
+            type="button"
+            className="ui-button"
+            onClick={close}
+            disabled={saving}
+            style={{ minWidth: 44, minHeight: 44, justifySelf: 'end', background: 'transparent', color: ACCENT, fontSize: 15.5, fontWeight: 700, cursor: saving ? 'default' : 'pointer', textAlign: 'right' }}
+          >
+            취소
+          </button>
+        </div>
+
+        <div className="card-composer-scroll">
+          <label htmlFor="new-memory-content" style={{ fontSize: 14.5, fontWeight: 800, color: '#1d1d1f' }}>암기할 내용</label>
+          <textarea
+            ref={inputRef}
+            id="new-memory-content"
+            autoFocus
+            disabled={saving}
+            rows={Math.min(4, Math.max(2, composer.text.split('\n').length))}
+            value={composer.text}
+            onChange={(event) => { if (!savingRef.current) setComposer(reparse(event.target.value, composer.mode)); }}
+            placeholder={'내용을 입력하거나 붙여넣으세요\n예: 대한민국의 수도는 서울이다'}
+            style={{
+              width: '100%',
+              minHeight: 82,
+              border: '1px solid rgba(60,60,67,0.14)',
+              borderRadius: 11,
+              background: '#fff',
+              color: '#000',
+              padding: '12px 13px',
+              fontSize: 16,
+              fontWeight: 600,
+              lineHeight: 1.5,
+              resize: 'none',
+              display: 'block',
+              flexShrink: 0,
+            }}
+          />
+
+          <div style={{ minHeight: 20, color: 'rgba(60,60,67,0.58)', fontSize: 13, fontWeight: 600, flexShrink: 0 }}>
+            {composer.rows.length === 0
+              ? '내용을 입력하세요'
+              : incomplete > 0 && validRows.length > 0
+                ? `${incomplete}줄은 가릴 부분이 없어 빠져요`
+                : blanks > 0
+                  ? `가림 ${blanks}곳 선택됨`
+                  : tokenRows.length > 0 ? '가릴 부분을 탭하세요' : ''}
+          </div>
+
           {multi && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
               <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(60,60,67,0.55)' }}>{composer.rows.length}줄</span>
               <div style={{ display: 'flex', padding: 2, borderRadius: 8, background: 'rgba(120,120,128,0.12)' }}>
                 {([['auto', '줄마다 추가'], ['one', '한 카드로']] as const).map(([mode, label]) => (
-                  <button type="button" className="ui-button" key={mode} onClick={() => { if (!savingRef.current) setComposer(reparse(composer.text, mode)); }} disabled={saving} aria-pressed={composer.mode === mode} style={{ minHeight: 34, padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: saving ? 'default' : 'pointer', background: composer.mode === mode ? '#fff' : 'transparent', color: composer.mode === mode ? '#1d1d1f' : '#6e6e73', boxShadow: composer.mode === mode ? '0 1px 2px rgba(0,0,0,0.1)' : 'none' }}>{label}</button>
+                  <button
+                    type="button"
+                    className="ui-button"
+                    key={mode}
+                    onClick={() => { if (!savingRef.current) setComposer(reparse(composer.text, mode)); }}
+                    disabled={saving}
+                    aria-pressed={composer.mode === mode}
+                    style={{ minHeight: 32, padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: saving ? 'default' : 'pointer', background: composer.mode === mode ? '#fff' : 'transparent', color: composer.mode === mode ? '#1d1d1f' : '#6e6e73', boxShadow: composer.mode === mode ? '0 1px 2px rgba(0,0,0,0.1)' : 'none' }}
+                  >
+                    {label}
+                  </button>
                 ))}
               </div>
             </div>
           )}
 
-          {tokenRows.length > 0 && (
-            <div style={{ color: 'rgba(60,60,67,0.58)', fontSize: 13.5, fontWeight: 600 }}>
-              {incomplete > 0 && validRows.length > 0
-                ? `${incomplete}줄은 가릴 부분이 없어 빠져요`
-                : blanks > 0 ? `가림 ${blanks}곳 선택됨` : '가릴 부분을 탭하세요'}
-            </div>
-          )}
           {invalidQaBlanks > 0 && (
-            <div role="alert" style={{ color: '#8a4d00', fontSize: 13.5, fontWeight: 650 }}>
+            <div role="alert" style={{ color: '#8a4d00', fontSize: 13, fontWeight: 650, flexShrink: 0 }}>
               가림 수와 답 수가 다른 문답 {invalidQaBlanks}줄은 빠져요
             </div>
           )}
 
-          {composer.rows.map((r, ri) => r.kind === 'qa' ? (
-            <div key={ri} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 12px', borderRadius: 10, background: 'rgba(120,120,128,0.07)' }}>
-              <span style={{ flex: 1, fontSize: 15, fontWeight: 600, lineHeight: 1.5, wordBreak: 'keep-all' }}>{r.q}</span>
-              <span style={{ fontSize: 15, fontWeight: 700, color: ACCENT_DEEP, flexShrink: 0 }}>{r.a}</span>
+          {composer.rows.map((row, rowIndex) => row.kind === 'qa' ? (
+            <div key={rowIndex} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 11px', borderRadius: 10, background: 'rgba(120,120,128,0.07)', flexShrink: 0 }}>
+              <span style={{ flex: 1, fontSize: 14.5, fontWeight: 600, lineHeight: 1.5, wordBreak: 'keep-all' }}>{row.q}</span>
+              <span style={{ fontSize: 14.5, fontWeight: 700, color: ACCENT_DEEP, flexShrink: 0 }}>{row.a}</span>
             </div>
           ) : (
-            <div key={ri} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '7px 4px', lineHeight: 1.9 }}>
+            <div key={rowIndex} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '7px 4px', lineHeight: 1.8, flexShrink: 0 }}>
               <TokenChips
-                tokens={r.tokens}
-                selection={composer.selection?.row === ri ? composer.selection : null}
-                fontSize={16}
+                tokens={row.tokens}
+                selection={composer.selection?.row === rowIndex ? composer.selection : null}
+                fontSize={15.5}
                 outlined
                 disabled={saving}
-                onSelectStart={(index, wasHidden) => setComposer({ selection: { row: ri, start: index, end: index, wasHidden } })}
-                onSelectExtend={(index) => setComposer((current) => (current.selection?.row === ri
+                onSelectStart={(index, wasHidden) => setComposer({ selection: { row: rowIndex, start: index, end: index, wasHidden } })}
+                onSelectExtend={(index) => setComposer((current) => (current.selection?.row === rowIndex
                   ? { selection: { ...current.selection, end: index } }
                   : {}))}
                 onToggle={(index) => setComposer((current) => ({
-                  rows: current.rows.map((row, rowIndex) => (rowIndex === ri && row.kind === 'tokens'
-                    ? { ...row, tokens: toggleTokenAt(row.tokens, index) }
-                    : row)),
+                  rows: current.rows.map((currentRow, currentIndex) => (currentIndex === rowIndex && currentRow.kind === 'tokens'
+                    ? { ...currentRow, tokens: toggleTokenAt(currentRow.tokens, index) }
+                    : currentRow)),
                   selection: null,
                 }))}
               />
             </div>
           ))}
-
-          </div>
-        )}
-      </div>
-
-      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '10px 16px calc(env(safe-area-inset-bottom) + 18px)', background: '#F2F2F7', display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <div style={{ minHeight: 54 }}>
-          {lastAddedCount > 0 && (
-            <div
-              role="status"
-              aria-live="polite"
-              style={{ minHeight: 54, borderRadius: 12, background: '#fff', border: '1px solid rgba(60,60,67,0.1)', display: 'flex', alignItems: 'center', padding: '0 14px', animation: 'undoIn 0.18s ease-out' }}
-            >
-              <span style={{ flex: 1, fontSize: 14.5, fontWeight: 650 }}>추가했어요</span>
-              <button type="button" className="ui-button" onClick={undoLast} disabled={lastAddedCount === 0 || saving} style={{ minWidth: 64, minHeight: 44, background: 'transparent', color: '#6e6e73', fontSize: 14, fontWeight: 700, textAlign: 'right', cursor: saving ? 'default' : 'pointer' }}>
-                되돌리기
-              </button>
-            </div>
-          )}
         </div>
-        <button
-          type="button"
-          className="ui-button"
-          onClick={add}
-          disabled={validRows.length === 0 || saving}
-          style={{ width: '100%', height: 54, borderRadius: 12, background: validRows.length > 0 && !saving ? ACCENT : 'rgba(0,122,255,0.24)', color: '#fff', display: 'grid', placeItems: 'center', cursor: validRows.length > 0 && !saving ? 'pointer' : 'default', fontSize: 16, fontWeight: 800, transition: 'background 0.15s, transform 0.12s' }}
-        >
-          {saving ? '추가 중…' : validRows.length > 1 ? `${validRows.length}개 추가하고 계속` : '추가하고 계속'}
-        </button>
-      </div>
+
+        <div style={{ padding: '10px 16px calc(12px + env(safe-area-inset-bottom))', flexShrink: 0 }}>
+          <button
+            type="button"
+            className="ui-button"
+            onClick={add}
+            disabled={validRows.length === 0 || saving}
+            style={{ width: '100%', height: 50, borderRadius: 12, background: validRows.length > 0 && !saving ? ACCENT : 'rgba(0,122,255,0.24)', color: '#fff', display: 'grid', placeItems: 'center', cursor: validRows.length > 0 && !saving ? 'pointer' : 'default', fontSize: 15.5, fontWeight: 800, transition: 'background 0.15s, transform 0.12s' }}
+          >
+            {saving ? '추가 중…' : validRows.length > 1 ? `카드 ${validRows.length}개 추가` : '카드 추가'}
+          </button>
+        </div>
+      </section>
     </div>
   );
 }

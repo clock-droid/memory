@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import type { Dispatch } from 'react';
 import { keepCard } from '../domain/cards';
 import type { OptimisticNewCard, ProtoList } from '../domain/cards';
@@ -40,6 +40,13 @@ export function useListDraft({
 }: ListDraftOptions) {
   const [draft, setDraft] = useState<{ name: string; operationId: string } | null>(null);
   const snapshot = useRef<AddSnapshot | null>(null);
+  const previewList = useMemo<ProtoList | undefined>(() => draft ? ({
+    id: 'draft-section',
+    deckId: 'draft-deck',
+    name: draft.name,
+    synthetic: true,
+    cards: [],
+  }) : undefined, [draft]);
 
   const forgetLastAdd = useCallback(() => { snapshot.current = null; }, []);
 
@@ -56,6 +63,10 @@ export function useListDraft({
     setComposer(freshComposer());
     setDeck({ openRowId: null });
   }, [setComposer, setDeck]);
+
+  const renameDraft = useCallback((name: string) => {
+    setDraft((current) => current ? { ...current, name } : current);
+  }, []);
 
   const addCards = useCallback(async (cards: NewCard[], operationId: string) => {
     if (draft) {
@@ -110,5 +121,8 @@ export function useListDraft({
     goHome();
   }, [draft, setComposer, goHome]);
 
-  return { draft, startNewList, openAdd, addCards, undoLastAdd, closeAdd, forgetLastAdd };
+  return {
+    draft, previewList,
+    startNewList, openAdd, renameDraft, addCards, undoLastAdd, closeAdd, forgetLastAdd,
+  };
 }

@@ -13,6 +13,7 @@ import { HideStateMap } from './HideStateMap';
 
 export function DeckView(props: {
   list: ProtoList; deck: DeckUiState; setDeck: Dispatch<Patch<DeckUiState>>;
+  composerOpen?: boolean;
   shuffle: boolean; onToggleShuffle: () => void;
   lpTimer: React.MutableRefObject<number | undefined>; rowStart: React.MutableRefObject<{ x: number; y: number; moved: boolean }>;
   onHome: () => void; onRename: (name: string) => void;
@@ -21,6 +22,7 @@ export function DeckView(props: {
   onStart: (ids: string[]) => void; onStartCheckup: () => void; onOpenAdd: () => void; toast: (msg: string) => void;
 }) {
   const { list, deck, setDeck, shuffle, lpTimer, rowStart } = props;
+  const composerOpen = props.composerOpen ?? false;
   const isPc = usePcHints();
   const [nameDraft, setNameDraft] = useState(list.name);
   const nameTimer = useRef<number | undefined>(undefined);
@@ -283,10 +285,22 @@ export function DeckView(props: {
 
       <span id="card-row-keyboard-help" className="sr-only">Enter 또는 스페이스로 수정하고, Delete 키로 삭제합니다. 왼쪽 화살표를 누르면 삭제 버튼이 열립니다.</span>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '2px 16px 130px', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <div
+        data-deck-scroll="true"
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          padding: composerOpen
+            ? '2px 16px calc(var(--card-composer-height) + 28px)'
+            : '2px 16px 130px',
+          minHeight: 0,
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
         {deckTotal === 0 && (
           <div style={{ padding: '26px 20px 12px', textAlign: 'center', color: 'rgba(60,60,67,0.58)', fontSize: 14.5, lineHeight: 1.6 }}>
-            아직 카드가 없어요.<br />외울 카드 하나부터 추가해보세요.
+            아직 카드가 없어요.<br />{composerOpen ? '아래에서 첫 카드를 만들고 있어요.' : '외울 카드 하나부터 추가해보세요.'}
           </div>
         )}
         {rows.map((row, idx) => {
@@ -368,6 +382,7 @@ export function DeckView(props: {
         })}
       </div>
 
+      {!composerOpen && (
       <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '12px 16px calc(env(safe-area-inset-bottom) + 20px)', background: 'linear-gradient(180deg,rgba(242,242,247,0) 0%,#F2F2F7 32%)', display: 'flex', gap: 10 }}>
         <button type="button" className="ui-button" onClick={props.onOpenAdd} style={{ height: 50, padding: '0 18px', borderRadius: 12, background: '#fff', border: '1px solid rgba(60,60,67,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer', flexShrink: 0 }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1d1d1f" strokeWidth="2.4" strokeLinecap="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
@@ -389,6 +404,7 @@ export function DeckView(props: {
           <span style={{ fontSize: 15.5, fontWeight: 700, color: startEnabled ? '#fff' : 'rgba(60,60,67,0.35)' }}>{startLabel}</span>
         </button>
       </div>
+      )}
     </div>
   );
 }

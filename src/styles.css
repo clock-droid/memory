@@ -1,5 +1,6 @@
 :root {
   --accent: #007aff;
+  --card-composer-height: min(48dvh, 410px);
 }
 
 * {
@@ -99,7 +100,51 @@ textarea:focus-visible {
   --modal-sheet-gap: 14px;
 }
 
+.card-composer-dock {
+  width: 100%;
+  max-width: 480px;
+  height: var(--card-composer-height);
+  border-radius: 20px 20px 0 0;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.12);
+  animation: sheetUp 0.28s cubic-bezier(0.3, 0.9, 0.4, 1);
+}
+
+.card-composer-handle {
+  min-height: 26px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.card-composer-handle > span {
+  width: 38px;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(120, 120, 128, 0.25);
+}
+
+.card-composer-scroll {
+  min-height: 0;
+  padding: 2px 16px 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 @media (max-height: 480px) {
+  :root {
+    --card-composer-height: min(64dvh, 340px);
+  }
+
   .modal-sheet {
     --modal-sheet-padding: 8px 12px max(12px, env(safe-area-inset-bottom));
     --modal-sheet-gap: 8px;
@@ -107,6 +152,14 @@ textarea:focus-visible {
 
   .modal-sheet-handle {
     display: none;
+  }
+
+  .card-composer-handle {
+    min-height: 20px;
+  }
+
+  .card-composer-scroll {
+    gap: 7px;
   }
 }
 

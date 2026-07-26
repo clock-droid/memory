@@ -61,6 +61,7 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
     store, activeList, commitSection,
     setRoute: ui.setRoute, setComposer: ui.setComposer, setDeck: ui.setDeck, goHome: ui.goHome, toast,
   });
+  const visibleList = activeList ?? draft.previewList;
   const session = useStudySession({
     store, lists, activeList,
     session: ui.session, setSession: ui.setSession, setRoute: ui.setRoute,
@@ -109,9 +110,10 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
         />
       )}
 
-      {!syncReadOnly && ui.route.view === 'deck' && activeList && !ui.composer.open && (
+      {!syncReadOnly && ui.route.view === 'deck' && visibleList && (
         <DeckView
-          list={activeList} deck={ui.deck} setDeck={ui.setDeck}
+          list={visibleList} deck={ui.deck} setDeck={ui.setDeck}
+          composerOpen={ui.composer.open}
           shuffle={ui.session.shuffle}
           onToggleShuffle={() => ui.setSession((current) => {
             toast(current.shuffle ? '섞기 끔 — 헷갈린 카드부터' : '섞기 켬 — 순서를 무작위로');
@@ -119,20 +121,20 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
           })}
           lpTimer={longPressTimer} rowStart={rowStart}
           onHome={ui.goHome}
-          onRename={renameList}
+          onRename={draft.draft ? draft.renameDraft : renameList}
           onDelete={deleteCard}
           onEdit={editor.openEditFor}
           onMove={moveCard}
           onDeleteList={deleteList}
-          onStart={(ids) => session.startStudy(activeList.deckId, activeList.id, ids)}
-          onStartCheckup={() => session.startCheckup(activeList.deckId, activeList.id)}
+          onStart={(ids) => activeList && session.startStudy(activeList.deckId, activeList.id, ids)}
+          onStartCheckup={() => activeList && session.startCheckup(activeList.deckId, activeList.id)}
           onOpenAdd={draft.openAdd}
           toast={toast}
         />
       )}
 
-      {/* `composer.open` owns this screen. Keep it mounted while a draft becomes
-          a persisted list so its success count and undo feedback survive. */}
+      {/* The deck keeps ownership of the page while this non-modal composer is
+          open, so cards remain scrollable and editable behind it. */}
       {!syncReadOnly && ui.route.view === 'deck' && ui.composer.open && (
         <ContinuousAddView
           composer={ui.composer}
