@@ -8,9 +8,7 @@ function json(body, status = 200) {
     status,
     headers: {
       'Cache-Control': 'no-store',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Content-Type',
-      'Access-Control-Allow-Methods': 'GET,POST,PATCH,PUT,DELETE,OPTIONS',
+      'Cross-Origin-Resource-Policy': 'same-origin',
     },
   });
 }
@@ -56,3 +54,13 @@ export default async function sync(request) {
 
   return json({ error: 'conflict' }, 409);
 }
+
+export const config = {
+  path: '/.netlify/functions/sync',
+  rateLimit: {
+    action: 'rate_limit',
+    aggregateBy: ['ip', 'domain'],
+    windowLimit: 120,
+    windowSize: 60,
+  },
+};

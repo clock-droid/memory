@@ -4,7 +4,11 @@ export function normalizeRoomCode(value: string) {
 
 export function createRoomCode() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return `memo-${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`;
+    return `memo-${crypto.randomUUID().replace(/-/g, '')}`;
   }
-  return `memo-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    return `memo-${Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
+  }
+  return `memo-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
 }

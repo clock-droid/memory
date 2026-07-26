@@ -38,13 +38,18 @@ npm run dev
 
 ## 저장·동기화
 
-앱은 `Repository` 인터페이스([`src/sync/repository.ts`](./src/sync/repository.ts)) 하나에 세 구현을 두고, 사용 가능한 것을 순서대로 고릅니다.
+앱은 `Repository` 인터페이스([`src/sync/repository.ts`](./src/sync/repository.ts)) 하나에 세 구현을 둡니다.
+프로덕션과 일반 브라우저에서는 충돌 검사와 멱등 쓰기를 제공하는 서버 동기화를 우선 사용합니다.
 
-1. **Firebase**(`src/sync/firebase.ts`) — `.env`에 Firebase 설정값이 있으면 사용. Firestore 실시간 동기화.
-2. **서버 동기화**(`src/sync/serverRepository.ts`) — `/.netlify/functions/sync`를 통해 공유 코드별 방(room)에 저장. 공용 로직은 [`shared/roomLogic.mjs`](./shared/roomLogic.mjs)이고, 개발 시 `scripts/serve.mjs`, 배포 시 `netlify/functions/sync.mjs`가 감쌉니다. **로컬 개발 기본값**이며 배포 주소도 이 경로로 동작합니다.
-3. **로컬 저장**(`src/sync/localRepository.ts`) — 위 둘이 모두 불가하면 브라우저 `localStorage`로 폴백.
+1. **서버 동기화**(`src/sync/serverRepository.ts`) — `/.netlify/functions/sync`를 통해 공유 코드별 방(room)에 저장. 공용 로직은 [`shared/roomLogic.mjs`](./shared/roomLogic.mjs)이고, 개발 시 `scripts/serve.mjs`, 배포 시 `netlify/functions/sync.mjs`가 감쌉니다.
+2. **Firebase**(`src/sync/firebase.ts`) — 서버 동기화를 만들 수 없는 레거시 환경용 어댑터.
+3. **로컬 저장**(`src/sync/localRepository.ts`) — 네트워크 저장소를 만들 수 없는 환경용 어댑터.
 
 세 구현 모두 같은 공유 코드를 입력하면 같은 카드 데이터를 봅니다. 카드 저장 시 서버가 카드 id를 새로 발급하므로, 클라이언트는 저장 응답으로 받은 실제 id로 낙관적 캐시를 맞춰 가림별 숙련도(`answerMastery`)가 세션을 넘어 보존됩니다.
+
+공유 코드는 계정 비밀번호 대신 방의 접근 권한으로 작동합니다. 새 코드는 128비트 임의 값으로 만들고,
+배포 함수는 IP별 분당 120회로 제한합니다. 코드를 아는 사람은 같은 데이터에 접근할 수 있으므로
+공개 게시하지 말고 비밀처럼 보관해야 합니다.
 
 ### 선택: Firebase 설정
 
