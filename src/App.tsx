@@ -131,7 +131,9 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
         />
       )}
 
-      {!syncReadOnly && ui.route.view === 'deck' && ui.composer.open && (activeList || draft.draft) && (
+      {/* `composer.open` owns this screen. Keep it mounted while a draft becomes
+          a persisted list so its success count and undo feedback survive. */}
+      {!syncReadOnly && ui.route.view === 'deck' && ui.composer.open && (
         <ContinuousAddView
           composer={ui.composer}
           setComposer={ui.setComposer}
