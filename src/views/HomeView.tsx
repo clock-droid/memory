@@ -4,6 +4,7 @@ import { masterySummary } from '../domain/cards';
 import type { ProtoList } from '../domain/cards';
 import type { SyncStatus } from '../sync/syncHealth';
 import { ClozeFlowGraphic } from './ClozeFlowGraphic';
+import { ServiceLinks } from './ServiceLinks';
 
 function EmptyStateAction(props: { label: string; onClick: () => void; disabled?: boolean }) {
   return (
@@ -147,6 +148,7 @@ export function HomeView(props: {
             </button>
           </div>
         )}
+        {canShowContent && <ServiceLinks />}
       </div>
     </div>
   );

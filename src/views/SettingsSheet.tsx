@@ -4,6 +4,7 @@ import { normalizeRoomCode } from '../domain/roomCode';
 import type { RepositoryTarget } from '../sync/storageSelection';
 import { readJudgeHintEnabled, writeJudgeHintEnabled } from './judgeHint';
 import { ModalSheet } from './ModalSheet';
+import { ServiceLinks } from './ServiceLinks';
 
 type CopyStatus = 'idle' | 'copying' | 'success' | 'error';
 
@@ -186,6 +187,7 @@ export function SettingsSheet(props: Props) {
           <span style={{ position: 'absolute', top: 2, left: judgeHintEnabled ? 21 : 2, width: 23, height: 23, borderRadius: 999, background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.2)', transition: 'left 0.15s cubic-bezier(0.3,0.9,0.4,1)' }} />
         </span>
       </button>
+      <ServiceLinks />
     </ModalSheet>
   );
 }

@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#F5F5F7" />
+    <meta
+      name="description"
+      content="암기장 서비스가 Google 로그인 정보와 학습 데이터를 처리하는 방법을 설명합니다."
+    />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+    <link rel="stylesheet" href="/legal.css" />
+    <title>개인정보처리방침 | 암기장</title>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="/">암기장</a>
+      <nav class="site-nav" aria-label="서비스 문서">
+        <a href="/privacy/" aria-current="page">개인정보처리방침</a>
+        <a href="/terms/">이용약관</a>
+        <a href="/support/">도움말·문의</a>
+      </nav>
+    </header>
+
+    <main class="legal-page">
+      <p class="eyebrow">PRIVACY</p>
+      <h1>개인정보처리방침</h1>
+      <p class="lead">
+        이 서비스는 한 카드 안의 가림별 학습 상태를 저장하고, 사용자가 선택한 저장 방식에 따라
+        같은 기기 또는 여러 기기에서 암기장을 이어서 사용할 수 있게 합니다.
+      </p>
+      <p class="effective">시행일: 2026년 7월 27일</p>
+
+      <section>
+        <h2>1. 처리하는 정보</h2>
+        <ul class="plain-list">
+          <li>
+            <strong>Google 계정 정보</strong>
+            Google 로그인 시 제공되는 고유 계정 식별자, 이메일 주소, 표시 이름과 프로필 이미지입니다.
+          </li>
+          <li>
+            <strong>사용자가 만든 학습 데이터</strong>
+            암기장과 목록 이름, 입력한 문장, 가림 위치, 가림별 숙련 상태와 복습 일정입니다.
+          </li>
+          <li>
+            <strong>서비스 운영 정보</strong>
+            보안과 장애 대응을 위해 호스팅 사업자가 요청 시각, IP 주소, 브라우저·기기 정보를
+            자동으로 처리할 수 있습니다. 별도의 광고 추적 도구는 사용하지 않습니다.
+          </li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>2. 저장 방식에 따른 차이</h2>
+        <ul class="plain-list">
+          <li>
+            <strong>기기 저장</strong>
+            학습 데이터가 사용 중인 브라우저 또는 앱의 로컬 저장소에만 보관됩니다. 앱을 삭제하거나
+            사이트 데이터를 지우면 복구할 수 없습니다.
+          </li>
+          <li>
+            <strong>동기화 코드 저장</strong>
+            학습 데이터가 사용자가 가진 동기화 코드와 연결되어 서버에 보관됩니다. 코드를 아는 사람은
+            같은 데이터에 접근할 수 있으므로 다른 사람에게 공개하지 않아야 합니다.
+          </li>
+          <li>
+            <strong>계정 저장</strong>
+            Google 계정으로 사용자를 확인하고, 계정별 학습 데이터를 Supabase에 분리해 보관합니다.
+            데이터베이스 접근 정책은 로그인한 본인의 데이터만 읽고 수정하도록 제한합니다.
+          </li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>3. 이용 목적</h2>
+        <ul>
+          <li>Google 계정 로그인과 사용자 식별</li>
+          <li>암기장, 가림별 숙련 상태와 복습 일정의 저장·동기화</li>
+          <li>기기 간 이어하기와 데이터 복구</li>
+          <li>오류 조사, 보안 유지와 문의 대응</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>4. Google 사용자 데이터</h2>
+        <p>
+          Google에서 받은 정보는 로그인, 계정 표시와 학습 데이터 동기화에만 사용합니다.
+          광고, 사용자 프로파일링 또는 판매 목적으로 사용하지 않으며, 로그인에 필요한 범위를 넘어
+          Google 서비스의 추가 데이터에 접근하지 않습니다.
+        </p>
+        <p>
+          Google 계정과의 연결은
+          <a href="https://myaccount.google.com/connections" target="_blank" rel="noreferrer">Google 계정 연결 관리</a>에서
+          언제든지 해제할 수 있습니다.
+        </p>
+      </section>
+
+      <section>
+        <h2>5. 외부 처리 서비스</h2>
+        <table class="service-table">
+          <thead>
+            <tr>
+              <th scope="col">서비스</th>
+              <th scope="col">처리 목적</th>
+              <th scope="col">정책</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Google</td>
+              <td>사용자 인증</td>
+              <td><a href="https://policies.google.com/privacy" target="_blank" rel="noreferrer">개인정보처리방침</a></td>
+            </tr>
+            <tr>
+              <td>Supabase</td>
+              <td>계정 인증, 계정별 데이터베이스와 실시간 동기화</td>
+              <td><a href="https://supabase.com/privacy" target="_blank" rel="noreferrer">개인정보처리방침</a></td>
+            </tr>
+            <tr>
+              <td>Netlify</td>
+              <td>웹 호스팅과 동기화 코드 데이터 처리</td>
+              <td><a href="https://www.netlify.com/privacy/" target="_blank" rel="noreferrer">개인정보처리방침</a></td>
+            </tr>
+          </tbody>
+        </table>
+        <p>
+          서비스 운영자는 개인정보를 판매하지 않습니다. 법령상 의무가 있거나 서비스 제공에 필요한
+          위 처리 사업자를 사용하는 경우 외에는 제3자에게 제공하지 않습니다.
+        </p>
+      </section>
+
+      <section>
+        <h2>6. 보관과 삭제</h2>
+        <ul>
+          <li>기기 저장 데이터는 사용자가 브라우저·앱 데이터를 삭제할 때까지 보관됩니다.</li>
+          <li>동기화 코드와 계정 저장 데이터는 사용자가 삭제를 요청하거나 서비스가 종료될 때까지 보관됩니다.</li>
+          <li>로그아웃은 현재 기기의 로그인 세션만 종료하며, 다시 로그인할 수 있도록 계정 데이터는 유지됩니다.</li>
+        </ul>
+        <p>
+          계정과 서버 데이터 삭제는 <a href="/support/#delete-data">데이터 삭제 안내</a>에 따라 요청할 수 있습니다.
+          본인 또는 동기화 코드 소유 여부를 확인한 뒤 관련 인증 정보와 학습 데이터를 삭제합니다.
+        </p>
+      </section>
+
+      <section>
+        <h2>7. 보호 조치</h2>
+        <p>
+          전송 구간에 HTTPS를 사용하고, 계정 데이터에는 데이터베이스 접근 정책을 적용합니다.
+          동기화 코드는 비밀번호와 같은 수준으로 보호해야 합니다. 어떤 온라인 서비스도 완전한 보안을
+          보장할 수 없으므로 민감한 개인정보를 암기장 내용에 입력하지 않는 것을 권장합니다.
+        </p>
+      </section>
+
+      <section>
+        <h2>8. 방침 변경과 문의</h2>
+        <p>
+          처리 항목이나 목적이 달라지면 이 문서를 갱신하고 시행일을 표시합니다. 개인정보 또는 데이터
+          삭제 문의는 아래 연락처로 보낼 수 있습니다.
+        </p>
+        <p>
+          이메일:
+          <a href="mailto:clockgo1224@gmail.com">clockgo1224@gmail.com</a>
+        </p>
+      </section>
+
+      <footer class="page-footer">
+        <a href="/">앱으로 돌아가기</a>
+        <a href="/terms/">이용약관</a>
+        <a href="/support/">도움말·문의</a>
+      </footer>
+    </main>
+  </body>
+</html>
