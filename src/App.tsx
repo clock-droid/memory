@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useCardActions } from './actions/useCardActions';
 import { useCardEditor } from './actions/useCardEditor';
@@ -8,9 +8,17 @@ import { useRemoteChangeGuard } from './actions/useRemoteChangeGuard';
 import { useStudySession } from './actions/useStudySession';
 import { useToast } from './actions/useToast';
 import { buildLists } from './domain/cards';
-import { ROOM_KEY } from './constants';
+import { ACCOUNT_MIGRATION_KEY, DEVICE_STORE_KEY } from './constants';
 import { useRoomUi } from './state/useRoomUi';
 import { isSyncReadOnly } from './sync/syncHealth';
+import { migrateRoomToAccount } from './sync/migrateRepository';
+import { createSupabaseRepository } from './sync/supabaseRepository';
+import {
+  readStorageSelection, writeStorageSelection,
+} from './sync/storageSelection';
+import type { RepositoryTarget, StorageSelection } from './sync/storageSelection';
+import { useAccountSession } from './sync/useAccountSession';
+import type { AccountProvider, AccountSession } from './sync/useAccountSession';
 import { useRoomStore } from './sync/useRoomStore';
 import { ContinuousAddView } from './views/ContinuousAddView';
 import { DeckView } from './views/DeckView';
@@ -18,6 +26,7 @@ import { EditSheet } from './views/EditSheet';
 import { HomeView } from './views/HomeView';
 import { IdGate } from './views/IdGate';
 import { SettingsSheet } from './views/SettingsSheet';
+import { StorageTransferView } from './views/StorageTransferView';
 import { StudyView } from './views/StudyView';
 import { Toast } from './views/Toast';
 
@@ -27,14 +36,51 @@ const SHELL_STYLE: CSSProperties = {
 };
 
 export default function App() {
-  const [roomCode, setRoomCode] = useState(() => localStorage.getItem(ROOM_KEY) ?? '');
-  const enterRoom = (code: string) => {
-    localStorage.setItem(ROOM_KEY, code);
-    setRoomCode(code);
+  const account = useAccountSession();
+  const [selection, setSelection] = useState<StorageSelection | null>(readStorageSelection);
+  const selectStorage = (next: StorageSelection) => {
+    writeStorageSelection(next);
+    setSelection(next);
   };
-  if (!roomCode) return <IdGate onSubmit={enterRoom} />;
-  // Keyed on the room so switching ids rebuilds every subscription and cache.
-  return <Room key={roomCode} roomCode={roomCode} onChangeRoom={enterRoom} />;
+  const enterAccount = (provider: AccountProvider) => {
+    account.clearError();
+    selectStorage({ kind: 'account' });
+    if (!account.user) void account.signIn(provider);
+  };
+
+  let target: RepositoryTarget | null = null;
+  if (selection?.kind === 'device') target = selection;
+  if (selection?.kind === 'legacy') target = selection;
+  if (selection?.kind === 'account' && account.user) {
+    target = { kind: 'account', userId: account.user.id };
+  }
+
+  if (!target) {
+    return (
+      <IdGate
+        accountConfigured={account.configured}
+        accountPending={account.pending || (selection?.kind === 'account' && account.loading)}
+        accountError={Boolean(account.error)}
+        onDevice={() => selectStorage({ kind: 'device', key: DEVICE_STORE_KEY })}
+        onAccount={enterAccount}
+        onLegacy={(roomCode) => selectStorage({ kind: 'legacy', roomCode })}
+      />
+    );
+  }
+
+  const roomKey = target.kind === 'legacy'
+    ? `legacy:${target.roomCode}`
+    : target.kind === 'account'
+      ? `account:${target.userId}`
+      : `device:${target.key}`;
+  return (
+    <Room
+      key={roomKey}
+      target={target}
+      account={account}
+      onSelectStorage={selectStorage}
+    />
+  );
 }
 
 /**
@@ -42,10 +88,20 @@ export default function App() {
  * intents the screens can trigger. All of those live in their own modules —
  * this component only hands each screen its slice and decides which is on top.
  */
-function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (code: string) => void }) {
-  const store = useRoomStore(roomCode);
+function Room(props: {
+  target: RepositoryTarget;
+  account: AccountSession;
+  onSelectStorage: (selection: StorageSelection) => void;
+}) {
+  const { target, account, onSelectStorage } = props;
+  const store = useRoomStore(target);
   const ui = useRoomUi();
   const { toast, undoToast } = useToast(ui.setShell);
+  const [transferRequested, setTransferRequested] = useState(
+    () => localStorage.getItem(ACCOUNT_MIGRATION_KEY) === '1',
+  );
+  const [transferring, setTransferring] = useState(false);
+  const transferStarted = useRef(false);
 
   const lists = useMemo(
     () => buildLists(store.decks, store.deckDataById),
@@ -91,6 +147,57 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
   // A stale or failing snapshot may only be read: writing onto it would resolve
   // conflicts against data the user can no longer see.
   const syncReadOnly = isSyncReadOnly(store.syncHealth.status);
+
+  useEffect(() => {
+    if (
+      !transferRequested
+      || transferStarted.current
+      || target.kind === 'account'
+      || !account.user
+      || !store.isReady
+    ) return;
+
+    const destination = createSupabaseRepository(account.user.id);
+    if (!destination) {
+      localStorage.removeItem(ACCOUNT_MIGRATION_KEY);
+      setTransferRequested(false);
+      toast('계정 동기화를 시작하지 못했어요. 기존 데이터는 그대로예요.');
+      return;
+    }
+
+    transferStarted.current = true;
+    setTransferring(true);
+    void migrateRoomToAccount(store.decks, store.deckDataById, destination)
+      .then(() => {
+        localStorage.removeItem(ACCOUNT_MIGRATION_KEY);
+        onSelectStorage({ kind: 'account' });
+      })
+      .catch(() => {
+        localStorage.removeItem(ACCOUNT_MIGRATION_KEY);
+        transferStarted.current = false;
+        setTransferRequested(false);
+        setTransferring(false);
+        toast('계정으로 옮기지 못했어요. 기존 데이터는 그대로예요.');
+      });
+  }, [
+    transferRequested,
+    target.kind,
+    account.user,
+    store.isReady,
+    store.decks,
+    store.deckDataById,
+    onSelectStorage,
+    toast,
+  ]);
+
+  const transferToAccount = (provider?: AccountProvider) => {
+    account.clearError();
+    localStorage.setItem(ACCOUNT_MIGRATION_KEY, '1');
+    setTransferRequested(true);
+    if (!account.user && provider) void account.signIn(provider);
+  };
+
+  if (transferring) return <StorageTransferView message="카드를 계정으로 옮기는 중…" />;
 
   return (
     <div style={SHELL_STYLE}>
@@ -168,9 +275,16 @@ function Room({ roomCode, onChangeRoom }: { roomCode: string; onChangeRoom: (cod
 
       {ui.shell.settingsOpen && (
         <SettingsSheet
-          roomCode={roomCode}
+          target={target}
+          accountConfigured={account.configured}
+          accountPending={account.pending}
+          accountEmail={account.user?.email}
+          accountError={Boolean(account.error)}
+          transferPending={transferRequested || transferring}
           onClose={() => ui.setShell({ settingsOpen: false })}
-          onChangeRoom={onChangeRoom}
+          onChangeLegacy={(roomCode) => onSelectStorage({ kind: 'legacy', roomCode })}
+          onTransferToAccount={transferToAccount}
+          onSignOut={() => { void account.signOut(); }}
         />
       )}
 

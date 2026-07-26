@@ -1,6 +1,6 @@
 # 시험암기
 
-PC와 아이폰에서 같은 공유 코드로 접속해 암기장과 카드를 자동 동기화하는 PWA입니다.
+로그인 없는 기기 저장과 계정 동기화를 함께 지원하는 가림 단위 암기 앱입니다.
 
 ## 제품 핵심
 
@@ -8,7 +8,7 @@ PC와 아이폰에서 같은 공유 코드로 접속해 암기장과 카드를 �
 
 기능·UI·데이터 구조를 수정할 때 적용하는 전체 판단 기준은 [`PRODUCT_PRINCIPLES.md`](./PRODUCT_PRINCIPLES.md)에 정리되어 있습니다.
 
-## 아이폰에서 사용
+## 웹에서 사용
 
 배포된 주소:
 
@@ -16,9 +16,8 @@ PC와 아이폰에서 같은 공유 코드로 접속해 암기장과 카드를 �
 https://exam-memorizer-clockgo.netlify.app
 ```
 
-이 주소는 PC가 꺼져 있어도 접속할 수 있습니다. PC와 아이폰에서 같은 공유 코드를 입력하면 같은 카드 데이터를 사용합니다.
-
-PC에서도 같은 주소를 사용하는 것을 권장합니다. 로컬 개발 주소인 `http://127.0.0.1:5173`도 현재는 같은 클라우드 저장소를 보도록 설정되어 있지만, 실제 사용은 공개 주소 하나로 통일하는 편이 가장 덜 헷갈립니다.
+이 주소는 PC가 꺼져 있어도 접속할 수 있습니다. 기기 저장은 해당 브라우저나 앱
+안에만 남고, 계정 동기화를 설정하면 PC와 휴대폰에서 같은 카드를 사용할 수 있습니다.
 
 아이폰 Safari에서 주소를 연 뒤 공유 버튼을 누르고 `홈 화면에 추가`를 선택하면 앱처럼 실행할 수 있습니다.
 
@@ -55,24 +54,28 @@ npx cap open android
 ## 저장·동기화
 
 앱은 `Repository` 인터페이스([`src/sync/repository.ts`](./src/sync/repository.ts)) 하나에 세 구현을 둡니다.
-프로덕션과 일반 브라우저에서는 충돌 검사와 멱등 쓰기를 제공하는 서버 동기화를 우선 사용합니다.
 
-1. **서버 동기화**(`src/sync/serverRepository.ts`) — `/.netlify/functions/sync`를 통해 공유 코드별 방(room)에 저장. 공용 로직은 [`shared/roomLogic.mjs`](./shared/roomLogic.mjs)이고, 개발 시 `scripts/serve.mjs`, 배포 시 `netlify/functions/sync.mjs`가 감쌉니다.
-2. **Firebase**(`src/sync/firebase.ts`) — 서버 동기화를 만들 수 없는 레거시 환경용 어댑터.
-3. **로컬 저장**(`src/sync/localRepository.ts`) — 네트워크 저장소를 만들 수 없는 환경용 어댑터.
+1. **계정 동기화**(`src/sync/supabaseRepository.ts`) — Supabase Auth 사용자마다 RLS로 격리된 Postgres 행에 저장하고 Realtime으로 다른 기기의 변경을 받습니다.
+2. **기기 저장**(`src/sync/localRepository.ts`) — 로그인 없이 이 기기의 `localStorage`에 저장합니다.
+3. **기존 코드 동기화**(`src/sync/serverRepository.ts`) — 기존 사용자의 공유 코드를 계속 읽기 위한 호환 경로입니다. `/.netlify/functions/sync`와 Netlify Blobs를 사용합니다.
 
-세 구현 모두 같은 공유 코드를 입력하면 같은 카드 데이터를 봅니다. 카드 저장 시 서버가 카드 id를 새로 발급하므로, 클라이언트는 저장 응답으로 받은 실제 id로 낙관적 캐시를 맞춰 가림별 숙련도(`answerMastery`)가 세션을 넘어 보존됩니다.
+세 구현은 카드·섹션과 가림별 숙련도(`answerMastery`, `answerSchedule`)를 같은 모양으로
+보존합니다. 기기 또는 기존 코드 데이터를 계정으로 옮길 때는 원본을 지우지 않고
+멱등 operation id로 복사하므로 중단 후 다시 시도해도 같은 목록을 재사용합니다.
 
-공유 코드는 계정 비밀번호 대신 방의 접근 권한으로 작동합니다. 새 코드는 128비트 임의 값으로 만들고,
-배포 함수는 IP별 분당 120회로 제한합니다. 코드를 아는 사람은 같은 데이터에 접근할 수 있으므로
-공개 게시하지 말고 비밀처럼 보관해야 합니다.
+기존 공유 코드는 계정 비밀번호 대신 방의 접근 권한으로 작동합니다. 코드를 아는 사람은
+같은 데이터에 접근할 수 있으므로 공개 게시하지 말고 비밀처럼 보관해야 합니다.
 
-### 선택: Firebase 설정
+### Supabase 계정 동기화 설정
 
-기기 간 동기화에 Firebase를 쓰려면 `.env`에 다음 6개 값을 넣고, Firestore를 만든 뒤 `firestore.rules`를 보안 규칙에 적용합니다.
+1. Supabase 프로젝트를 만들고
+   [`supabase/migrations/20260727000000_account_rooms.sql`](./supabase/migrations/20260727000000_account_rooms.sql)을 적용합니다.
+2. `.env`에 `VITE_SUPABASE_URL`과 `VITE_SUPABASE_PUBLISHABLE_KEY`를 넣습니다.
+3. Supabase Authentication에서 Google과 Kakao provider를 켭니다.
+4. 웹 주소와 네이티브 콜백 `memoryapp://auth/callback`을 Redirect URLs에 등록합니다.
 
-- `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`
-- `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID`
+서비스 키나 OAuth client secret은 앱의 `.env`에 넣지 않습니다. 앱에는 공개 가능한
+Supabase publishable key만 포함되고 데이터 접근은 `auth.uid()` 기반 RLS가 제한합니다.
 
 ## 코드 구조
 
@@ -83,7 +86,7 @@ npx cap open android
 views/    화면 (각자 자기 상태 조각만 받음)
 actions/  사용자 의도 (카드 삭제, 학습 시작 …)
 state/    화면 상태 6조각 (route·deck·session·composer·editor·shell)
-sync/     방과의 통신 (저장소 3구현 + 구독 + 낙관적 쓰기)
+sync/     저장·동기화 (기기·계정·기존 코드 + 구독 + 낙관적 쓰기)
 domain/   제품 규칙 (React 없음, 전부 순수 함수 + 테스트)
 ```
 

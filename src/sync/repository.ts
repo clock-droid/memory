@@ -3,11 +3,11 @@ import type { Card, Deck, NewCard, Section } from '../domain/types';
 
 /**
  * The port every backend implements. The room store talks only to this, so a
- * screen never learns whether it is on the sync endpoint, Firebase or
- * localStorage.
+ * screen never learns whether it is on a legacy sync endpoint, an account or
+ * device storage.
  */
 export type Repository = {
-  mode: 'firebase' | 'local' | 'server' | 'cloud';
+  mode: 'local' | 'server' | 'cloud';
   subscribeDecks: (callback: (decks: Deck[]) => void, onError?: (error: Error) => void) => () => void;
   subscribeCards: (deckId: string, callback: (cards: Card[]) => void, onError?: (error: Error) => void) => () => void;
   subscribeSections: (deckId: string, callback: (sections: Section[]) => void, onError?: (error: Error) => void) => () => void;

@@ -1,4 +1,7 @@
 export const ROOM_KEY = 'exam-memorizer-room-code';
+export const STORAGE_KEY = 'exam-memorizer-storage';
+export const DEVICE_STORE_KEY = 'primary';
+export const ACCOUNT_MIGRATION_KEY = 'exam-memorizer-account-migration-pending';
 // '0' = user turned the emphasis off (via dismiss or settings); anything else/missing = on (default).
 export const JUDGE_HINT_KEY = 'exam-memorizer-judge-hint-enabled';
 export const ACCENT = '#007aff';

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { createFirebaseRepository } from './firebase';
 import { createLocalRepository } from './localRepository';
 import { createServerRepository } from './serverRepository';
+import { createSupabaseRepository } from './supabaseRepository';
 import { withCards, withSections } from '../domain/cards';
 import type { DeckCacheEntry, OptimisticNewCard } from '../domain/cards';
 import { KeyedMutationQueue, rejectedMutation } from './mutationQueue';
@@ -16,6 +16,7 @@ import type { Repository } from './repository';
 import { useDeckCache } from './deckCache';
 import type { DeckCacheSlice } from './deckCache';
 import { DECKS_KEY, cardsKey, sectionsKey, useSyncResources } from './syncResources';
+import type { RepositoryTarget } from './storageSelection';
 
 /** Where a failed write reports itself, so screens can phrase their own copy. */
 export type WriteCallbacks = {
@@ -92,14 +93,17 @@ function stripOptimisticIds(cards: OptimisticNewCard[]): NewCard[] {
  * and confirmed snapshots, and how an optimistic write is applied, confirmed or
  * rolled back. It deliberately holds no user-facing copy and no screen state.
  */
-export function useRoomStore(roomCode: string): RoomStore {
+export function useRoomStore(target: RepositoryTarget): RoomStore {
+  const targetKey = target.kind === 'legacy'
+    ? `legacy:${target.roomCode}`
+    : target.kind === 'account'
+      ? `account:${target.userId}`
+      : `device:${target.key}`;
   const repository = useMemo<Repository | null>(() => {
-    if (!roomCode) return null;
-    // The revisioned sync endpoint is the authoritative production backend.
-    // Keep legacy adapters only as fallbacks for environments without it;
-    // preferring Firebase would bypass conflict checks and idempotent writes.
-    return createServerRepository(roomCode) ?? createFirebaseRepository(roomCode) ?? createLocalRepository(roomCode);
-  }, [roomCode]);
+    if (target.kind === 'device') return createLocalRepository(target.key);
+    if (target.kind === 'account') return createSupabaseRepository(target.userId);
+    return createServerRepository(target.roomCode);
+  }, [targetKey]);
 
   const [decks, setDecks] = useState<Deck[]>([]);
   const [generation, setGeneration] = useState(0);

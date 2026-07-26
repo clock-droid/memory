@@ -45,7 +45,7 @@ React도 브라우저 API도 쓰지 않는다. 전부 테스트가 붙는다.
 | 파일 | 책임 |
 |---|---|
 | `repository.ts` | 백엔드가 구현해야 하는 인터페이스(포트) |
-| `serverRepository` / `firebase` / `localRepository` | 그 구현 3가지 |
+| `serverRepository` / `supabaseRepository` / `localRepository` | 기존 코드·계정·기기 저장 구현 |
 | `useRoomStore.ts` | 저장소 선택, 구독 배선, **이름 있는 쓰기 동작** |
 | `deckCache.ts` | 화면에 보이는 스냅샷 + 서버가 확인해준 스냅샷 |
 | `syncResources.ts` · `syncHealth.ts` | 피드별 상태 → 하나의 동기화 상태 |
